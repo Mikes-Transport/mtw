@@ -1,0 +1,11 @@
+name = "mtw-custom-element-publisher"
+main = "src/index.js"
+compatibility_date = "2026-10-16"
+workers_dev = true
+
+[vars]
+FIREBASE_PROJECT_ID = "REPLACE_WITH_FIREBASE_PROJECT_ID"
+GITHUB_OWNER = "Mikes-Transport"
+GITHUB_REPO = "mtw"
+GITHUB_BRANCH = "main"
+DASHBOARD_ORIGIN = "https://REPLACE_WITH_DASHBOARD_HOST"
