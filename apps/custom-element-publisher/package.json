@@ -1,0 +1,11 @@
+{
+  "name": "mtw-custom-element-publisher",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

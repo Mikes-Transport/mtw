@@ -1,0 +1,1649 @@
+body.public_index #block_5 {
+  width: 100% !important;
+  margin-top: 0px!important;
+}
+
+.layout_component_92 #block_5 > p:first-child {
+  display: none !important;
+}
+
+#header {
+  background: black !important;
+  padding-left: 50px !important;
+  padding-right: 50px !important;
+}
+
+/* 50px a side is right on desktop but brutal on a phone: at 320px it leaves
+   only 205px for the logo plus the menu button, which is not enough, so the
+   menu drops onto its own row and the header doubles to 88px tall.
+
+   16px keeps the two side by side down to 320 and matches the value the
+   footer already uses below 992. Measured: 50px wraps at 320 and 360, 16px
+   is a single row at every width from 320 up (it still wraps at 280, which
+   is narrower than any phone in use). */
+
+@media (max-width: 991px) {
+  #header {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+
+  /* The theme declares #mobile-header twice, and the second one wins:
+       #mobile-header { background: rgba(0,0,0,0) ... }   transparent
+       #mobile-header { background: #474b4f; ... }         grey, comes later
+
+     So the mobile menu sits on a grey panel against the black header. The
+     header is already black, so transparent drops it out and the icons sit
+     straight on the black. Icons keep their own colours (white, and green
+     for the hamburger), which is why only the panel background goes. */
+  #mobile-header {
+    background: transparent !important;
+  }
+}
+
+#header #header-inner {
+  max-width: 100vw !important;
+  width: 100% !important;
+}
+
+#header #header-inner>#block_10 {
+  margin-right: 50px;
+}
+
+#header #header-inner #block_12 {
+  margin-left: auto !important;
+}
+
+#block_12 {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  column-gap: 1px !important;
+}
+
+#block_12 > span {
+  grid-column: 1 / -1;
+  text-align: left;
+}
+
+#block_12 > p:nth-of-type(2),
+#block_12 > p:nth-of-type(3) {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+#block_12 > p:nth-of-type(2) {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+#block_12 > p:nth-of-type(3) {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+/* The rule above for the company name is written as
+   #block_12 > span { grid-column: 1 / -1 }
+   but block_12 contains no span at all - its three children are all <p>.
+   So that selector never matched anything, and "MIKE'S TRANSPORT WAREHOUSE
+   LTD" was left to auto-place into column 1, which is half the block. It
+   wrapped onto two lines at 195px wide while the row next to it sat empty.
+
+   Targeting p:nth-of-type(1) - the element that is actually there - gives
+   it the full width: one line instead of two, and the block drops from
+   111px to 87px tall, which lets the header shrink to the logo's 107px.
+   The two address columns below are untouched. */
+
+#block_12 > p:nth-of-type(1) {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+/* Address text steps up with the viewport, and the block widens with it.
+
+   Two things drive the size here, and they have to move together:
+
+   1. The address paragraphs were display:flex; flex-direction:column, so
+      every child element (the "»" icon, the address link, the phone span)
+      became its own row. Letting them flow as normal text instead is the
+      bigger win of the two - at 12px that alone takes the block from 78px
+      to 60px.
+
+   2. Font size on its own is not enough. block_12 is a fixed-width box, so
+      a larger font just wraps onto more lines and the block gets TALLER:
+      13px in a 390px box measures 83px, while 13px in a 500px box
+      measures 63px. So each step widens the block as well as the text.
+
+   Measured result:
+     1024-1199   390x57   11px
+     1200-1439   440x60   12px
+     1440+       500x63   13px
+   Down from 390x87 before this, with the search bar and nav untouched.
+   Font size is set on the <p> alone - no child carries an explicit size,
+   so it all inherits from there.
+
+   The rules themselves live at the very end of this file, after the
+   desktop header sizing block. That block sets max-width: 390px on
+   #block_12 at min-width 992, and it has to come first or it overrides
+   the 440px and 500px steps below it. */
+
+/* The theme hides this block below 992px and swaps in the mobile menu:
+     #header #header-inner #block_12 { display: none }
+     @media (min-width: 992px) { ... { display: block } }
+
+   Neither carries !important, so the display:grid !important above beats
+   them both and leaves the desktop header block rendering on phones. Put
+   the theme's hide back for the widths where it wanted it hidden. Three
+   ids beat the single id above, so this wins without editing that rule. */
+@media (max-width: 991px) {
+  #header #header-inner #block_12 {
+    display: none !important;
+  }
+}
+
+#everything-outer div.search-outer form.search {
+  display: flex !important;
+  flex-direction: row-reverse !important;
+}
+
+#everything-outer div.search-outer form.search .control-group:last-child {
+  position: relative !important;
+}
+
+#everything-outer div.search-outer form.search .submit {
+  height: 37.5px !important;
+}
+
+#everything-outer div.search-outer form.search .submit:before {
+  font-size: 18px !important;
+}
+
+#header #header-inner div.search-outer form.search input.keywords {
+  background-color: #1c1c1c !important;
+  border: 0.5px solid #5b5b5b !important;
+  border-left: none !important;
+  border-radius: 0px 4px 4px 0px !important;
+}
+
+#nav-outer {
+  max-width: 100vw!important;
+  padding-left: 50px!important;
+  padding-right: 50px!important;
+  margin: 0 !important;
+  background: #65b746 !important;
+}
+
+#nav-inner {
+  width: 100% !important;
+}
+
+#nav-inner #navbar .aside {
+  gap: 15px !important;
+  -webkit-clip-path: none !important;
+   clip-path: none !important;
+  background-color: transparent !important;
+}
+
+#nav-inner #navbar .aside .acc-btn:before {
+  margin-right: 15px !important;
+}
+
+#nav-inner #navbar #menu_5 li a {
+  color: white !important;
+  border-right: 1px solid white !important;
+  padding: 0 15px !important;
+}
+
+#nav-inner #navbar #menu_5 li:last-child a {
+  border-right: 0 !important;
+}
+
+#nav-inner #navbar div.cart-outer div.cart div.total {
+  margin-left: 15px !important;
+}
+
+#body.public_index #content {
+  max-width: 100vw !important;
+  width: 100% !important;
+  padding-left: 50px !important;
+  padding-right: 50px !important;
+}
+
+#homepage-promotion #clearance-left {
+  display: none !important;
+}
+
+#homepage-cta2, #homepage-latest-news, #homepage-image-slider-1, #homepage-cta-hotproduct, #homepage-promotion {
+  max-width: 100vw !important;
+  width: 100% !important;
+}
+
+body.public_index #homepage-cta-hotproduct a.btn.see-all, body.public_index #home-categories~a.btn.see-all {
+  display: none !important;
+}
+
+body.public_index #footer {
+  padding-left: 50px !important;
+  padding-right: 50px !important;
+}
+
+#footer #footer-inner {
+   max-width: 100vw !important;
+  width: 100% !important;
+}
+
+#footer #footer-top .address-wrapper {
+  flex-wrap: nowrap !important;
+  flex-direction: row !important;
+}
+
+#footer {
+  background: black !important;
+}
+
+#footer-top {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 15px !important;
+}
+
+#footer-top > div:nth-child(1) {
+  grid-column: 1 / -1 !important;
+}
+
+#footer-top > div:nth-child(2) {
+  grid-column: 1 !important;
+  grid-row: 2 !important;
+  justify-self: start !important;
+  margin-right: 50px !important;
+}
+
+#footer-top > div:nth-child(3) {
+  grid-column: 2 !important;
+  grid-row: 2 !important;
+}
+
+#footer-column3 {
+  margin-left: 50px !important;
+}
+
+#menu_4 {
+ display: grid !important;
+  grid-template-rows: repeat(5, auto) !important;
+  grid-auto-flow: column !important;
+  column-gap: 40px !important;
+  margin-bottom: 50px !important;
+}
+
+#menu_2 {
+  display: grid !important;
+  grid-template-rows: repeat(3, auto) !important;
+  grid-auto-flow: column !important;
+  column-gap: 50px !important;
+}
+
+/* body.public_index #home-categories {
+    margin-top: 0 !important;
+    position: relative !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr 1fr 1fr !important;
+    grid-template-rows: 1fr 1fr !important;
+    gap: 15px !important;
+}
+
+body.public_index #home-categories > :first-child {
+  grid-column: 1 / 3 !important;
+  grid-row: 1 / 3 !important;
+} */
+
+/* #home-categories.layoutmanager-layout-group.layout_group_52 {
+  display: none !important;
+} */
+
+#homepage-cta2.layoutmanager-layout-group.layout_group_56 {
+  display: none !important;
+}
+
+#home-about.layoutmanager-layout-group.layout_group_15 {
+  display: none !important;
+}
+
+/* body.public_index #content-inner {
+  max-width: 100vw;
+  width: 100%;
+}
+
+body.public_index #content {
+  padding-left: 50px !important;
+  padding-right: 50px !important;
+}
+
+#content #body .carousel-wrapper {
+  width: 100% !important;
+  flex: 0 0 100% !important;
+} */
+
+/* ============================================================
+   HOMEPAGE GALLERY
+   ------------------------------------------------------------
+   The theme runs #gallery_scroller_1 as one full-width nivoSlider,
+   so a visitor only ever sees a single image. site-overrides.js deals the
+   CMS slides across three independent sliders instead: one large down
+   the left, two stacked on the right.
+
+   ADJUSTMENTS
+     left/right split ..... grid-template-columns below (2fr 1fr is what
+                          makes the heights match now the gap is 0)
+     spacing .............. gap below
+     when it drops to 1 ... the 991px query at the end of this block
+     slide timing ........ PAUSE in site-overrides.js
+   ============================================================ */
+
+#gallery_1 .mtw-gallery {
+  display: grid;
+  /* No gap at all, and exactly 2 : 1. Together those make the three tiles
+     line up by construction at any width: every CMS gallery image is
+     1901x593, so a tile's height is width / 3.206. With columns L and R
+     where L = 2R, the left tile is L/3.206 tall and the two stacked right
+     tiles total 2 * (R/3.206) = 2 * (L/2)/3.206 = L/3.206. Identical, so
+     the bottoms meet with nothing to crop and nothing to overlap.
+
+     Any other ratio reintroduces a mismatch once the gap is zero. */
+  grid-template-columns: 2fr 1fr;
+  grid-template-rows: repeat(2, auto);
+  gap: 0;
+  width: 100%;
+  align-items: start;
+}
+
+/* one large slider on the left, two stacked on the right */
+#gallery_1 .mtw-gallery-slider:nth-child(1) { grid-area: 1 / 1 / 3 / 2; }
+#gallery_1 .mtw-gallery-slider:nth-child(2) { grid-area: 1 / 2 / 2 / 3; }
+#gallery_1 .mtw-gallery-slider:nth-child(3) { grid-area: 2 / 2 / 3 / 3; }
+
+#gallery_1 .mtw-gallery-slider {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  background: #f4f4f4;
+}
+
+/* the theme forces .nivoSlider to width:100%, which would make each
+   slider full-bleed and stack them, so override it per slider */
+#gallery_1 .mtw-gallery-slider .gallery_scroller,
+#gallery_1 .mtw-gallery-slider .nivoSlider {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: auto !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+#gallery_1 .mtw-gallery-slider .nivoSlider img {
+  width: 100% !important;
+  height: auto !important;
+  display: block !important;
+}
+
+/* nivo hides the prev arrow and uses a 60px next chevron sized for the
+   old full-width slider - rein it in to suit the smaller tiles */
+#gallery_1 .mtw-gallery-slider .nivo-prevNav,
+#gallery_1 .mtw-gallery-slider .nivo-nextNav {
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  width: 26px !important;
+  height: 26px !important;
+  background: rgba(0, 0, 0, 0.35) !important;
+}
+
+#gallery_1 .mtw-gallery-slider .nivo-prevNav {
+  display: none !important;
+}
+
+#gallery_1 .mtw-gallery-slider .nivo-nextNav:before {
+  font-size: 20px !important;
+  color: #fff !important;
+}
+
+/* Drop back to a single full-width slider, one image at a time - the same
+   behaviour the theme's own mobile gallery has.
+
+   the script below does the matching half: at this width it moves every slide
+   into the one remaining slider rather than just hiding the other two, so
+   no slide becomes unreachable. MOBILE_MAX below must stay in step
+   with this 991px.
+
+   The theme hides .desktop-only below 992px in favour of #gallery_2, so in
+   practice this only bites if that is ever changed. It is here so the
+   gallery is correct on its own terms rather than leaning on the theme. */
+@media (max-width: 991px) {
+  #gallery_1 .mtw-gallery {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    gap: 0;
+  }
+
+  #gallery_1 .mtw-gallery-slider:nth-child(n) {
+    grid-area: auto;
+  }
+
+  /* only one slider exists here, but do not let a stray extra tile open a
+     gap if the JS has not run */
+  #gallery_1 .mtw-gallery.is-single .mtw-gallery-slider + .mtw-gallery-slider {
+    display: none;
+  }
+}
+
+#homepage-promotion #clearance-right {
+ width: 100% !important;
+flex: 0 0 100% !important;
+}
+
+/* ============================================================
+   FOOTER
+   ------------------------------------------------------------
+   The rules above force #footer-top to display:grid with two 1fr
+   tracks, which is why it does not respond at all: a 1fr track floors
+   at its content's min-content width, so the address column refused to
+   shrink and pushed the whole grid to 1631px. Measured, the third
+   column sat 241px off the right edge at 1440 and the address column
+   was clipped to 81% of its content - the Christchurch and Australia
+   addresses were simply not visible.
+
+   Everything here is additive: the original rules stay exactly as they
+   are and these override them from below.
+
+   ADJUSTMENTS
+     when it stacks ....... the 991px query
+     address columns ...... the 30% in .address-wrapper > div
+     menu columns ......... the 2 in the 991px query
+   ============================================================ */
+
+/* Layout: flex with wrapping, replacing the two fixed 1fr grid tracks.
+
+   The rules above force display:grid with two 1fr tracks. 1fr floors at
+   min-content, so the track could never be narrower than the longest
+   unbroken text run inside it: the address column pushed the grid to
+   1631px, the third column sat 241px off the right edge at 1440, and the
+   Christchurch and Australia addresses were clipped away entirely.
+
+   Flex-wrap does the job the grid could not. The products menu and the
+   site map keep their natural widths and share a row while there is room
+   for them - side by side, as they were - and the site map simply wraps
+   onto the next row by itself as the viewport narrows. No fixed breakpoint
+   decides that, so there is no width where they half-overlap. */
+#footer-top {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 15px !important;
+}
+
+/* logo and addresses always take a row of their own */
+#footer-top > div:nth-child(1) {
+  flex: 0 0 100% !important;
+}
+
+/* products + site map: side by side while they fit, wrap when they do not */
+#footer-top > div:nth-child(2),
+#footer-top > div:nth-child(3) {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+}
+
+#footer-top > * {
+  min-width: 0 !important;
+}
+
+/* The theme gives each address block 45% (135% of the row) and the rule
+   above forces flex-wrap: nowrap, so all three sat on one 1631px line.
+   30% each fits three across and lets them wrap if space runs out. */
+#footer #footer-top .address-wrapper {
+  flex-wrap: wrap !important;
+}
+
+#footer #footer-top .address-wrapper > div {
+  flex: 0 1 30% !important;
+  min-width: 0 !important;
+}
+
+/* the theme sets .footer-column { width: 22% } from 768px up, which fought
+   the grid tracks and left gaps */
+#footer div.footer-column {
+  width: auto !important;
+  margin-right: 0 !important;
+}
+/* #footer-subscribe and #footer-bottom are pulled out to width:100vw by
+   the theme, but their inner block carries a fixed 980/1170px width plus
+   padding, so it overhangs the viewport just above 992px */
+#footer-subscribe .inner,
+#footer-subscribe form,
+#footer-subscribe ._form-content {
+  max-width: 100% !important;
+}
+
+#footer-subscribe .inner {
+  box-sizing: border-box !important;
+}
+
+/* The six column products menu is 1141px wide. It only fits beside the site
+   map once the footer is wide enough for both, and flex-wrap handles that
+   on its own. What it cannot do is sit in a half width column, so below the
+   width where the pair genuinely fits it goes two-up in normal flow - which
+   also stops the last few categories being clipped at 1200-1279px. */
+@media (max-width: 1279px) {
+  #menu_2,
+  #menu_4 {
+    grid-auto-flow: row !important;
+    grid-template-rows: none !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    column-gap: 10px 20px !important;
+  }
+
+  #menu_4 {
+    margin-bottom: 20px !important;
+  }
+}
+
+@media (max-width: 991px) {
+  body.public_index #footer {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+
+  /* everything on its own row: the two-up menus are wide enough on their
+     own, and flex-wrap will not pair them below this anyway */
+  #footer-top > div:nth-child(2),
+  #footer-top > div:nth-child(3) {
+    flex: 0 0 100% !important;
+  }
+
+  #footer-top > div:nth-child(2) {
+    margin-right: 0 !important;
+  }
+
+  #footer-column3 {
+    margin-left: 0 !important;
+  }
+
+  /* addresses stack instead of sitting three across a narrow column */
+  #footer #footer-top .address-wrapper {
+    flex-direction: column !important;
+  }
+
+  #footer #footer-top .address-wrapper > div {
+    flex: 0 1 auto !important;
+    width: 100% !important;
+  }
+}
+
+/* ------------------------------------------------------------------
+   Desktop header sizing, 992px and up.
+
+   The search bar had no max-width, so it grew to fill whatever the logo
+   and block_12 left over: 371px at 1024, 480px from 1200. That squeezed
+   block_12 down to 258px, which forced its three rows of contact text to
+   wrap and made it 180px tall - taller than the 136px logo, so the header
+   grew to 201px and the block sat crammed in the corner.
+
+   Capping the search hands that width back to block_12, and capping
+   block_12 stops it sprawling to 631px on a wide screen. Between the two,
+   block_12 is a steady 340x132 and the header matches the logo height at
+   every width tested (992 to 1600).
+   ------------------------------------------------------------------ */
+
+@media (min-width: 992px) {
+  #header #header-inner div.search-outer {
+    max-width: 240px !important;
+  }
+
+  /* The logo is pinned to 200px by the theme, which pushed the search bar
+     right and left block_12 with whatever was left over. Dropping the logo
+     to 150px moves the search bar left and hands that width to block_12,
+     which goes from 340x132 to 390x111 - so the header row drops from
+     136px tall to 111px as well, matching the smaller logo. */
+
+  #header #header-inner #block_10 img {
+    max-width: 150px !important;
+  }
+
+  #header #header-inner > #block_10 {
+    margin-right: 30px !important;
+  }
+
+  #header #header-inner #block_12 {
+    max-width: 390px !important;
+  }
+}
+
+/* The nav dropped the cart and account links onto a second row because the
+   aside was 537px wide while its own contents only came to about 447px.
+   Tightening the gaps reclaims that, and the cart total ("$0.00") is hidden
+   below 1200 where the bar is tightest.
+
+   One row now holds at 1100-1200 and 1366+. At 992-1099 and around 1280
+   there is genuinely not enough room: the six links want ~555px and the
+   cart and account icons ~380px, which is more than those widths allow.
+   Forcing nowrap there was tried and is worse - it squeezes the six links
+   until they wrap inside the bar instead. */
+
+@media (min-width: 992px) {
+  #nav-inner #navbar .aside {
+    gap: 8px !important;
+  }
+
+  #nav-inner #navbar #menu_5 li a {
+    padding: 0 8px !important;
+  }
+
+  #nav-inner #navbar .aside .acc-btn:before {
+    margin-right: 8px !important;
+  }
+}
+
+@media (min-width: 992px) and (max-width: 1199px) {
+  #nav-inner #navbar div.cart-outer .total {
+    display: none !important;
+  }
+}
+
+/* The page inset steps down from 50px to 28px at 1024 so the nav fits on
+   one row.
+
+   All five elements that carry the 50px inset move together - header,
+   nav, content (declared twice) and footer. Stepping only the header and
+   nav would leave the body content and footer overhanging 22px further
+   left than the logo, which looks like a mistake.
+
+   28px is the largest value that holds. Measured slack on the nav bar,
+   where 0 means it is exactly full and anything less wraps to two rows:
+     40px  ->  1280 wraps
+     36px  ->  1280 fits with 1px spare, too tight to trust
+     32px  ->  1280 fits with 9px spare, still thin
+     28px  ->  1280 fits with 17px spare, 1024 with 29px
+   Below 1024 it stays at 50px, and 992 still needs two rows. */
+
+@media (min-width: 1024px) {
+  #header,
+  #nav-outer,
+  body.public_index #content,
+  body.public_index #footer {
+    padding-left: 28px !important;
+    padding-right: 28px !important;
+  }
+}
+
+/* The search bar steps up from 1024, the same way the page inset steps
+   down. It was pinned at 240px everywhere, which left 143px of dead space
+   at 1024 and over 1000px of it at 1920.
+
+     1024-1199   280px
+     1200-1439   380px
+     1440+       480px
+
+   These were 320/440/560 and have come down a step - the bar reads as
+   oversized next to a 150px logo. There is still plenty of room: the
+   ceiling before block_12 starts being squeezed is 383px at 1024,
+   559 at 1200 and 799 at 1440.
+
+   Below 1024 it stays at 240px. Verified at every boundary (1024, 1199,
+   1200, 1439, 1440, 1920): block_12 unchanged, header stays 107px, nav
+   one row, no horizontal overflow. */
+
+@media (min-width: 1024px) {
+  #header #header-inner div.search-outer {
+    max-width: 280px !important;
+  }
+}
+
+@media (min-width: 1200px) {
+  #header #header-inner div.search-outer {
+    max-width: 380px !important;
+  }
+}
+
+@media (min-width: 1440px) {
+  #header #header-inner div.search-outer {
+    max-width: 480px !important;
+  }
+}
+/* ------------------------------------------------------------------
+   block_12 sizing steps. These live at the very end of the file on
+   purpose: the desktop header sizing block above sets max-width: 390px
+   on #block_12 at min-width 992, and these have to come after it or
+   they get overridden.
+
+   Two things drive the size, and they have to move together:
+
+   1. The address paragraphs are display: flex; flex-direction: column,
+      so every child element - the ">" icon, the address link, the phone
+      span - becomes its own row. Letting them flow as normal text is
+      the bigger win of the two: at 12px that alone takes the block from
+      78px to 60px.
+
+   2. Font size alone is not enough. The block is a fixed-width box, so a
+      larger font just wraps onto more lines and the block gets TALLER -
+      13px in a 390px box measures 83px, but 13px in a 500px box
+      measures 63px. Hence each step widens the block as well as the
+      text.
+
+   Measured:
+     1024-1199   390x57   11px
+     1200-1439   440x60   12px
+     1440+       500x63   13px
+   Down from 390x87 before this, nav and search bar untouched.
+   Font size is set on the <p> alone - no child carries an explicit size,
+   so it all inherits from there.
+   ------------------------------------------------------------------ */
+
+@media (min-width: 1024px) and (max-width: 1199px) {
+  #header #header-inner #block_12 {
+    max-width: 390px !important;
+  }
+
+  #header #header-inner #block_12 p {
+    font-size: 11px !important;
+  }
+}
+
+@media (min-width: 1200px) and (max-width: 1439px) {
+  #header #header-inner #block_12 {
+    max-width: 440px !important;
+  }
+
+  #header #header-inner #block_12 p {
+    font-size: 12px !important;
+  }
+}
+
+@media (min-width: 1440px) {
+  #header #header-inner #block_12 {
+    max-width: 500px !important;
+  }
+
+  #header #header-inner #block_12 p {
+    font-size: 13px !important;
+  }
+}
+
+/* Let the address children flow as text instead of each taking its own
+   flex row. Scoped to the two address paragraphs only. */
+
+@media (min-width: 1024px) {
+  #header #header-inner #block_12 > p:nth-of-type(2),
+  #header #header-inner #block_12 > p:nth-of-type(3) {
+    display: block !important;
+  }
+}
+
+/* Stack the two addresses on their own full-width rows instead of sitting
+   them side by side.
+
+   Side by side, each column is only half the block (195px at 1024) and
+   that is not enough for "6624 Te Rapa Road, Hamilton 3200" plus the
+   phone number. So they wrapped mid-address: "Hamilton" ended line one
+   and the postcode "3200" started line two, torn away from the street it
+   belongs to. Both columns did it.
+
+   Full width, each address fits on a single line, and the block is no
+   taller - two 17px rows cost the same as one 33px row:
+
+     1024    320x57   (was 390x57 with ragged two-column text)
+     1200    340x60   (was 440x60)
+     1440    384x63   (was 500x63) */
+
+@media (min-width: 1024px) {
+  #header #header-inner #block_12 > p:nth-of-type(2) {
+    grid-column: 1 / -1 !important;
+    grid-row: 2 !important;
+  }
+
+  #header #header-inner #block_12 > p:nth-of-type(3) {
+    grid-column: 1 / -1 !important;
+    grid-row: 3 !important;
+  }
+}
+/* Separator between each address and its phone number.
+
+   Each address paragraph is two inline spans with a whitespace text node
+   between them - the address, then the phone number:
+
+     <p><span>» 6624 Te Rapa Road, Hamilton 3200</span> <span>07 850 8333</span></p>
+
+   The markup comes from the CMS, so the separator is added with a
+   pseudo-element on the phone span rather than by editing the HTML. It is
+   dimmed white so it reads as a divider and not as part of either side.
+
+   The existing whitespace node stays, which gives "3200 | 07 850 8333"
+   with correct spacing on either side of the bar. */
+
+@media (min-width: 1024px) {
+  #header #header-inner #block_12 > p:nth-of-type(2) span:nth-of-type(2)::before,
+  #header #header-inner #block_12 > p:nth-of-type(3) span:nth-of-type(2)::before {
+    content: "|";
+    color: rgba(255, 255, 255, 0.45);
+    padding: 0 6px;
+  }
+}
+/* ------------------------------------------------------------------
+   Content width and inset.
+
+   The header, nav and the media slider at the top are deliberately left
+   alone - they are full-bleed and sized independently. This is only the
+   area below the slider: #content-outer > #content > #content-inner and
+   the footer.
+
+   Two things were holding the content at a fixed 1170px. The theme sets
+   a container scale on #content-inner and several of the sections inside
+   it:
+
+     #above-header-inner, #content-inner, #footer-inner, #header-inner,
+     #nav-inner { width: 100%; max-width: 980px }
+     @media ... { ... width: 980px; max-width: none }
+     @media ... { ... width: 1170px }
+
+   We already override that for #header-inner and #nav-inner, but not for
+   #content-inner, so the body sat in a 1170px column centred inside the
+   page while the header above it ran the full width. The same 1170px
+   applied to #home-categories, #homepage-promotion, #homepage-image-
+   slider-1, #homepage-cta-hotproduct, #home-brands-inner and two footer
+   blocks, so they all had to be freed together or the inner ones would
+   stay stuck at 1170 inside a full-width parent.
+
+   The inset then steps up towards 100px on wide screens. It cannot be a
+   flat 100px lower down: at 1024 that leaves only 809px of content, and
+   the promos and carousels start to look cramped.
+   ------------------------------------------------------------------ */
+
+#content-inner,
+#home-categories,
+#homepage-promotion,
+#homepage-image-slider-1,
+#homepage-cta-hotproduct,
+#home-brands-inner,
+#footer-subscribe .inner,
+#footer-bottom #block_8 {
+  width: 100% !important;
+  max-width: none !important;
+}
+
+/* The theme puts its own responsive padding on #content-inner
+   (padding: 0 5% 10px). Inset is controlled from #content instead so
+   there is a single place setting it. */
+
+#content-inner {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* Inset steps. Selected after the 1024 group above so it wins, and given
+   the same body.public_index qualifier for the same reason. */
+
+body.public_index #content,
+body.public_index #footer {
+  padding-left: 32px !important;
+  padding-right: 32px !important;
+}
+
+@media (min-width: 1200px) and (max-width: 1439px) {
+  body.public_index #content,
+  body.public_index #footer {
+    padding-left: 56px !important;
+    padding-right: 56px !important;
+  }
+}
+
+@media (min-width: 1440px) and (max-width: 1679px) {
+  body.public_index #content,
+  body.public_index #footer {
+    padding-left: 80px !important;
+    padding-right: 80px !important;
+  }
+}
+
+@media (min-width: 1680px) {
+  body.public_index #content,
+  body.public_index #footer {
+    padding-left: 100px !important;
+    padding-right: 100px !important;
+  }
+}
+
+/* ------------------------------------------------------------------
+   Home category rows.
+
+   Both rows are the same four tiles. The CMS emits two elements with the
+   same id, and the group class is on the #home-categories element itself
+   rather than inside it, so the selector has to target the group:
+
+     div#home-categories.layout_group_14
+     div#home-categories.layout_group_52
+
+   Each row is now a grid of auto-fit tracks rather than a flex row of
+   fixed-quarter tiles:
+
+     display: grid;
+     grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+     gap: 6px;
+
+   auto-fit holds as many tiles as fit at a sensible minimum and shares
+   the leftover space between them, so tiles shrink as the page widens
+   instead of growing, and the row ends flush with the content edge
+   instead of leaving a gap at the right. It also does not care how many
+   tiles there are - four today, seven once three more blocks are added.
+
+   The 190px floor is what decides how many sit in a row: seven need
+   7 x 190 + 6 x 6 = 1366px. At a 200px floor the requirement was 1436px
+   and 1600 fell just short, wrapping to six plus an orphan.
+
+   Measured with seven tiles: 1600 -> 198px, 1920 -> 238px, 2200 -> 278px,
+   2560 -> 330px. Below 1600 the seventh tile wraps, which is expected
+   with a fixed tile count and a genuinely narrower row.
+
+   The old flex sizing (flex: 0 1 calc(25% - 6px) with justify-content:
+   space-between) is neutralised below. Capping the tiles on its own did
+   nothing visible - space-between handed the freed space straight back
+   as 115px gaps, leaving the row the same overall width and merely
+   airier.
+   ------------------------------------------------------------------ */
+
+/* Seven tiles need 7 x floor + 6 x 6 = 7 x floor + 36px to fit in one
+   row, so the floor decides how many sit across:
+
+     190px floor -> 7 need 1366px, so 1440 (1265 content) fitted only six
+                   and orphaned the seventh
+     125px floor -> 7 need 911px, which fits from 992 up
+
+   Below 992 the floor stays at 150px, giving two across on a phone
+   rather than the one-wide column a 125px floor would give. */
+
+/* Explicit column counts rather than a minmax floor.
+
+   auto-fit worked out the column count from the floor and the container
+   width, which is how 7 fitted at every desktop width - handy, but not
+   predictable, and it drifted with the viewport rather than stepping.
+
+   Fixed counts per range instead, matched to the tile counts below:
+     1600+   7 across
+     1200-1599  6
+     992-1199   5
+     768-991    4
+     below 768  2
+
+   At 1600 and above all seven tiles fit one row at 137px or better.
+   Below that the row is trimmed rather than wrapped, so these counts
+   and the hide rules further down are two halves of the same decision
+   - if one changes the other has to change with it. */
+
+.layout_group_14,
+.layout_group_52 {
+  display: grid !important;
+  gap: 6px !important;
+  justify-content: normal !important;
+  justify-items: stretch !important;
+}
+
+@media (min-width: 1600px) {
+  .layout_group_14,
+  .layout_group_52 {
+    grid-template-columns: repeat(7, 1fr) !important;
+  }
+}
+
+@media (min-width: 1200px) and (max-width: 1599px) {
+  .layout_group_14,
+  .layout_group_52 {
+    grid-template-columns: repeat(6, 1fr) !important;
+  }
+}
+
+@media (min-width: 992px) and (max-width: 1199px) {
+  .layout_group_14,
+  .layout_group_52 {
+    grid-template-columns: repeat(5, 1fr) !important;
+  }
+}
+
+/* Four from 700 rather than 768: at 767 three columns gave 221px tiles
+   and a 1073px block, which is nearly as bad as the five rows it was
+   meant to avoid. */
+@media (min-width: 700px) and (max-width: 991px) {
+  .layout_group_14,
+  .layout_group_52 {
+    grid-template-columns: repeat(4, 1fr) !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .layout_group_14,
+  .layout_group_52 {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* Show fewer tiles as the screen narrows, rather than letting the last
+   one wrap onto its own row.
+
+   There are two rows, .layout_group_14 and .layout_group_52, identical
+   in shape. Each holds seven tiles: four from the CMS plus three
+   injected by site-overrides.js. Above the break point all seven sit in one
+   row. Below it the row is trimmed from the tail so it still fits a
+   single row of the width available:
+
+     1600+        7 tiles, 7 columns
+     1200-1599    6 tiles, 6 columns
+     992-1199     5 tiles, 5 columns
+     768-991      4 tiles, 4 columns
+     below 768    4 tiles, 2 columns (two rows, narrow phones)
+
+   Hiding by position rather than by the .mtw-cat-placeholder class on
+   purpose: the placeholders only ever existed because the CMS row was
+   short, and there are none now. Hiding by position keeps the count
+   stable now that the tiles are real content.
+
+   Only ever hides from the tail, so no earlier tile shifts position when
+   the count changes. */
+
+@media (min-width: 1200px) and (max-width: 1599px) {
+  .layout_group_14 > :nth-child(n+7),
+  .layout_group_52 > :nth-child(n+7) {
+    display: none !important;
+  }
+}
+
+@media (min-width: 992px) and (max-width: 1199px) {
+  .layout_group_14 > :nth-child(n+6),
+  .layout_group_52 > :nth-child(n+6) {
+    display: none !important;
+  }
+}
+
+@media (max-width: 991px) {
+  .layout_group_14 > :nth-child(n+5),
+  .layout_group_52 > :nth-child(n+5) {
+    display: none !important;
+  }
+}
+
+.layout_group_14 > *,
+.layout_group_52 > * {
+  flex: none !important;
+  max-width: none !important;
+  width: auto !important;
+  /* The theme gives these blocks margin: 3px 0. The grid gap handles
+     spacing now, and leaving it in made the tiles sit 3px lower than
+     anything else in the row. */
+  margin: 0 !important;
+}
+
+/* Placeholder styling for the three extra category tiles in each row.
+   Delete along with the categoryPlaceholders block in site-overrides.js. */
+
+.mtw-cat-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  aspect-ratio: 1 / 1;
+  background: #f4f6f4;
+  border: 2px dashed #9fb98f;
+  border-radius: 3px;
+  color: #6d8a5c;
+  font-family: REM, sans-serif;
+  text-align: center;
+}
+
+.mtw-cat-placeholder__n {
+  font-size: 15px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mtw-cat-placeholder__t {
+  font-size: 12px;
+}
+/* ------------------------------------------------------------------
+   1. One shared inset.
+
+   The theme breaks #home-brands out to the full viewport:
+
+     @media (min-width: 992px){
+       body.public_index #content #body #home-brands {
+         position: relative; width: 100vw; left: calc(-50vw + 50%);
+       }
+     }
+
+   So it measured 1920 while every sibling sat at 1705, and the brands
+   block was the one thing on the page not lined up with the content
+   padding. Reverting the full-bleed escape puts it back on the same
+   inset as the rest.
+
+   2. Homepage image slider capped at its natural size.
+
+   The single image in #homepage-image-slider-1 is 1170x365 natively but
+   was being stretched to 1705x532 at 1920 - a 46% upscale, which is why it
+   read as oversized and soft. Capped at 1170 and centred so it renders at
+   1:1 on anything wider than that.
+   ------------------------------------------------------------------ */
+
+@media (min-width: 992px) {
+  body.public_index #content #body #home-brands,
+  body.public_index #homepage-aboutus,
+  body.public_index #home-about {
+    position: static !important;
+    width: 100% !important;
+    left: auto !important;
+    max-width: 100% !important;
+  }
+
+  #home-brands-inner {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  #homepage-image-slider-1 {
+    max-width: 1170px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+  }
+
+  #homepage-image-slider-1 img {
+    max-width: 1170px !important;
+    height: auto !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    display: block !important;
+  }
+}
+/* ------------------------------------------------------------------
+   Brand marquee.
+
+   #home-brands-inner was a static grid: 136 brand logos at 382px each,
+   floated, filling a 987px tall block. It is now a single row of 150px
+   logos scrolling right to left, forever.
+
+   The row is built by duplicating the list once and animating the whole
+   strip by exactly the width of one copy, then wrapping back to zero.
+   Because both halves are identical the jump is invisible, so the loop
+   has no end stop and no visible seam.
+
+   Motion pauses on hover and is skipped entirely for anyone who has
+   asked for reduced motion, since an endless moving strip is the kind of
+   thing that needs to be stoppable.
+
+   The former "View All" button becomes the row heading: it sits above the
+   marquee, reads "Our Brands", still links to the full brand list, and
+   grows a little to the right on hover. The h2/h3 headings are hidden so
+   "Our Brands" is not said twice.
+   ------------------------------------------------------------------ */
+
+@media (min-width: 992px) {
+  #home-brands-inner h2,
+  #home-brands-inner h3 {
+    display: none !important;
+  }
+
+  /* The CMS emits the button last in the markup, so it rendered after the
+     list. Stacked above the logos it landed directly on top of the first
+     one, which read as an accident - so it is a left column instead, with
+     the carousel running to its right. Nothing moves in the template. */
+  #home-brands-inner {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 28px !important;
+  }
+
+  #home-brands-inner a.mtw-brands-btn {
+    order: -1 !important;
+    flex: 0 0 auto !important;
+    /* the theme's .btn carries margin-top: 30px, which pushed the button
+       30px below the carousel's centre line */
+    margin: 0 !important;
+    /* Two stacked words, centred. Height is 70px: 38px read as a stray
+       button, and matching the 124px logo height was far too much - a
+       block as tall as the logos beside it. */
+    display: inline-flex !important;
+    flex-direction: column !important;
+    /* words left aligned in the block, block itself still vertically
+       centred against the carousel */
+    align-items: flex-start !important;
+    justify-content: center !important;
+    min-height: 70px !important;
+    width: 150px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-align: left !important;
+    transition: width 0.25s ease, background-color 0.25s ease;
+  }
+
+  #home-brands-inner a.mtw-brands-btn .mtw-brands-btn__w {
+    display: block;
+    line-height: 1.2;
+  }
+
+  #home-brands-inner a.mtw-brands-btn:hover,
+  #home-brands-inner a.mtw-brands-btn:focus-visible {
+    width: 190px;
+  }
+
+  #home-brands-inner .mtw-marquee {
+    display: block;
+    flex: 1 1 auto !important;
+    min-width: 0;
+    width: auto !important;
+    overflow: hidden;
+  }
+
+  #home-brands-inner .mtw-marquee:hover ul.mtw-marquee__track {
+    animation-play-state: paused;
+  }
+
+  #home-brands-inner ul.mtw-marquee__track {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: 24px;
+    margin: 0 !important;
+    padding: 0 !important;
+    list-style: none;
+    width: max-content;
+    will-change: transform;
+  }
+
+  /* 124px logos rather than 150px, with the extra room taken up as
+     padding around the strip - the row ends up taller than it was at
+     150px tiles, but the logos themselves are smaller. */
+  #home-brands-inner {
+    padding-top: 50px !important;
+    padding-bottom: 50px !important;
+  }
+
+  #home-brands-inner ul.mtw-marquee__track > li {
+    flex: 0 0 124px !important;
+    float: none !important;
+    width: 124px !important;
+    margin: 0 !important;
+    text-align: center;
+  }
+
+  #home-brands-inner ul.mtw-marquee__track > li > div.details {
+    padding: 0 !important;
+  }
+
+  /* Each tile is just the logo. The theme puts a caption and a VIEW button
+     on every brand tile; on a strip that scrolls they are noise, and they
+     were also what made the tiles 317px tall instead of square. */
+
+  #home-brands-inner ul.mtw-marquee__track > li div.name,
+  #home-brands-inner ul.mtw-marquee__track > li div.button-outer,
+  #home-brands-inner ul.mtw-marquee__track > li div.product-actions,
+  #home-brands-inner ul.mtw-marquee__track > li div.actions {
+    display: none !important;
+  }
+
+  /* The grey band behind the block (#home-brands is rgb(237,237,237)) read
+     as a stray panel. The page is already white, so it goes. */
+
+  #home-brands {
+    background: transparent !important;
+  }
+
+  #home-brands-inner ul.mtw-marquee__track > li div.photo {
+    width: 100% !important;
+  }
+
+  #home-brands-inner ul.mtw-marquee__track > li img {
+    width: 100% !important;
+    height: auto !important;
+    max-width: 100% !important;
+  }
+}
+
+@media (max-width: 991px) {
+  /* The static list is left alone on mobile, where a moving strip is
+     more nuisance than it is worth. */
+  #home-brands-inner a.mtw-brands-btn {
+    margin-bottom: 16px;
+  }
+}
+/* ------------------------------------------------------------------
+   Brands on narrow screens.
+
+   Everything above sits inside min-width: 992px, so below that the
+   theme got its own way back and the block was 3781px tall at 390px:
+   ten full-width tiles stacked one under another, every one carrying
+   its caption and a VIEW button, on the grey band, with "Our Brands"
+   printed twice - once by the h2 and once by the button.
+
+   Below 992 the strip becomes a plain grid instead of scrolling, which
+   is what site-overrides.js sets up: it only clones the logos for the second
+   run when the screen is wide enough to scroll, so here there are ten
+   tiles and no duplicates.
+
+   The tile is just the logo here too, for the same reason as on the
+   strip - the caption and the VIEW button are per-tile furniture that
+   only makes sense when a tile is a destination of its own.
+
+   The h2 goes and the button keeps the words, matching the desktop
+   arrangement where the button is the heading. Two columns on a
+   phone, three from 480, four from 768.
+   ------------------------------------------------------------------ */
+
+@media (max-width: 991px) {
+  #home-brands {
+    background: transparent !important;
+  }
+
+  #home-brands-inner h2,
+  #home-brands-inner h3 {
+    display: none !important;
+  }
+
+  #home-brands-inner {
+    padding: 24px 0 !important;
+    text-align: left !important;
+  }
+
+  /* Full width here, and on one line: there is room for it on a narrow
+     screen, and the stacked pair from the desktop rule is only there
+     because it has to fit in a 150px button beside the logos. */
+  #home-brands-inner a.mtw-brands-btn {
+    display: block !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    margin: 0 0 16px !important;
+    padding: 10px 12px !important;
+    text-align: center !important;
+    white-space: normal !important;
+  }
+
+  #home-brands-inner a.mtw-brands-btn .mtw-brands-btn__w {
+    display: inline;
+  }
+
+  /* overflow: visible, not hidden. The desktop rule clips the strip to
+     its window; a grid that is clipped would cut the last row off. */
+  #home-brands-inner .mtw-marquee {
+    display: block !important;
+    overflow: visible !important;
+  }
+
+  #home-brands-inner ul.mtw-marquee__track {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 12px !important;
+    width: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    list-style: none;
+    will-change: auto;
+  }
+
+  #home-brands-inner ul.mtw-marquee__track > li {
+    float: none !important;
+    width: auto !important;
+    margin: 0 !important;
+    min-height: 0 !important;
+    background: transparent !important;
+    text-align: center;
+  }
+
+  #home-brands-inner ul.mtw-marquee__track > li > div.details {
+    padding: 0 !important;
+  }
+
+  #home-brands-inner ul.mtw-marquee__track > li div.name,
+  #home-brands-inner ul.mtw-marquee__track > li div.button-outer,
+  #home-brands-inner ul.mtw-marquee__track > li div.product-actions,
+  #home-brands-inner ul.mtw-marquee__track > li div.actions {
+    display: none !important;
+  }
+
+  #home-brands-inner ul.mtw-marquee__track > li div.photo {
+    width: 100% !important;
+    margin: 0 !important;
+  }
+
+  #home-brands-inner ul.mtw-marquee__track > li img {
+    display: block;
+    width: 100% !important;
+    height: auto !important;
+    max-width: 100% !important;
+    margin: 0 auto;
+  }
+}
+
+/* Column count follows the rows it saves. Ten logos in two columns is
+   five rows, which left the block 948px tall on a 390px phone; three
+   columns makes it four rows with the logos still 112px wide, which is
+   enough for a wordmark. Below 360 the third column would drop under
+   100px and the marks started to lose their detail, so two holds. */
+@media (min-width: 360px) and (max-width: 991px) {
+  #home-brands-inner ul.mtw-marquee__track {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+}
+
+
+@media (min-width: 768px) and (max-width: 991px) {
+  #home-brands-inner ul.mtw-marquee__track {
+    grid-template-columns: repeat(4, 1fr) !important;
+  }
+}
+/* ------------------------------------------------------------------
+   Restore the Clearance Products grid.
+
+   This rule was added in f5bd421 and then silently deleted by 482c7e1.
+   That commit rewrote the category grid by replacing everything between
+   the min-width: 992px block and the max-width: 991px block, and this
+   rule had been inserted in between, so it went with them. The Clearance
+   Products list fell back to the theme 325px flow - five across and two
+   rows at 1920, a 1002px block - which is what it went back to looking
+   like.
+
+   Worth being clear which list is which, because the two are easy to
+   confuse and the item counts tuned in site-overrides.js belong to the other
+   one:
+
+     div.clearance-products > ul.products.clearance   "Clearance Products"
+       10 products, this grid
+     #clearance-right > ul.products.hot             "Hot Products"
+       the Owl carousel, 171px each at 1920
+
+   Ten tiles need 10 x floor + 9 x 6 = 10 x floor + 54, so a 160px floor
+   puts all ten in one row at 1920 and drops to five across at 1024.
+   ------------------------------------------------------------------ */
+
+@media (min-width: 992px) {
+  .clearance-products ul.products.clearance {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) !important;
+    gap: 6px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    list-style: none;
+    text-align: left !important;
+  }
+
+  .clearance-products ul.products.clearance > li {
+    float: none !important;
+    width: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+  }
+
+  .clearance-products ul.products.clearance > li > div.details {
+    padding: 0 !important;
+  }
+}
+
+/* The same grid below 992, which had no rule at all and so kept the
+   theme flow: two 139px cards a row but 340px tall each, giving a
+   1644px block on a 390px phone. Cards that size are inherent - image,
+   name, price, ADD TO CART - so the height stays, but they are in two
+   even columns with a gap rather than a ragged flow. */
+@media (max-width: 991px) {
+  .clearance-products ul.products.clearance {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 6px !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    list-style: none;
+    text-align: left !important;
+  }
+
+  .clearance-products ul.products.clearance > li {
+    float: none !important;
+    width: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+  }
+
+  .clearance-products ul.products.clearance > li > div.details {
+    padding: 0 !important;
+  }
+}
+
+@media (min-width: 600px) and (max-width: 991px) {
+  .clearance-products ul.products.clearance {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+}
+
+@media (min-width: 820px) and (max-width: 991px) {
+  .clearance-products ul.products.clearance {
+    grid-template-columns: repeat(4, 1fr) !important;
+  }
+}
+
+/* ------------------------------------------------------------------
+   Space around the category block.
+
+   There are two rows here, .layout_group_14 and .layout_group_52, and the
+   gap between them has to match the 6px grid gap inside a row - otherwise
+   the two rows read as two separate blocks with a 36px trench between
+   them, which is what this was doing when both groups carried the 36px.
+
+   So the margin goes on the first row only where it separates rows, and
+   on the second row where it separates the block from the image slider
+   below - that one was measured at 0px before this rule existed, so the
+   two blocks ran together.
+
+     row 1 to row 2   6px, same as between two cards
+     row 2 to slider  36px (24px below 768)
+   ------------------------------------------------------------------ */
+
+.layout_group_14 {
+  margin-bottom: 6px !important;
+}
+
+.layout_group_52 {
+  margin-bottom: 36px !important;
+}
+
+@media (max-width: 767px) {
+  .layout_group_52 {
+    margin-bottom: 24px !important;
+  }
+}
+/* ------------------------------------------------------------------
+   Hover on the injected category tiles.
+
+   The theme hovers these tiles with a dark overlay rather than a lift or
+   a scale. From modtransnz/css/main.css:
+
+     #home-categories [id*=block_]:before {
+       content:""; background:#000; opacity:.1;
+       position:absolute; inset:0; z-index:1;
+       border-right:1px solid #000; transition:all .2s ease-out;
+     }
+     :first-child:before      { opacity:.55 }
+     :nth-child(2):before     { opacity:.4 }
+     :nth-child(3):before     { opacity:.2 }
+     :hover:before            { opacity:.65;
+                                box-shadow:0 5px 10px 0 rgba(0,0,0,.9) }
+
+   The hook is an id attribute selector, and the tiles site-overrides.js injects
+   are <div class="mtw-cat-tile"> with no id, so they matched nothing:
+   no overlay at rest and no hover at all. The four CMS tiles in each row
+   kept the theme behaviour, so each row ramped from 55% black on the
+   first tile to untreated on the last three and only the left half
+   responded to the pointer.
+
+   Values copied verbatim from the theme rule so the two sets of tiles
+   behave identically. The positional steps are repeated even though the
+   injected tiles currently sit at positions 5-7 and so never match them
+   - if one is ever moved up they need to darken like their neighbours
+   rather than stay flat.
+
+   position: relative is load-bearing and not optional. Without it the
+   absolutely positioned overlay resolves against #home-categories, which
+   the theme also sets to position: relative, so the black would cover
+   the entire row instead of one tile.
+
+   Deliberately no !important on this rule. The trim further up the file
+   hides the tail of each row with display: none !important, and an
+   !important display: flex here would beat it purely by being later in
+   the file - which is what it did, leaving all seven tiles visible at
+   every width. The theme rule this copies also carries no !important,
+   for the same reason.
+
+   The <p> inside each tile already picks up z-index: 2 and
+   position: relative from the theme's own #home-categories p rule, so
+   the artwork sits above the overlay and does not need restating here.
+   ------------------------------------------------------------------ */
+
+.layout_group_14 > .mtw-cat-tile,
+.layout_group_52 > .mtw-cat-tile {
+  position: relative;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 0;
+}
+
+.layout_group_14 > .mtw-cat-tile::before,
+.layout_group_52 > .mtw-cat-tile::before {
+  content: "";
+  background: #000;
+  opacity: 0.1;
+  width: 100%;
+  height: 100%;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  position: absolute;
+  z-index: 1;
+  border-right: 1px solid #000;
+  transition: all 0.2s ease-out;
+}
+
+.layout_group_14 > .mtw-cat-tile:first-child::before,
+.layout_group_52 > .mtw-cat-tile:first-child::before {
+  opacity: 0.55;
+}
+
+.layout_group_14 > .mtw-cat-tile:nth-child(2)::before,
+.layout_group_52 > .mtw-cat-tile:nth-child(2)::before {
+  opacity: 0.4;
+}
+
+.layout_group_14 > .mtw-cat-tile:nth-child(3)::before,
+.layout_group_52 > .mtw-cat-tile:nth-child(3)::before {
+  opacity: 0.2;
+}
+
+.layout_group_14 > .mtw-cat-tile:hover::before,
+.layout_group_52 > .mtw-cat-tile:hover::before {
+  opacity: 0.65;
+  -webkit-box-shadow: 0 5px 10px 0 rgba(0, 0, 0, 0.9);
+  box-shadow: 0 5px 10px 0 rgba(0, 0, 0, 0.9);
+}
