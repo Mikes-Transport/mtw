@@ -436,16 +436,9 @@
     if (publisherEndpoint.protocol !== 'https:') {
       throw new Error('The Cloudflare Worker must use HTTPS.');
     }
-    const auth = MTW.auth;
-    const user = auth && auth.currentUser;
-    if (!user || typeof user.getIdToken !== 'function') {
-      throw new Error('Firebase sign-in is unavailable. Sign in again or contact the dashboard administrator.');
-    }
-    const token = await user.getIdToken();
     const response = await fetch(publisherEndpoint.href, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({ id: config.id, config })
