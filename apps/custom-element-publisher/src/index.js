@@ -1,8 +1,5 @@
 const encoder = new TextEncoder();
-let signingKeys;
 
-const FIREBASE_KEYS_URL =
-  'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
 const SPIN_WHEEL_URL =
   'https://raw.githack.com/Mikes-Transport/mtw/main/apps/website/checkout/checkout-spinwheel.js';
 
@@ -27,20 +24,11 @@ export default {
     if (!/^application\/json(?:\s*;|$)/i.test(request.headers.get('Content-Type') || '')) {
       return jsonResponse({ error: 'Content-Type must be application/json.' }, 415, headers);
     }
-    if (!env.FIREBASE_PROJECT_ID || !env.ALLOWED_FIREBASE_UIDS) {
-      return jsonResponse({ error: 'Publisher authentication is not configured.' }, 503, headers);
-    }
     if (!env.GITHUB_OWNER || !env.GITHUB_REPO || !env.GITHUB_BRANCH || !env.GITHUB_TOKEN) {
       return jsonResponse({ error: 'GitHub publishing is not configured.' }, 503, headers);
     }
 
     try {
-      const uid = await authenticateFirebaseUser(request, env);
-      const allowedUids = env.ALLOWED_FIREBASE_UIDS.split(',').map(value => value.trim()).filter(Boolean);
-      if (!allowedUids.includes(uid)) {
-        return jsonResponse({ error: 'This Firebase user is not allowed to publish.' }, 403, headers);
-      }
-
       const contentLength = Number(request.headers.get('Content-Length') || 0);
       if (contentLength > 32768) {
         return jsonResponse({ error: 'The element configuration is too large.' }, 413, headers);
@@ -89,7 +77,7 @@ function corsHeaders(origin, allowedOrigin) {
   if (origin && origin === allowedOrigin) {
     headers['Access-Control-Allow-Origin'] = origin;
     headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS';
-    headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type';
+    headers['Access-Control-Allow-Headers'] = 'Content-Type';
     headers['Access-Control-Max-Age'] = '600';
   }
   return headers;
@@ -101,122 +89,6 @@ function isAllowedOrigin(origin, allowedOrigin) {
 
 function jsonResponse(body, status, headers) {
   return new Response(JSON.stringify(body), { status, headers });
-}
-
-async function authenticateFirebaseUser(request, env) {
-  const authorization = request.headers.get('Authorization') || '';
-  const match = authorization.match(/^Bearer\s+([A-Za-z0-9._-]+)$/);
-  if (!match) {
-    throw httpError(401, 'Sign in again before publishing.');
-  }
-
-  const tokenParts = match[1].split('.');
-  if (tokenParts.length !== 3) {
-    throw httpError(401, 'The Firebase sign-in token is invalid.');
-  }
-
-  const header = decodeJsonPart(tokenParts[0]);
-  const claims = decodeJsonPart(tokenParts[1]);
-  if (!header || header.alg !== 'RS256' || typeof header.kid !== 'string' || !claims) {
-    throw httpError(401, 'The Firebase sign-in token is invalid.');
-  }
-
-  const now = Math.floor(Date.now() / 1000);
-  const projectId = env.FIREBASE_PROJECT_ID;
-  if (
-    claims.aud !== projectId ||
-    claims.iss !== `https://securetoken.google.com/${projectId}` ||
-    typeof claims.sub !== 'string' ||
-    !claims.sub ||
-    !Number.isFinite(claims.exp) ||
-    claims.exp <= now ||
-    !Number.isFinite(claims.iat) ||
-    claims.iat > now + 60
-  ) {
-    throw httpError(401, 'The Firebase sign-in token has expired or is not valid for this project.');
-  }
-
-  const key = await getFirebaseSigningKey(header.kid);
-  if (!key) {
-    throw httpError(401, 'The Firebase sign-in token could not be verified.');
-  }
-
-  let signature;
-  try {
-    signature = decodeBase64Url(tokenParts[2]);
-  } catch {
-    throw httpError(401, 'The Firebase sign-in token is invalid.');
-  }
-  const signedContent = encoder.encode(`${tokenParts[0]}.${tokenParts[1]}`);
-  const verified = await crypto.subtle.verify(
-    { name: 'RSASSA-PKCS1-v1_5' },
-    key,
-    signature,
-    signedContent
-  );
-  if (!verified) {
-    throw httpError(401, 'The Firebase sign-in token could not be verified.');
-  }
-
-  return claims.sub;
-}
-
-async function getFirebaseSigningKey(kid) {
-  if (!signingKeys) {
-    signingKeys = fetch(FIREBASE_KEYS_URL, {
-      cf: { cacheTtl: 3600, cacheEverything: true }
-    }).then(async response => {
-      if (!response.ok) throw new Error(`Firebase signing keys request failed: ${response.status}`);
-      const body = await response.json();
-      return new Map((body.keys || []).filter(key => key.kid).map(key => [key.kid, key]));
-    }).catch(error => {
-      signingKeys = null;
-      throw error;
-    });
-  }
-
-  let keys = await signingKeys;
-  if (!keys.has(kid)) {
-    signingKeys = null;
-    keys = await getFirebaseSigningKeySet();
-  }
-  const jwk = keys.get(kid);
-  return jwk
-    ? crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify'])
-    : null;
-}
-
-async function getFirebaseSigningKeySet() {
-  signingKeys = fetch(FIREBASE_KEYS_URL, {
-    cf: { cacheTtl: 0, cacheEverything: true }
-  }).then(async response => {
-    if (!response.ok) throw new Error(`Firebase signing keys refresh failed: ${response.status}`);
-    const body = await response.json();
-    return new Map((body.keys || []).filter(key => key.kid).map(key => [key.kid, key]));
-  }).catch(error => {
-    signingKeys = null;
-    throw error;
-  });
-  return signingKeys;
-}
-
-function decodeJsonPart(part) {
-  try {
-    return JSON.parse(new TextDecoder().decode(decodeBase64Url(part)));
-  } catch {
-    return null;
-  }
-}
-
-function decodeBase64Url(value) {
-  const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
-  const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
-  const binary = atob(padded);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index++) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
 }
 
 function validateConfig(value) {
