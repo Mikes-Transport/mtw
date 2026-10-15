@@ -1,10 +1,9 @@
-name = "mtw-custom-element-publisher"
+name = "mtw"
 main = "src/index.js"
-compatibility_date = "2026-10-16"
-workers_dev = true
+compatibility_date = "2026-10-15"
 
 [vars]
 GITHUB_OWNER = "Mikes-Transport"
 GITHUB_REPO = "mtw"
 GITHUB_BRANCH = "main"
-DASHBOARD_ORIGIN = "https://mtw-lookup-2026-a7736f25cfb90c5d879c674.webflow.io/dashboard"
+DASHBOARD_ORIGIN = "https://mtw-lookup-2026-a7736f25cfb90c5d879c674.webflow.io"
