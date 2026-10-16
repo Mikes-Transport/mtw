@@ -884,9 +884,6 @@
     const firstCard = document.querySelector('.db-list-toolcard');
     if (!wrapper || !firstCard || !firstCard.parentElement) return false;
 
-    const role = sessionStorage.getItem('mtw_admin_name');
-    if (sessionStorage.getItem('mtw_admin_logged_in') !== 'true' || !['Admin', 'Developer'].includes(role)) return true;
-
     panel = document.querySelector('.custom-web-element-panel');
     if (!panel) {
       panel = document.createElement('section');
