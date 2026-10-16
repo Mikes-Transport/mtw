@@ -4,10 +4,6 @@
   const TOOL_ID = 'custom-web-element';
   const COLLECTION = 'custom-web-elements';
   const WHEEL_TEMPLATE = 'checkout-spin-wheel';
-  const MENU_TEMPLATE = 'dashboard-menu-item';
-  const MENU_REGISTRY_PATH = 'apps/dashboard/js/custom-elements/generated-admin-menus.js';
-  const DASHBOARD_ROLES = ['Counter', 'Stores', 'KeyAccounts', 'Admin', 'Developer'];
-  const MENU_REGISTRY_URL = `https://raw.githack.com/Mikes-Transport/mtw/main/${MENU_REGISTRY_PATH}`;
   const SPIN_WHEEL_URL = 'https://raw.githack.com/Mikes-Transport/mtw/main/apps/website/checkout/checkout-spinwheel.js';
   const ELEMENTS_PATH = 'apps/website/custom-elements';
   const MTW = window.MTW || {};
@@ -142,9 +138,6 @@
       .cwe-toggle input{margin-top:2px}
       .cwe-role-options{display:flex;flex-wrap:wrap;gap:7px}
       .cwe-role-options label{display:flex;align-items:center;gap:6px;padding:7px 9px;border:1px solid #e5e7eb;border-radius:7px;background:#f8f8f8;font-size:12px}
-      .cwe-menu-card-preview{width:min(280px,100%);margin:18px auto;padding:18px;border-radius:10px;background:#20262e;color:#fff;text-align:left}
-      .cwe-menu-card-preview strong{display:block;font-size:15px}
-      .cwe-menu-panel-preview{min-height:90px;margin-top:12px;padding:12px;border:1px dashed #c7cbd1;border-radius:8px;background:#fff;color:#555;font-size:12px}
       .cwe-small{font-size:11px;color:#666}
       .cwe-saved{display:flex;gap:8px;align-items:center}
       .cwe-saved .cwe-select{flex:1}
@@ -170,7 +163,7 @@
               <summary>Element setup</summary>
               <div class="cwe-section-scroll">
                 <div class="cwe-row">
-                  <div class="cwe-field"><label for="cwe-template">Template</label><select class="cwe-select" id="cwe-template"><option value="" selected>Choose a template</option><option value="${WHEEL_TEMPLATE}">Checkout spin wheel</option><option value="${MENU_TEMPLATE}">Dashboard menu item</option></select></div>
+                  <div class="cwe-field"><label for="cwe-template">Template</label><select class="cwe-select" id="cwe-template"><option value="" selected>Choose a template</option><option value="${WHEEL_TEMPLATE}">Checkout spin wheel</option></select></div>
                   <div class="cwe-field cwe-wheel-only"><label for="cwe-name">Element name</label><input class="cwe-input" id="cwe-name" maxlength="60" value="My checkout wheel"></div>
                 </div>
               </div>
@@ -217,34 +210,6 @@
               <div class="cwe-section-scroll">
                 <div class="cwe-prizes" id="cwe-prizes"></div>
                 <button class="cwe-btn" type="button" id="cwe-add-prize">Add prize</button>
-              </div>
-            </details>
-            <details class="cwe-section cwe-template-section" data-template="${MENU_TEMPLATE}">
-              <summary>Menu item and access</summary>
-              <div class="cwe-section-scroll">
-                <div class="cwe-field">
-                  <label for="cwe-menu-title">Menu title</label>
-                  <input class="cwe-input" id="cwe-menu-title" maxlength="60" placeholder="New menu item">
-                </div>
-                <div class="cwe-small" id="cwe-menu-slug">Menu key: enter a title</div>
-                <div class="cwe-field" style="margin-top:14px">
-                  <span class="cwe-label">Who can use this menu item?</span>
-                  <div class="cwe-role-options">
-                    ${DASHBOARD_ROLES.map(role => `<label><input type="checkbox" name="cwe-menu-role" value="${role}"><span>${role}</span></label>`).join('')}
-                  </div>
-                </div>
-                <p class="cwe-small">The menu card uses this key as its <code>data-select</code>; the panel uses the key plus <code>-panel</code>.</p>
-              </div>
-            </details>
-            <details class="cwe-section cwe-template-section" data-template="${MENU_TEMPLATE}">
-              <summary>Panel starter</summary>
-              <div class="cwe-section-scroll">
-                <p class="cwe-small">Start with a blank dashboard panel. Additional panel templates can be added here later.</p>
-                <label class="cwe-field"><span class="cwe-label">Starting point</span>
-                  <select class="cwe-select" id="cwe-menu-panel-template">
-                    <option value="blank" selected>Blank panel</option>
-                  </select>
-                </label>
               </div>
             </details>
             <details class="cwe-section">
@@ -367,18 +332,6 @@
       field('cwe-preview').innerHTML = '<div class="cwe-small">Choose a template to preview it.</div>';
       return;
     }
-    if (templateId === MENU_TEMPLATE) {
-      const title = field('cwe-menu-title').value.trim() || 'New menu item';
-      const slug = menuSlug(title) || 'new-menu-item';
-      const roles = selectedMenuRoles();
-      field('cwe-preview-label').textContent = 'Dashboard menu preview';
-      field('cwe-preview').style.background = '#f3f4f6';
-      field('cwe-preview').innerHTML = `
-        <div class="cwe-menu-card-preview"><strong>${esc(title)}</strong><span class="cwe-small" style="color:#d1d5db">data-select="${esc(slug)}"</span></div>
-        <div class="cwe-menu-panel-preview"><strong>${esc(title)} panel</strong><br>Panel class: <code>${esc(slug)}-panel</code><br>Available to: ${esc(roles.join(', ') || 'select at least one role')}</div>
-      `;
-      return;
-    }
     field('cwe-preview-label').textContent = 'Checkout Preview';
     settings = readSettings();
     const prizes = settings.prizes.length ? settings.prizes : cloneDefaults(WHEEL_TEMPLATE).prizes.slice(0, 1);
@@ -443,22 +396,11 @@
     });
     field('cwe-save').disabled = !templateId;
     field('cwe-new').disabled = !templateId;
-    field('cwe-deploy-help').textContent = templateId === MENU_TEMPLATE
-      ? 'Saving publishes the menu item to the generated dashboard registry. The dashboard navigation loads that registry and creates the menu card and blank panel.'
-      : 'After the Cloudflare Worker is configured, saving will publish this file automatically. Until then, download it and upload it to GitHub manually. Then add the generated embed code to the checkout page.';
+    field('cwe-deploy-help').textContent =
+      'After the Cloudflare Worker is configured, saving will publish this file automatically. Until then, download it and upload it to GitHub manually. Then add the generated embed code to the checkout page.';
   }
 
   function validate() {
-    if (field('cwe-template').value === MENU_TEMPLATE) {
-      const title = field('cwe-menu-title').value.trim();
-      const slug = menuSlug(title);
-      if (!title) return 'Enter a title for the dashboard menu item.';
-      if (!slug || slug.length > 60) return 'Use a title that produces a menu key of 60 characters or fewer.';
-      if (RESERVED_MENU_IDS.has(slug)) return 'That menu key is already used by a built-in dashboard tool.';
-      if (activeId && slug !== activeId) return 'Changing the title changes the menu key. Use “New from template” to create it as a separate menu item.';
-      if (!selectedMenuRoles().length) return 'Choose at least one role for this menu item.';
-      return '';
-    }
     const total = settings.prizes.reduce((sum, prize) => sum + prize.chance, 0);
     if (!field('cwe-name').value.trim()) return 'Give this element a name.';
     if (settings.prizes.length < 2) return 'Add at least two prize slices.';
@@ -474,38 +416,6 @@
       id: activeId,
       version: 1,
       ...settings
-    };
-  }
-
-  const RESERVED_MENU_IDS = new Set([
-    'activity-logs', 'secondhand-tool', 'product-info', 'csv-config',
-    'mte-config', 'promotion-label', 'barcodes', 'model-tool-access',
-    TOOL_ID, 'exit-btn'
-  ]);
-
-  function menuSlug(title) {
-    return String(title || '')
-      .normalize('NFKD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-  }
-
-  function selectedMenuRoles() {
-    return Array.from(panel.querySelectorAll('input[name="cwe-menu-role"]:checked'))
-      .map(input => input.value);
-  }
-
-  function menuConfig() {
-    const title = field('cwe-menu-title').value.trim();
-    return {
-      id: menuSlug(title),
-      templateId: MENU_TEMPLATE,
-      version: 1,
-      title,
-      allowedRoles: selectedMenuRoles(),
-      panelTemplate: field('cwe-menu-panel-template').value
     };
   }
 
@@ -575,8 +485,7 @@
     if (!response.ok) {
       throw new Error(result.error || `Publisher request failed (${response.status}).`);
     }
-    const expectedUrl = config.templateId === MENU_TEMPLATE ? MENU_REGISTRY_URL : artifactUrl;
-    if (!result.ok || result.url !== expectedUrl) {
+    if (!result.ok || result.url !== artifactUrl) {
       throw new Error('Publisher response did not match the generated artifact URL.');
     }
     return result;
@@ -614,8 +523,7 @@
     savedElements = [];
     snapshot.forEach(document => {
       const data = document.data() || {};
-      if ((data.templateId === WHEEL_TEMPLATE && data.settings) ||
-          (data.templateId === MENU_TEMPLATE && data.menuConfig)) {
+      if (data.templateId === WHEEL_TEMPLATE && data.settings) {
         savedElements.push({ id: document.id, ...data });
       }
     });
@@ -629,10 +537,6 @@
   }
 
   async function save() {
-    if (field('cwe-template').value === MENU_TEMPLATE) {
-      await saveMenu();
-      return;
-    }
     syncFromInputs();
     const error = validate();
     if (error) {
@@ -640,55 +544,6 @@
       return;
     }
 
-    async function saveMenu() {
-      const error = validate();
-      if (error) {
-        setStatus(error, true);
-        return;
-      }
-      if (!PUBLISHER_URL) {
-        setStatus('The Cloudflare publisher is not configured.', true);
-        return;
-      }
-      if (!MTW.db || typeof MTW.setDoc !== 'function' || typeof MTW.doc !== 'function') {
-        setStatus('Saving is unavailable: dashboard Firestore is not configured.', true);
-        return;
-      }
-      const config = menuConfig();
-      const isNew = !activeId;
-      if (isNew && !window.confirm(`Create the dashboard menu item “${config.title}” for ${config.allowedRoles.join(', ')}?`)) {
-        return;
-      }
-      const button = field('cwe-save');
-      button.disabled = true;
-      setStatus('Saving and publishing menu item…');
-      try {
-        await MTW.setDoc(MTW.doc(MTW.db, COLLECTION, config.id), {
-          name: config.title,
-          templateId: MENU_TEMPLATE,
-          menuConfig: config,
-          createdBy: sessionStorage.getItem('mtw_admin_name') || 'Admin',
-          updatedAt: Date.now()
-        }, { merge: true });
-        activeId = config.id;
-        await publishArtifact(config);
-        try {
-          await loadSaved();
-        } catch (error) {
-          console.error('[custom-web-element] saved menu list refresh failed:', error);
-        }
-        field('cwe-saved').value = config.id;
-        field('cwe-deploy-help').innerHTML =
-          `Published dashboard menu registry: <code>${esc(MENU_REGISTRY_PATH)}</code>.<br>` +
-          `<a href="${esc(MENU_REGISTRY_URL)}" target="_blank" rel="noopener">${esc(MENU_REGISTRY_URL)}</a>`;
-        setStatus('Menu item saved and published. The generated dashboard registry now includes it.');
-      } catch (error) {
-        console.error('[custom-web-element] menu publish failed:', error);
-        setStatus(`The menu settings were saved, but publishing failed: ${error.message}`, true);
-      } finally {
-        button.disabled = false;
-      }
-    }
     if (!MTW.db || typeof MTW.setDoc !== 'function' || typeof MTW.doc !== 'function') {
       setStatus('Saving is unavailable: dashboard Firestore is not configured.', true);
       return;
@@ -746,27 +601,6 @@
     activeId = item.id;
     field('cwe-template').value = item.templateId;
     setTemplateEnabled(item.templateId);
-    if (item.templateId === MENU_TEMPLATE) {
-      const config = item.menuConfig;
-      if (!config || config.id !== item.id || typeof config.title !== 'string' ||
-          menuSlug(config.title) !== config.id || !Array.isArray(config.allowedRoles) ||
-          !config.allowedRoles.length || config.allowedRoles.some(role => !DASHBOARD_ROLES.includes(role)) ||
-          new Set(config.allowedRoles).size !== config.allowedRoles.length || config.panelTemplate !== 'blank') {
-        setStatus('This saved menu item has invalid settings and could not be loaded.', true);
-        return;
-      }
-      field('cwe-menu-title').value = config.title;
-      panel.querySelectorAll('input[name="cwe-menu-role"]').forEach(input => {
-        input.checked = config.allowedRoles.includes(input.value);
-      });
-      field('cwe-menu-panel-template').value = config.panelTemplate;
-      renderPreview();
-      field('cwe-deploy-help').innerHTML =
-        `Generated dashboard registry: <code>${esc(MENU_REGISTRY_PATH)}</code>.<br>` +
-        `<a href="${esc(MENU_REGISTRY_URL)}" target="_blank" rel="noopener">${esc(MENU_REGISTRY_URL)}</a>`;
-      setStatus(`Loaded “${item.name}”. Save after editing to update the menu item.`);
-      return;
-    }
     field('cwe-name').value = item.name || 'Untitled wheel';
     try {
       writeSettings(item.settings);
@@ -799,23 +633,11 @@
       if (field('cwe-template').value === WHEEL_TEMPLATE) {
         writeSettings(cloneDefaults(WHEEL_TEMPLATE));
         setStatus('Checkout spin wheel template selected. Customize it, then save.');
-      } else if (field('cwe-template').value === MENU_TEMPLATE) {
-        field('cwe-menu-title').value = '';
-        panel.querySelectorAll('input[name="cwe-menu-role"]').forEach(input => { input.checked = false; });
-        field('cwe-menu-panel-template').value = 'blank';
-        renderPreview();
-        setStatus('Dashboard menu item template selected. Add a title and choose allowed roles.');
       } else {
         settings = undefined;
         renderPreview();
         setStatus('Choose a template to start.');
       }
-    });
-    panel.querySelectorAll('input[name="cwe-menu-role"]').forEach(input => {
-      input.addEventListener('change', () => {
-        renderPreview();
-        invalidateArtifact();
-      });
     });
     ['cwe-daily', 'cwe-logging'].forEach(id => field(id).addEventListener('change', () => {
       renderPreview();
@@ -846,8 +668,6 @@
     field('cwe-new').addEventListener('click', () => {
       activeId = '';
       field('cwe-name').value = 'My checkout wheel';
-      field('cwe-menu-title').value = '';
-      panel.querySelectorAll('input[name="cwe-menu-role"]').forEach(input => { input.checked = false; });
       field('cwe-template').value = '';
       field('cwe-embed').value = '';
       artifactName = '';
