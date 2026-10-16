@@ -54,9 +54,12 @@
         const tool =
           card.dataset.select;
 
-        const canAccess =
-          allowed === '*' ||
-          allowed?.includes(tool);
+        const customRoles = card.dataset.generatedMenu
+          ? card.dataset.allowedRoles.split(',')
+          : null;
+        const canAccess = customRoles
+          ? customRoles.includes(user)
+          : allowed === '*' || allowed?.includes(tool);
 
         card.style.display =
           canAccess ? '' : 'none';
@@ -71,6 +74,13 @@
       userField.textContent =
         user;
     }
+
+    document.addEventListener('mtw-admin-menus-ready', () => {
+      const user = sessionStorage.getItem('mtw_admin_name');
+      document.querySelectorAll('.db-list-toolcard[data-generated-menu="true"]').forEach(card => {
+        card.style.display = card.dataset.allowedRoles.split(',').includes(user) ? '' : 'none';
+      });
+    });
 
     document
       .querySelector(
