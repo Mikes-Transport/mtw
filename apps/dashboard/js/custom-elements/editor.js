@@ -88,43 +88,52 @@
   }
 
   function normalizeAiDraft(value) {
-    if (!value || typeof value !== 'object' ||
-        typeof value.title !== 'string' || value.title.length > 100 ||
-        typeof value.assistantMessage !== 'string' || value.assistantMessage.length > 1200 ||
-        typeof value.html !== 'string' || value.html.length > 16000 ||
-        typeof value.css !== 'string' || value.css.length > 16000 ||
-        typeof value.js !== 'string' || value.js.length > 16000 ||
-        value.html.length + value.css.length + value.js.length > 36000 ||
-        !value.title.trim() || !value.assistantMessage.trim() || !value.html.trim() ||
-        !Array.isArray(value.editableFields) || value.editableFields.length > 12) return null;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const title = typeof value.title === 'string' && value.title.trim()
+      ? value.title.slice(0, 100)
+      : 'Custom web element';
+    const assistantMessage = typeof value.assistantMessage === 'string' && value.assistantMessage.trim()
+      ? value.assistantMessage.slice(0, 1200)
+      : 'Here is your generated design.';
+    const html = value.html;
+    const css = value.css == null ? '' : value.css;
+    const js = value.js == null ? '' : value.js;
+    if (typeof html !== 'string' || !html.trim() || html.length > 16000 ||
+        typeof css !== 'string' || css.length > 16000 ||
+        typeof js !== 'string' || js.length > 16000 ||
+        html.length + css.length + js.length > 36000) return null;
     const keys = new Set();
     const editableFields = [];
-    for (const item of value.editableFields) {
+    const fields = Array.isArray(value.editableFields) ? value.editableFields.slice(0, 12) : [];
+    for (const item of fields) {
       if (!item || typeof item.key !== 'string' || !/^[a-z][a-z0-9_]{0,39}$/.test(item.key) ||
-          keys.has(item.key) || typeof item.label !== 'string' || !item.label.trim() ||
-          item.label.length > 80 || !['text', 'color', 'number', 'boolean'].includes(item.type)) return null;
-      if (item.type === 'text' && (typeof item.defaultValue !== 'string' || item.defaultValue.length > 300)) return null;
-      if (item.type === 'color' && (typeof item.defaultValue !== 'string' || !/^#[0-9a-f]{6}$/i.test(item.defaultValue))) return null;
-      if (item.type === 'number' && (!Number.isFinite(item.defaultValue) || Math.abs(item.defaultValue) > 100000)) return null;
-      if (item.type === 'boolean' && typeof item.defaultValue !== 'boolean') return null;
-      const source = `${value.html}\n${value.css}\n${value.js}`;
+          keys.has(item.key) || !['text', 'color', 'number', 'boolean'].includes(item.type)) continue;
+      if (item.type === 'text' && (typeof item.defaultValue !== 'string' || item.defaultValue.length > 300)) continue;
+      if (item.type === 'color' && (typeof item.defaultValue !== 'string' || !/^#[0-9a-f]{6}$/i.test(item.defaultValue))) continue;
+      if (item.type === 'number' && (!Number.isFinite(item.defaultValue) || Math.abs(item.defaultValue) > 100000)) continue;
+      if (item.type === 'boolean' && typeof item.defaultValue !== 'boolean') continue;
+      const source = `${html}\n${css}\n${js}`;
       if (!source.includes(`{{field:${item.key}}}`) &&
           !source.includes(`MTW_SETTINGS["${item.key}"]`) &&
-          !source.includes(`MTW_SETTINGS['${item.key}']`)) return null;
+          !source.includes(`MTW_SETTINGS['${item.key}']`)) continue;
+      const label = typeof item.label === 'string' && item.label.trim()
+        ? item.label.trim().slice(0, 80)
+        : item.key.replace(/_/g, ' ');
+      if (!label) continue;
       keys.add(item.key);
       editableFields.push({
         key: item.key,
-        label: item.label.trim(),
+        label,
         type: item.type,
         defaultValue: item.defaultValue
       });
     }
     return {
-      title: value.title,
-      assistantMessage: value.assistantMessage,
-      html: value.html,
-      css: value.css,
-      js: value.js,
+      title,
+      assistantMessage,
+      html,
+      css,
+      js,
       editableFields
     };
   }

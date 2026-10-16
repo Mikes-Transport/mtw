@@ -153,7 +153,7 @@ test('rejects invalid model output instead of returning it as a draft', async ()
   assert.equal((await response.json()).ok, undefined);
 });
 
-test('rejects editable fields that are not connected to the generated source', async () => {
+test('drops editable fields that are not connected to the generated source', async () => {
   const disconnectedDraft = {
     ...aiDraft,
     html: '<main class="rewards-card"><h1>Rewards</h1></main>',
@@ -165,7 +165,30 @@ test('rejects editable fields that are not connected to the generated source', a
     AI: { async run() { return { response: disconnectedDraft }; } }
   };
   const response = await worker.fetch(makeAiRequest([{ role: 'user', content: 'Create a card.' }]), env);
-  assert.equal(response.status, 502);
+  const result = await response.json();
+  assert.equal(response.status, 200);
+  assert.deepEqual(result.draft.editableFields, []);
+});
+
+test('keeps a simple visual draft when optional AI metadata is missing', async () => {
+  const simpleDraft = {
+    html: '<div class="pineapple">🍍</div>',
+    css: '.pineapple { font-size: 5rem; }'
+  };
+  const env = {
+    DASHBOARD_ORIGIN: dashboardOrigin,
+    AI: { async run() { return { response: simpleDraft }; } }
+  };
+  const response = await worker.fetch(makeAiRequest([
+    { role: 'user', content: 'Can you make me a pineapple?' }
+  ]), env);
+  const result = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(result.ok, true);
+  assert.equal(result.draft.title, 'Custom web element');
+  assert.equal(result.draft.assistantMessage, 'Here is your generated design.');
+  assert.deepEqual(result.draft.editableFields, []);
 });
 
 test('returns a setup error when Workers AI is not bound', async () => {
