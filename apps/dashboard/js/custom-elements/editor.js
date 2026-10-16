@@ -160,7 +160,7 @@
               <summary>Element setup</summary>
               <div class="cwe-section-scroll">
                 <div class="cwe-row">
-                  <div class="cwe-field"><label for="cwe-template">Template</label><select class="cwe-select" id="cwe-template"><option value="${WHEEL_TEMPLATE}">Checkout spin wheel</option></select></div>
+                  <div class="cwe-field"><label for="cwe-template">Template</label><select class="cwe-select" id="cwe-template"><option value="" selected>Choose a template</option><option value="${WHEEL_TEMPLATE}">Checkout spin wheel</option></select></div>
                   <div class="cwe-field"><label for="cwe-name">Element name</label><input class="cwe-input" id="cwe-name" maxlength="60" value="My checkout wheel"></div>
                 </div>
               </div>
@@ -320,6 +320,11 @@
   }
 
   function renderPreview() {
+    if (!field('cwe-template').value) {
+      field('cwe-preview').style.background = '#f3f4f6';
+      field('cwe-preview').innerHTML = '<div class="cwe-small">Choose a template to start your checkout element.</div>';
+      return;
+    }
     settings = readSettings();
     const prizes = settings.prizes.length ? settings.prizes : cloneDefaults(WHEEL_TEMPLATE).prizes.slice(0, 1);
     const slice = 360 / prizes.length;
@@ -365,6 +370,11 @@
     field('cwe-logging').checked = !!settings.logSpins;
     renderPrizeRows();
     renderPreview();
+  }
+
+  function setTemplateEnabled(enabled) {
+    panel.querySelectorAll('.cwe-editor-sections .cwe-input, .cwe-editor-sections .cwe-prize-color, #cwe-daily, #cwe-logging, #cwe-add-prize, #cwe-save, #cwe-new')
+      .forEach(control => { control.disabled = !enabled; });
   }
 
   function validate() {
@@ -565,6 +575,8 @@
       return;
     }
     activeId = item.id;
+    field('cwe-template').value = item.templateId;
+    setTemplateEnabled(!!item.templateId);
     field('cwe-name').value = item.name || 'Untitled wheel';
     try {
       writeSettings(item.settings);
@@ -586,6 +598,23 @@
       });
     });
     field('cwe-name').addEventListener('input', invalidateArtifact);
+    field('cwe-template').addEventListener('change', () => {
+      activeId = '';
+      field('cwe-embed').value = '';
+      artifactName = '';
+      artifactUrl = '';
+      field('cwe-download').disabled = true;
+      field('cwe-copy').disabled = true;
+      setTemplateEnabled(!!field('cwe-template').value);
+      if (field('cwe-template').value === WHEEL_TEMPLATE) {
+        writeSettings(cloneDefaults(WHEEL_TEMPLATE));
+        setStatus('Checkout spin wheel template selected. Customize it, then save.');
+      } else {
+        settings = undefined;
+        renderPreview();
+        setStatus('Choose a template to start.');
+      }
+    });
     ['cwe-daily', 'cwe-logging'].forEach(id => field(id).addEventListener('change', () => {
       renderPreview();
       invalidateArtifact();
@@ -615,13 +644,16 @@
     field('cwe-new').addEventListener('click', () => {
       activeId = '';
       field('cwe-name').value = 'My checkout wheel';
+      field('cwe-template').value = '';
       field('cwe-embed').value = '';
       artifactName = '';
       artifactUrl = '';
       field('cwe-download').disabled = true;
       field('cwe-copy').disabled = true;
-      writeSettings(cloneDefaults(WHEEL_TEMPLATE));
-      setStatus('Started a new checkout wheel.');
+      setTemplateEnabled(false);
+      settings = undefined;
+      renderPreview();
+      setStatus('Choose a template to start a new element.');
     });
     field('cwe-copy').addEventListener('click', async () => {
       try {
@@ -651,17 +683,22 @@
     const role = sessionStorage.getItem('mtw_admin_name');
     if (sessionStorage.getItem('mtw_admin_logged_in') !== 'true' || !['Admin', 'Developer'].includes(role)) return true;
 
-    if (!document.querySelector('.custom-web-element-panel')) {
+    panel = document.querySelector('.custom-web-element-panel');
+    if (!panel) {
       panel = document.createElement('section');
       panel.className = 'custom-web-element-panel';
       panel.style.display = 'none';
-      panel.innerHTML = shell();
       wrapper.appendChild(panel);
+    }
+
+    if (panel.dataset.cweInitialized !== 'true') {
+      panel.innerHTML = shell();
+      panel.dataset.cweInitialized = 'true';
       style();
       wire();
-      writeSettings(cloneDefaults(WHEEL_TEMPLATE));
-    } else {
-      panel = document.querySelector('.custom-web-element-panel');
+      settings = undefined;
+      setTemplateEnabled(false);
+      renderPreview();
     }
 
     if (!document.querySelector(`.db-list-toolcard[data-select="${TOOL_ID}"]`)) {
