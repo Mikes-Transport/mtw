@@ -176,6 +176,27 @@ test('returns a setup error when Workers AI is not bound', async () => {
   assert.equal(response.status, 503);
 });
 
+test('allows the configured Webflow Designer canvas origin for preflight and AI drafts', async () => {
+  const canvasOrigin = 'https://mtw-lookup-2026-a7736f25cfb90c5d879c674.canvas.webflow.com';
+  const env = {
+    DASHBOARD_ORIGIN: dashboardOrigin,
+    DASHBOARD_ORIGINS: canvasOrigin,
+    AI: { async run() { return { response: aiDraft }; } }
+  };
+  const preflight = await worker.fetch(new Request('https://publisher.example.com/ai/draft', {
+    method: 'OPTIONS',
+    headers: { Origin: canvasOrigin }
+  }), env);
+  const response = await worker.fetch(makeAiRequest([
+    { role: 'user', content: 'Create a card.' }
+  ], canvasOrigin), env);
+
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get('Access-Control-Allow-Origin'), canvasOrigin);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('Access-Control-Allow-Origin'), canvasOrigin);
+});
+
 function makeRequest(payload, origin = dashboardOrigin) {
   return new Request('https://publisher.example.com/publish', {
     method: 'POST',
