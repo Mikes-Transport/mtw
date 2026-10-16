@@ -4,6 +4,7 @@
   const TOOL_ID = 'custom-web-element';
   const COLLECTION = 'custom-web-elements';
   const WHEEL_TEMPLATE = 'checkout-spin-wheel';
+  const AI_TEMPLATE = 'ai-generated-element';
   const SPIN_WHEEL_URL = 'https://raw.githack.com/Mikes-Transport/mtw/main/apps/website/checkout/checkout-spinwheel.js';
   const ELEMENTS_PATH = 'apps/website/custom-elements';
   const MTW = window.MTW || {};
@@ -51,6 +52,10 @@
   let activeId = '';
   let artifactName = '';
   let artifactUrl = '';
+  let aiMessages = [];
+  let aiDraft;
+  let aiValues = {};
+  let aiBusy = false;
 
   const esc = value => String(value == null ? '' : value)
     .replace(/&/g, '&amp;')
@@ -82,6 +87,48 @@
     return JSON.parse(JSON.stringify(template.defaults));
   }
 
+  function normalizeAiDraft(value) {
+    if (!value || typeof value !== 'object' ||
+        typeof value.title !== 'string' || value.title.length > 100 ||
+        typeof value.assistantMessage !== 'string' || value.assistantMessage.length > 1200 ||
+        typeof value.html !== 'string' || value.html.length > 16000 ||
+        typeof value.css !== 'string' || value.css.length > 16000 ||
+        typeof value.js !== 'string' || value.js.length > 16000 ||
+        value.html.length + value.css.length + value.js.length > 36000 ||
+        !value.title.trim() || !value.assistantMessage.trim() || !value.html.trim() ||
+        !Array.isArray(value.editableFields) || value.editableFields.length > 12) return null;
+    const keys = new Set();
+    const editableFields = [];
+    for (const item of value.editableFields) {
+      if (!item || typeof item.key !== 'string' || !/^[a-z][a-z0-9_]{0,39}$/.test(item.key) ||
+          keys.has(item.key) || typeof item.label !== 'string' || !item.label.trim() ||
+          item.label.length > 80 || !['text', 'color', 'number', 'boolean'].includes(item.type)) return null;
+      if (item.type === 'text' && (typeof item.defaultValue !== 'string' || item.defaultValue.length > 300)) return null;
+      if (item.type === 'color' && (typeof item.defaultValue !== 'string' || !/^#[0-9a-f]{6}$/i.test(item.defaultValue))) return null;
+      if (item.type === 'number' && (!Number.isFinite(item.defaultValue) || Math.abs(item.defaultValue) > 100000)) return null;
+      if (item.type === 'boolean' && typeof item.defaultValue !== 'boolean') return null;
+      const source = `${value.html}\n${value.css}\n${value.js}`;
+      if (!source.includes(`{{field:${item.key}}}`) &&
+          !source.includes(`MTW_SETTINGS["${item.key}"]`) &&
+          !source.includes(`MTW_SETTINGS['${item.key}']`)) return null;
+      keys.add(item.key);
+      editableFields.push({
+        key: item.key,
+        label: item.label.trim(),
+        type: item.type,
+        defaultValue: item.defaultValue
+      });
+    }
+    return {
+      title: value.title,
+      assistantMessage: value.assistantMessage,
+      html: value.html,
+      css: value.css,
+      js: value.js,
+      editableFields
+    };
+  }
+
   function style() {
     if (document.getElementById('cwe-editor-styles')) return;
     const node = document.createElement('style');
@@ -104,6 +151,15 @@
       .cwe-editor-sections::-webkit-scrollbar-thumb,.cwe-section-scroll::-webkit-scrollbar-thumb,.cwe-prizes::-webkit-scrollbar-thumb{border:1px solid transparent;border-radius:8px;background:#c7cbd1;background-clip:padding-box}
       .cwe-editor-sections::-webkit-scrollbar-thumb:hover,.cwe-section-scroll::-webkit-scrollbar-thumb:hover,.cwe-prizes::-webkit-scrollbar-thumb:hover{background:#9ca3af;background-clip:padding-box}
       .cwe-preview-card{width:100%;box-sizing:border-box}
+      .cwe-ai-chat{display:flex;flex-direction:column;gap:10px;min-height:260px}
+      .cwe-ai-messages{display:flex;flex-direction:column;gap:8px;max-height:230px;overflow-y:auto;padding:8px;background:#f8f9fb;border:1px solid #e5e7eb;border-radius:8px}
+      .cwe-ai-message{max-width:92%;padding:9px 11px;border-radius:9px;font-size:12px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+      .cwe-ai-message-user{align-self:flex-end;background:#171717;color:#fff}
+      .cwe-ai-message-assistant{align-self:flex-start;background:#fff;border:1px solid #e5e7eb}
+      .cwe-ai-input{min-height:72px;resize:vertical}
+      .cwe-ai-frame{display:block;width:100%;height:440px;border:0;border-radius:8px;background:#fff}
+      .cwe-ai-field{display:grid;grid-template-columns:minmax(110px,1fr) minmax(120px,2fr);align-items:center;gap:10px;margin:0 0 10px;font-size:12px}
+      .cwe-ai-field label{font-weight:700}
       .cwe-title{margin:0 0 6px;font-size:20px;font-weight:800}
       .cwe-copy{margin:0 0 18px;color:#666;font-size:13px;line-height:1.5}
       .cwe-field{display:flex;flex-direction:column;gap:5px;margin:0 0 13px}
@@ -153,18 +209,41 @@
         <section class="cwe-card cwe-preview-card">
           <div class="cwe-label" id="cwe-preview-label" style="margin-bottom:10px">Preview</div>
           <div class="cwe-preview" id="cwe-preview"></div>
-          <p class="cwe-small" style="margin:10px 0 0">Preview is illustrative. The published wheel uses the same settings and the live checkout styles.</p>
+          <p class="cwe-small" id="cwe-preview-help" style="margin:10px 0 0">Select a template to see its preview.</p>
         </section>
         <section class="cwe-card cwe-editor-card">
           <h2 class="cwe-title">Custom web element</h2>
-          <p class="cwe-copy">Start from a template, tailor it to your campaign, preview it, then save and copy the embed code. New templates can be added without changing the editor flow.</p>
+          <p class="cwe-copy">Configure a checkout spin wheel or prototype a new element with AI. Wheel templates can be published to checkout; AI drafts are saved in the dashboard only.</p>
           <div class="cwe-editor-sections">
             <details class="cwe-section" open>
               <summary>Element setup</summary>
               <div class="cwe-section-scroll">
                 <div class="cwe-row">
-                  <div class="cwe-field"><label for="cwe-template">Template</label><select class="cwe-select" id="cwe-template"><option value="" selected>Choose a template</option><option value="${WHEEL_TEMPLATE}">Checkout spin wheel</option></select></div>
+                  <div class="cwe-field"><label for="cwe-template">Template</label><select class="cwe-select" id="cwe-template"><option value="" selected>Choose a template</option><option value="${AI_TEMPLATE}">Create with AI (experimental)</option><option value="${WHEEL_TEMPLATE}">Checkout spin wheel</option></select></div>
                   <div class="cwe-field cwe-wheel-only"><label for="cwe-name">Element name</label><input class="cwe-input" id="cwe-name" maxlength="60" value="My checkout wheel"></div>
+                </div>
+              </div>
+            </details>
+            <details class="cwe-section cwe-template-section" data-template="${AI_TEMPLATE}" open>
+              <summary>Create with AI</summary>
+              <div class="cwe-section-scroll">
+                <p class="cwe-small" style="margin:0 0 10px;line-height:1.5">Describe the design or request a change. The preview is isolated and cannot access the dashboard or checkout. This creates a prototype, not a live checkout integration.</p>
+                <div class="cwe-ai-chat">
+                  <div class="cwe-ai-messages" id="cwe-ai-messages" aria-live="polite"></div>
+                  <label class="cwe-field" for="cwe-ai-input">What should the element do or look like?
+                    <textarea class="cwe-input cwe-ai-input" id="cwe-ai-input" maxlength="2000" placeholder="Example: Make a rewards progress card in purple, grey, and blue. Use sample points only."></textarea>
+                  </label>
+                  <div class="cwe-actions" style="margin-top:0">
+                    <button class="cwe-btn cwe-btn-primary" type="button" id="cwe-ai-send">Generate / refine</button>
+                    <button class="cwe-btn" type="button" id="cwe-ai-save" disabled>Save as reusable template</button>
+                  </div>
+                  <div class="cwe-status" id="cwe-ai-status" role="status"></div>
+                  <div id="cwe-ai-fields" hidden>
+                    <div class="cwe-field"><label for="cwe-ai-name">Template name</label><input class="cwe-input" id="cwe-ai-name" maxlength="80"></div>
+                    <h3 class="cwe-label">Editable template settings</h3>
+                    <div id="cwe-ai-field-controls"></div>
+                    <div class="cwe-small" style="line-height:1.5">The saved template keeps its generated source and these editable values in the dashboard. It is not published to checkout.</div>
+                  </div>
                 </div>
               </div>
             </details>
@@ -215,7 +294,7 @@
             <details class="cwe-section">
               <summary>Save and publish</summary>
               <div class="cwe-section-scroll">
-                <div class="cwe-actions">
+                <div class="cwe-actions cwe-wheel-only">
                   <button class="cwe-btn cwe-btn-primary" type="button" id="cwe-save">Save changes</button>
                   <button class="cwe-btn" type="button" id="cwe-new">New from template</button>
                 </div>
@@ -247,6 +326,219 @@
     if (!node) return;
     node.textContent = message || '';
     node.dataset.error = isError ? 'true' : 'false';
+  }
+
+  function setAiStatus(message, isError) {
+    const node = field('cwe-ai-status');
+    if (!node) return;
+    node.textContent = message || '';
+    node.dataset.error = isError ? 'true' : 'false';
+  }
+
+  function normalizedAiValue(item, value) {
+    if (item.type === 'color') return safeColor(value, item.defaultValue);
+    if (item.type === 'number') {
+      const number = Number(value);
+      return Number.isFinite(number) && Math.abs(number) <= 100000 ? number : item.defaultValue;
+    }
+    if (item.type === 'boolean') return typeof value === 'boolean' ? value : item.defaultValue;
+    return typeof value === 'string' ? value.slice(0, 300) : item.defaultValue;
+  }
+
+  function renderAiFields() {
+    const section = field('cwe-ai-fields');
+    const host = field('cwe-ai-field-controls');
+    const saveButton = field('cwe-ai-save');
+    if (!section || !host) return;
+    section.hidden = !aiDraft;
+    saveButton.disabled = !aiDraft || aiBusy;
+    if (!aiDraft) {
+      host.replaceChildren();
+      return;
+    }
+    host.replaceChildren();
+    aiDraft.editableFields.forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'cwe-ai-field';
+      const label = document.createElement('label');
+      const input = document.createElement('input');
+      const id = `cwe-ai-value-${item.key}`;
+      label.htmlFor = id;
+      label.textContent = item.label;
+      input.id = id;
+      input.className = 'cwe-input';
+      input.type = item.type === 'boolean' ? 'checkbox' : item.type;
+      if (item.type === 'boolean') input.checked = !!aiValues[item.key];
+      else input.value = String(aiValues[item.key] == null ? item.defaultValue : aiValues[item.key]);
+      input.addEventListener('input', () => {
+        aiValues[item.key] = item.type === 'boolean'
+          ? input.checked
+          : normalizedAiValue(item, item.type === 'number' ? input.valueAsNumber : input.value);
+        renderAiPreview();
+        if (activeId) setAiStatus('Unsaved template changes.', false);
+      });
+      row.append(label, input);
+      host.appendChild(row);
+    });
+  }
+
+  function renderAiMessages() {
+    const host = field('cwe-ai-messages');
+    if (!host) return;
+    host.replaceChildren();
+    aiMessages.forEach(message => {
+      const bubble = document.createElement('div');
+      bubble.className = `cwe-ai-message cwe-ai-message-${message.role}`;
+      bubble.textContent = message.content;
+      host.appendChild(bubble);
+    });
+    host.scrollTop = host.scrollHeight;
+  }
+
+  function cssValue(value) {
+    return String(value)
+      .replace(/\\/g, '\\\\')
+      .replace(/</g, '\\3c ')
+      .replace(/>/g, '\\3e ')
+      .replace(/["']/g, '\\$&')
+      .replace(/[\r\n]/g, ' ');
+  }
+
+  function renderAiPreview() {
+    const preview = field('cwe-preview');
+    if (!aiDraft) {
+      preview.style.background = '#f3f4f6';
+      preview.innerHTML = '<div class="cwe-small">Describe an element and generate a draft to preview it.</div>';
+      field('cwe-preview-label').textContent = 'AI Draft Preview';
+      field('cwe-preview-help').textContent = 'The AI draft will run in an isolated preview and will not be published.';
+      return;
+    }
+    const values = {};
+    aiDraft.editableFields.forEach(item => {
+      values[item.key] = normalizedAiValue(item, aiValues[item.key]);
+    });
+    const interpolate = (source, escape) => source.replace(/\{\{field:([a-z][a-z0-9_]*)\}\}/g, (match, key) => {
+      const item = aiDraft.editableFields.find(candidate => candidate.key === key);
+      return item ? escape(values[key]) : '';
+    });
+    const html = interpolate(aiDraft.html, esc);
+    const css = interpolate(aiDraft.css, cssValue);
+    const settingsJson = JSON.stringify(values).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
+    const source = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><style>${css}</style></head><body>${html}<script>window.MTW_SETTINGS=${settingsJson};</script><script>${aiDraft.js.replace(/<\/script/gi, '<\\/script')}</script></body></html>`;
+    const iframe = document.createElement('iframe');
+    iframe.className = 'cwe-ai-frame';
+    iframe.title = 'Sandboxed generated element preview';
+    iframe.setAttribute('sandbox', 'allow-scripts');
+    iframe.referrerPolicy = 'no-referrer';
+    iframe.srcdoc = source;
+    preview.style.background = '#fff';
+    preview.replaceChildren(iframe);
+    field('cwe-preview-label').textContent = 'AI Draft Preview · sandboxed';
+    field('cwe-preview-help').textContent = 'Sandboxed visual prototype. Scripts cannot access the dashboard or make network requests; changes are not published.';
+  }
+
+  async function sendAiMessage() {
+    const input = field('cwe-ai-input');
+    const content = input.value.trim();
+    if (!content) {
+      setAiStatus('Describe the element or the change you want.', true);
+      return;
+    }
+    aiMessages.push({ role: 'user', content });
+    renderAiMessages();
+    input.value = '';
+    aiBusy = true;
+    const sendButton = field('cwe-ai-send');
+    sendButton.disabled = true;
+    renderAiFields();
+    setAiStatus('Generating a draft…', false);
+    try {
+      const endpoint = new URL('/ai/draft', PUBLISHER_URL);
+      if (endpoint.protocol !== 'https:') throw new Error('The AI endpoint must use HTTPS.');
+      const response = await fetch(endpoint.href, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: aiMessages.slice(-8),
+          draft: aiDraft || undefined
+        })
+      });
+      let result;
+      try {
+        result = await response.json();
+      } catch {
+        throw new Error(`AI endpoint returned an invalid response (${response.status}).`);
+      }
+      if (!response.ok) throw new Error(result.error || `AI request failed (${response.status}).`);
+      const nextDraft = normalizeAiDraft(result.draft);
+      if (!result.ok || !nextDraft) throw new Error('AI returned an invalid template draft. Please try again.');
+      const previousValues = aiValues;
+      aiDraft = nextDraft;
+      aiValues = {};
+      aiDraft.editableFields.forEach(item => {
+        aiValues[item.key] = previousValues[item.key] == null
+          ? item.defaultValue
+          : normalizedAiValue(item, previousValues[item.key]);
+      });
+      aiMessages.push({ role: 'assistant', content: nextDraft.assistantMessage });
+      renderAiMessages();
+      field('cwe-ai-name').value = field('cwe-ai-name').value.trim() || nextDraft.title;
+      renderAiFields();
+      renderPreview();
+      setAiStatus('Draft ready. Refine it in chat or save it as a reusable dashboard template.', false);
+    } catch (error) {
+      console.error('[custom-web-element] AI draft generation failed:', error);
+      setAiStatus(error.message || 'Could not generate a draft. Try again.', true);
+    } finally {
+      aiBusy = false;
+      sendButton.disabled = false;
+      renderAiFields();
+    }
+  }
+
+  async function saveAiTemplate() {
+    if (!aiDraft) {
+      setAiStatus('Generate a draft before saving it.', true);
+      return;
+    }
+    if (!MTW.db || typeof MTW.setDoc !== 'function' || typeof MTW.doc !== 'function') {
+      setAiStatus('Saving is unavailable: dashboard Firestore is not configured.', true);
+      return;
+    }
+    const name = field('cwe-ai-name').value.trim();
+    if (!name) {
+      setAiStatus('Give this template a name before saving.', true);
+      return;
+    }
+    const button = field('cwe-ai-save');
+    const id = activeId || (window.crypto && typeof window.crypto.randomUUID === 'function'
+      ? window.crypto.randomUUID()
+      : `ai-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
+    button.disabled = true;
+    setAiStatus('Saving reusable template…', false);
+    try {
+      await MTW.setDoc(MTW.doc(MTW.db, COLLECTION, id), {
+        name: name.slice(0, 80),
+        templateId: AI_TEMPLATE,
+        source: aiDraft,
+        settings: aiValues,
+        createdBy: sessionStorage.getItem('mtw_admin_name') || 'Admin',
+        updatedAt: Date.now()
+      }, { merge: true });
+      activeId = id;
+      try {
+        await loadSaved();
+      } catch (error) {
+        console.error('[custom-web-element] saved template list refresh failed:', error);
+      }
+      field('cwe-saved').value = id;
+      setAiStatus('Saved in the dashboard template library. This prototype has not been published to checkout.', false);
+    } catch (error) {
+      console.error('[custom-web-element] AI template save failed:', error);
+      setAiStatus('Could not save the template. Check your connection and access, then try again.', true);
+    } finally {
+      button.disabled = false;
+    }
   }
 
   function normalizePrize(prize, index) {
@@ -326,13 +618,19 @@
 
   function renderPreview() {
     const templateId = field('cwe-template').value;
+    if (templateId === AI_TEMPLATE) {
+      renderAiPreview();
+      return;
+    }
     if (!templateId) {
       field('cwe-preview').style.background = '#f3f4f6';
       field('cwe-preview-label').textContent = 'Preview';
+      field('cwe-preview-help').textContent = 'Select a template to see its preview.';
       field('cwe-preview').innerHTML = '<div class="cwe-small">Choose a template to preview it.</div>';
       return;
     }
     field('cwe-preview-label').textContent = 'Checkout Preview';
+    field('cwe-preview-help').textContent = 'Preview is illustrative. The published wheel uses the same settings and the live checkout styles.';
     settings = readSettings();
     const prizes = settings.prizes.length ? settings.prizes : cloneDefaults(WHEEL_TEMPLATE).prizes.slice(0, 1);
     const slice = 360 / prizes.length;
@@ -394,10 +692,12 @@
         control.disabled = templateId !== WHEEL_TEMPLATE;
       });
     });
-    field('cwe-save').disabled = !templateId;
-    field('cwe-new').disabled = !templateId;
-    field('cwe-deploy-help').textContent =
-      'After the Cloudflare Worker is configured, saving will publish this file automatically. Until then, download it and upload it to GitHub manually. Then add the generated embed code to the checkout page.';
+    field('cwe-save').disabled = templateId !== WHEEL_TEMPLATE;
+    field('cwe-new').disabled = templateId !== WHEEL_TEMPLATE;
+    field('cwe-deploy-help').textContent = templateId === AI_TEMPLATE
+      ? 'AI-created templates are saved in the dashboard only; generated code is not published or connected to checkout.'
+      : 'After the Cloudflare Worker is configured, saving will publish this file automatically. Until then, download it and upload it to GitHub manually. Then add the generated embed code to the checkout page.';
+    renderAiFields();
   }
 
   function validate() {
@@ -523,7 +823,8 @@
     savedElements = [];
     snapshot.forEach(document => {
       const data = document.data() || {};
-      if (data.templateId === WHEEL_TEMPLATE && data.settings) {
+      if ((data.templateId === WHEEL_TEMPLATE && data.settings) ||
+          (data.templateId === AI_TEMPLATE && data.source)) {
         savedElements.push({ id: document.id, ...data });
       }
     });
@@ -531,7 +832,7 @@
     savedElements.forEach(item => {
       const option = document.createElement('option');
       option.value = item.id;
-      option.textContent = item.name || 'Untitled wheel';
+      option.textContent = item.name || (item.templateId === AI_TEMPLATE ? 'Untitled AI template' : 'Untitled wheel');
       select.appendChild(option);
     });
   }
@@ -601,6 +902,31 @@
     activeId = item.id;
     field('cwe-template').value = item.templateId;
     setTemplateEnabled(item.templateId);
+    if (item.templateId === AI_TEMPLATE) {
+      const draft = normalizeAiDraft(item.source);
+      if (!draft) {
+        setAiStatus('This saved AI template is invalid and could not be loaded.', true);
+        return;
+      }
+      aiDraft = draft;
+      aiValues = {};
+      aiDraft.editableFields.forEach(setting => {
+        const stored = item.settings && Object.prototype.hasOwnProperty.call(item.settings, setting.key)
+          ? item.settings[setting.key]
+          : setting.defaultValue;
+        aiValues[setting.key] = normalizedAiValue(setting, stored);
+      });
+      field('cwe-ai-name').value = item.name || draft.title;
+      aiMessages = [{ role: 'assistant', content: `Loaded “${item.name || draft.title}”. Change the editable settings or describe a refinement.` }];
+      renderAiMessages();
+      renderAiFields();
+      renderAiPreview();
+      setAiStatus('Loaded saved template. Save after changes to update it.', false);
+      return;
+    }
+    aiDraft = undefined;
+    aiValues = {};
+    aiMessages = [];
     field('cwe-name').value = item.name || 'Untitled wheel';
     try {
       writeSettings(item.settings);
@@ -615,13 +941,18 @@
 
   function wire() {
     panel.querySelectorAll('.cwe-field .cwe-input').forEach(input => {
-      if (input.closest('.cwe-prize')) return;
+      if (input.closest('.cwe-prize') || input.id === 'cwe-ai-name') return;
       input.addEventListener('input', () => {
         renderPreview();
         invalidateArtifact();
       });
     });
     field('cwe-name').addEventListener('input', invalidateArtifact);
+    field('cwe-ai-name').addEventListener('input', () => {
+      if (activeId && field('cwe-template').value === AI_TEMPLATE) {
+        setAiStatus('Unsaved template changes.', false);
+      }
+    });
     field('cwe-template').addEventListener('change', () => {
       activeId = '';
       field('cwe-embed').value = '';
@@ -629,10 +960,23 @@
       artifactUrl = '';
       field('cwe-download').disabled = true;
       field('cwe-copy').disabled = true;
+      aiDraft = undefined;
+      aiValues = {};
+      aiMessages = [];
+      field('cwe-ai-name').value = '';
+      renderAiMessages();
       setTemplateEnabled(field('cwe-template').value);
       if (field('cwe-template').value === WHEEL_TEMPLATE) {
         writeSettings(cloneDefaults(WHEEL_TEMPLATE));
         setStatus('Checkout spin wheel template selected. Customize it, then save.');
+      } else if (field('cwe-template').value === AI_TEMPLATE) {
+        aiMessages.push({
+          role: 'assistant',
+          content: 'Describe the element you want to create. I can generate a visual prototype, then you can refine it and save editable settings.'
+        });
+        renderAiMessages();
+        renderPreview();
+        setAiStatus('Ready. Stay on Cloudflare Workers Free to keep usage within the no-charge daily limit.', false);
       } else {
         settings = undefined;
         renderPreview();
@@ -659,6 +1003,14 @@
       invalidateArtifact();
     });
     field('cwe-save').addEventListener('click', save);
+    field('cwe-ai-send').addEventListener('click', sendAiMessage);
+    field('cwe-ai-input').addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendAiMessage();
+      }
+    });
+    field('cwe-ai-save').addEventListener('click', saveAiTemplate);
     field('cwe-load').addEventListener('click', () => {
       loadSelected().catch(error => {
         console.error('[custom-web-element] load selected element failed:', error);
@@ -674,6 +1026,11 @@
       artifactUrl = '';
       field('cwe-download').disabled = true;
       field('cwe-copy').disabled = true;
+      aiDraft = undefined;
+      aiValues = {};
+      aiMessages = [];
+      renderAiMessages();
+      renderAiFields();
       setTemplateEnabled('');
       settings = undefined;
       renderPreview();

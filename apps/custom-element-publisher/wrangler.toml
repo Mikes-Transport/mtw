@@ -7,3 +7,6 @@ GITHUB_OWNER = "Mikes-Transport"
 GITHUB_REPO = "mtw"
 GITHUB_BRANCH = "main"
 DASHBOARD_ORIGIN = "https://mtw-lookup-2026-a7736f25cfb90c5d879c674.webflow.io"
+
+[ai]
+binding = "AI"
