@@ -31,10 +31,11 @@ const AI_RESPONSE_SCHEMA = {
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin') || '';
-    const headers = corsHeaders(origin, env.DASHBOARD_ORIGIN);
+    const allowedOrigins = configuredOrigins(env);
+    const headers = corsHeaders(origin, allowedOrigins);
 
     if (request.method === 'OPTIONS') {
-      if (!isAllowedOrigin(origin, env.DASHBOARD_ORIGIN)) {
+      if (!allowedOrigins.has(origin)) {
         return jsonResponse({ error: 'Origin is not allowed.' }, 403, headers);
       }
       return new Response(null, { status: 204, headers });
@@ -43,7 +44,7 @@ export default {
     if (request.method !== 'POST') {
       return jsonResponse({ error: 'Method not allowed.' }, 405, headers);
     }
-    if (!isAllowedOrigin(origin, env.DASHBOARD_ORIGIN)) {
+    if (!allowedOrigins.has(origin)) {
       return jsonResponse({ error: 'Origin is not allowed.' }, 403, headers);
     }
     if (!/^application\/json(?:\s*;|$)/i.test(request.headers.get('Content-Type') || '')) {
@@ -209,24 +210,30 @@ async function generateDraft(conversation, ai) {
   return validateDraft(output);
 }
 
-function corsHeaders(origin, allowedOrigin) {
+function configuredOrigins(env) {
+  return new Set(
+    [env.DASHBOARD_ORIGIN, env.DASHBOARD_ORIGINS]
+      .filter(Boolean)
+      .flatMap(value => value.split(','))
+      .map(value => value.trim())
+      .filter(Boolean)
+  );
+}
+
+function corsHeaders(origin, allowedOrigins) {
   const headers = {
     'Cache-Control': 'no-store',
     'Content-Type': 'application/json; charset=utf-8',
     'Vary': 'Origin',
     'X-Content-Type-Options': 'nosniff'
   };
-  if (origin && origin === allowedOrigin) {
+  if (origin && allowedOrigins.has(origin)) {
     headers['Access-Control-Allow-Origin'] = origin;
     headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS';
     headers['Access-Control-Allow-Headers'] = 'Content-Type';
     headers['Access-Control-Max-Age'] = '600';
   }
   return headers;
-}
-
-function isAllowedOrigin(origin, allowedOrigin) {
-  return !!origin && !!allowedOrigin && origin === allowedOrigin;
 }
 
 function jsonResponse(body, status, headers) {
