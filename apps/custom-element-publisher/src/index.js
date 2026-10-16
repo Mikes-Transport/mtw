@@ -137,38 +137,47 @@ function validateConversation(messages, draft) {
 }
 
 function validateDraft(value) {
-  if (!value || typeof value !== 'object') return null;
-  const strings = ['title', 'assistantMessage', 'html', 'css', 'js'];
-  const draft = {};
-  for (const field of strings) {
-    if (typeof value[field] !== 'string' || value[field].length > 16000) return null;
-    draft[field] = value[field];
-  }
-  if (draft.title.length > 100 || draft.assistantMessage.length > 1200) return null;
-  if (!draft.title.trim() || !draft.assistantMessage.trim() || !draft.html.trim()) return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const title = typeof value.title === 'string' && value.title.trim()
+    ? value.title.slice(0, 100)
+    : 'Custom web element';
+  const assistantMessage = typeof value.assistantMessage === 'string' && value.assistantMessage.trim()
+    ? value.assistantMessage.slice(0, 1200)
+    : 'Here is your generated design.';
+  const html = value.html;
+  const css = value.css == null ? '' : value.css;
+  const js = value.js == null ? '' : value.js;
+  if (typeof html !== 'string' || !html.trim() || html.length > 16000 ||
+      typeof css !== 'string' || css.length > 16000 ||
+      typeof js !== 'string' || js.length > 16000) return null;
+  const draft = { title, assistantMessage, html, css, js };
   if (draft.html.length + draft.css.length + draft.js.length > 36000) return null;
-  if (!Array.isArray(value.editableFields) || value.editableFields.length > 12) return null;
+  const fields = Array.isArray(value.editableFields) ? value.editableFields.slice(0, 12) : [];
   const keys = new Set();
   draft.editableFields = [];
-  for (const field of value.editableFields) {
+  for (const field of fields) {
     if (!field || typeof field !== 'object' ||
         typeof field.key !== 'string' || !/^[a-z][a-z0-9_]{0,39}$/.test(field.key) ||
-        keys.has(field.key) || typeof field.label !== 'string' || !field.label.trim() ||
-        field.label.length > 80 || !['text', 'color', 'number', 'boolean'].includes(field.type)) return null;
-    keys.add(field.key);
-    if (field.type === 'text' && (typeof field.defaultValue !== 'string' || field.defaultValue.length > 300)) return null;
-    if (field.type === 'color' && (typeof field.defaultValue !== 'string' || !/^#[0-9a-f]{6}$/i.test(field.defaultValue))) return null;
-    if (field.type === 'number' && (!Number.isFinite(field.defaultValue) || Math.abs(field.defaultValue) > 100000)) return null;
-    if (field.type === 'boolean' && typeof field.defaultValue !== 'boolean') return null;
+        keys.has(field.key) || !['text', 'color', 'number', 'boolean'].includes(field.type)) continue;
+    let defaultValue = field.defaultValue;
+    if (field.type === 'text' && (typeof defaultValue !== 'string' || defaultValue.length > 300)) continue;
+    if (field.type === 'color' && (typeof defaultValue !== 'string' || !/^#[0-9a-f]{6}$/i.test(defaultValue))) continue;
+    if (field.type === 'number' && (!Number.isFinite(defaultValue) || Math.abs(defaultValue) > 100000)) continue;
+    if (field.type === 'boolean' && typeof defaultValue !== 'boolean') continue;
     const source = `${draft.html}\n${draft.css}\n${draft.js}`;
     if (!source.includes(`{{field:${field.key}}}`) &&
         !source.includes(`MTW_SETTINGS["${field.key}"]`) &&
-        !source.includes(`MTW_SETTINGS['${field.key}']`)) return null;
+        !source.includes(`MTW_SETTINGS['${field.key}']`)) continue;
+    const label = typeof field.label === 'string' && field.label.trim()
+      ? field.label.trim().slice(0, 80)
+      : field.key.replace(/_/g, ' ');
+    if (!label) continue;
+    keys.add(field.key);
     draft.editableFields.push({
       key: field.key,
-      label: field.label.trim(),
+      label,
       type: field.type,
-      defaultValue: field.defaultValue
+      defaultValue
     });
   }
   return draft;
