@@ -10,7 +10,7 @@
   const PUBLISHER_URL = String(
     MTW.customElementPublisherUrl ||
     window.MTW_CUSTOM_ELEMENT_PUBLISHER_URL ||
-    ''
+    'https://mtw.mtwaustin.workers.dev/'
   ).trim();
 
   const TEMPLATES = {
