@@ -145,7 +145,7 @@ function validateDraft(value) {
     ? value.assistantMessage.slice(0, 1200)
     : 'Here is your generated design.';
   const html = value.html;
-  const css = value.css == null ? '' : value.css;
+  const css = value.css == null ? '' : normalizeCss(value.css);
   const js = value.js == null ? '' : value.js;
   if (typeof html !== 'string' || !html.trim() || html.length > 16000 ||
       typeof css !== 'string' || css.length > 16000 ||
@@ -157,7 +157,7 @@ function validateDraft(value) {
   draft.editableFields = [];
   for (const field of fields) {
     if (!field || typeof field !== 'object' ||
-        typeof field.key !== 'string' || !/^[a-z][a-z0-9_]{0,39}$/.test(field.key) ||
+        typeof field.key !== 'string' || !/^[a-z][a-zA-Z0-9_]{0,39}$/.test(field.key) ||
         keys.has(field.key) || !['text', 'color', 'number', 'boolean'].includes(field.type)) continue;
     let defaultValue = field.defaultValue;
     if (field.type === 'text' && (typeof defaultValue !== 'string' || defaultValue.length > 300)) continue;
@@ -181,6 +181,13 @@ function validateDraft(value) {
     });
   }
   return draft;
+}
+
+function normalizeCss(value) {
+  let css = value.trim();
+  css = css.replace(/^```(?:css)?\s*/i, '').replace(/\s*```$/, '').trim();
+  const styleMatch = css.match(/^<style(?:\s[^>]*)?>([\s\S]*)<\/style>$/i);
+  return styleMatch ? styleMatch[1].trim() : css;
 }
 
 async function generateDraft(conversation, ai) {

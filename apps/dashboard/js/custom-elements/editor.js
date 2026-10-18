@@ -106,7 +106,7 @@
     const editableFields = [];
     const fields = Array.isArray(value.editableFields) ? value.editableFields.slice(0, 12) : [];
     for (const item of fields) {
-      if (!item || typeof item.key !== 'string' || !/^[a-z][a-z0-9_]{0,39}$/.test(item.key) ||
+      if (!item || typeof item.key !== 'string' || !/^[a-z][a-zA-Z0-9_]{0,39}$/.test(item.key) ||
           keys.has(item.key) || !['text', 'color', 'number', 'boolean'].includes(item.type)) continue;
       if (item.type === 'text' && (typeof item.defaultValue !== 'string' || item.defaultValue.length > 300)) continue;
       if (item.type === 'color' && (typeof item.defaultValue !== 'string' || !/^#[0-9a-f]{6}$/i.test(item.defaultValue))) continue;
@@ -418,6 +418,13 @@
       .replace(/[\r\n]/g, ' ');
   }
 
+  function normalizeAiCss(value) {
+    let css = value.trim();
+    css = css.replace(/^```(?:css)?\s*/i, '').replace(/\s*```$/, '').trim();
+    const styleMatch = css.match(/^<style(?:\s[^>]*)?>([\s\S]*)<\/style>$/i);
+    return styleMatch ? styleMatch[1].trim() : css;
+  }
+
   function renderAiPreview() {
     const preview = field('cwe-preview');
     if (!aiDraft) {
@@ -431,12 +438,12 @@
     aiDraft.editableFields.forEach(item => {
       values[item.key] = normalizedAiValue(item, aiValues[item.key]);
     });
-    const interpolate = (source, escape) => source.replace(/\{\{field:([a-z][a-z0-9_]*)\}\}/g, (match, key) => {
+    const interpolate = (source, escape) => source.replace(/\{\{field:([a-z][a-zA-Z0-9_]*)\}\}/g, (match, key) => {
       const item = aiDraft.editableFields.find(candidate => candidate.key === key);
       return item ? escape(values[key]) : '';
     });
     const html = interpolate(aiDraft.html, esc);
-    const css = interpolate(aiDraft.css, cssValue);
+    const css = interpolate(normalizeAiCss(aiDraft.css), cssValue);
     const settingsJson = JSON.stringify(values).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
     const source = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><style>${css}</style></head><body>${html}<script>window.MTW_SETTINGS=${settingsJson};</script><script>${aiDraft.js.replace(/<\/script/gi, '<\\/script')}</script></body></html>`;
     const iframe = document.createElement('iframe');

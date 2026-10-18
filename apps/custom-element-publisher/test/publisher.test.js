@@ -191,6 +191,29 @@ test('keeps a simple visual draft when optional AI metadata is missing', async (
   assert.deepEqual(result.draft.editableFields, []);
 });
 
+test('preserves camelCase CSS fields and normalizes fenced style output', async () => {
+  const styledDraft = {
+    ...aiDraft,
+    html: '<div class="pineapple" style="color: {{field:textColor}}">Pineapple</div>',
+    css: '```css\n<style>.pineapple { color: {{field:textColor}}; font-size: 2rem; }</style>\n```',
+    editableFields: [
+      { key: 'textColor', label: 'Text colour', type: 'color', defaultValue: '#dd4400' }
+    ]
+  };
+  const env = {
+    DASHBOARD_ORIGIN: dashboardOrigin,
+    AI: { async run() { return { response: styledDraft }; } }
+  };
+  const response = await worker.fetch(makeAiRequest([
+    { role: 'user', content: 'Make me a pineapple with bright orange text.' }
+  ]), env);
+  const result = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(result.draft.css, '.pineapple { color: {{field:textColor}}; font-size: 2rem; }');
+  assert.deepEqual(result.draft.editableFields, styledDraft.editableFields);
+});
+
 test('returns a setup error when Workers AI is not bound', async () => {
   const response = await worker.fetch(
     makeAiRequest([{ role: 'user', content: 'Create a card.' }]),
