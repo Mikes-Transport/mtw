@@ -127,7 +127,11 @@ test('generates a constrained AI draft without requiring GitHub publishing crede
   assert.equal(call.input.max_tokens, 3500);
   assert.equal(call.input.messages[0].role, 'system');
   assert.equal(call.input.response_format.type, 'json_schema');
+  assert.equal(call.input.response_format.json_schema.properties.css.minLength, 1);
   assert.match(call.input.messages[0].content, /strong visual designer/);
+  assert.match(call.input.messages[0].content, /Treat CSS as a core part of the deliverable/);
+  assert.match(call.input.messages[0].content, /do not leave a small default-sized SVG/);
+  assert.match(call.input.messages[0].content, /Make the composition fill and use the available preview area/);
   assert.match(call.input.messages[0].content, /Do not invent prices/);
   assert.match(call.input.messages[0].content, /Never mention JSON/);
 });
