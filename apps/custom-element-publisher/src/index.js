@@ -193,13 +193,21 @@ function normalizeCss(value) {
 async function generateDraft(conversation, ai) {
   const systemPrompt = [
     'You create a draft custom web element for a small business dashboard.',
-    'Return the requested JSON object only. The HTML is a body fragment, CSS is scoped under a unique root class, and JavaScript is optional.',
+    'Return values that match the required response schema. The HTML is a body fragment, CSS is standalone CSS scoped under a unique root class, and JavaScript is optional.',
+    'Fulfill the user request literally. Do not turn a requested illustration or object into a store/product card unless the user asks for a product card.',
+    'Do not invent prices, purchase buttons, calls to action, or other business details the user did not request.',
+    'When asked to depict a recognizable object, make it visibly recognizable using inline SVG, CSS shapes, or a suitable emoji in the HTML.',
+    'Act like a strong visual designer, not a wireframe generator. Make polished, visually complete, responsive HTML/CSS that looks intentionally art-directed rather than like a generic white card.',
+    'Choose a cohesive palette, typography, spacing scale, shape language, and visual hierarchy that fit the requested subject and mood. Use a distinctive focal point, layered surfaces, thoughtful contrast, and refined details where appropriate.',
+    'Include complete CSS for every generated component: an explicit scoped root rule, deliberate typography, layout, spacing, colors, borders or shadows, and responsive behavior. Add tasteful hover/focus states to interactive controls. Do not rely on browser-default styling or return empty CSS for a visual design.',
+    'Use CSS custom properties on the unique root class for reusable colors and spacing when helpful. Keep all selectors scoped to that root; do not style body, html, or unrelated page elements.',
+    'Write assistantMessage as one brief, natural sentence describing what you made. Never mention JSON, schemas, objects, or that you are returning code.',
     'Create original, self-contained HTML/CSS/JavaScript. Do not load external scripts, fonts, images, or libraries.',
     'This is a visual prototype, not a production checkout integration. Never claim to connect to a real order, payment, account, database, or reward system. Use simulated interactions only.',
     'Do not use network requests, cookies, localStorage, sessionStorage, or browser navigation.',
     'Provide up to 12 editableFields with key, label, type (text, color, number, boolean), and defaultValue.',
     'Use {{field:key}} placeholders in HTML text/attribute values and CSS values when an editable field should control the design. JavaScript can read window.MTW_SETTINGS["key"].',
-    'Use a unique root class in the HTML and scope all CSS to it. Keep the design responsive and accessible.',
+    'Use a unique root class in the HTML and scope all CSS to it. Keep the design responsive, accessible, complete, and visually faithful to the request.',
     'When given an existing draft, refine it while preserving unrelated working parts.',
     conversation.draft ? `Existing draft JSON:\n${JSON.stringify(conversation.draft)}` : ''
   ].filter(Boolean).join('\n');

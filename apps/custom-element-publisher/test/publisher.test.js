@@ -127,6 +127,9 @@ test('generates a constrained AI draft without requiring GitHub publishing crede
   assert.equal(call.input.max_tokens, 3500);
   assert.equal(call.input.messages[0].role, 'system');
   assert.equal(call.input.response_format.type, 'json_schema');
+  assert.match(call.input.messages[0].content, /strong visual designer/);
+  assert.match(call.input.messages[0].content, /Do not invent prices/);
+  assert.match(call.input.messages[0].content, /Never mention JSON/);
 });
 
 test('rejects invalid AI conversation and origin before invoking the model', async () => {
