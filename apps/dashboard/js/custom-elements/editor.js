@@ -8,9 +8,11 @@
   const AI_PREVIEW_BASE_CSS = `
     *,*::before,*::after{box-sizing:border-box}
     html{min-height:100%;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-    body{min-height:100vh;margin:0;padding:16px;color:#18181b;background:#f8fafc;font-family:inherit;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+    body{display:grid;place-items:center;min-height:100vh;margin:0;padding:16px;color:#18181b;background:radial-gradient(ellipse at 50% 42%,#fff 0%,#f7f8fc 76%);font-family:inherit;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
     button,input,select,textarea{font:inherit}
     button{cursor:pointer}
+    svg{max-width:100%;height:auto}
+    body>svg:first-child,body>:first-child>svg:only-child{display:block;width:min(100%,360px);height:auto;max-height:360px}
     :focus-visible{outline:3px solid #6366f1;outline-offset:2px}
     @media(max-width:420px){body{padding:10px}}
   `;
@@ -434,6 +436,17 @@
     return styleMatch ? styleMatch[1].trim() : css;
   }
 
+  function fallbackAiCss(html) {
+    const root = html.match(/<([a-z][a-z0-9-]*)\b([^>]*)>/i);
+    if (!root) return '';
+    const classAttribute = root[2].match(/\bclass\s*=\s*(["'])(.*?)\1/i);
+    const rootClass = classAttribute && classAttribute[2]
+      .split(/\s+/)
+      .find(token => /^[a-zA-Z_-][a-zA-Z0-9_-]*$/.test(token));
+    const selector = rootClass ? `.${rootClass}` : `body>${root[1].toLowerCase()}:first-child`;
+    return `${selector}{box-sizing:border-box;display:grid;place-items:center;width:min(100%,680px);min-height:320px;margin:auto;padding:clamp(24px,6vw,56px);border:1px solid rgba(30,41,59,.1);border-radius:24px;background:linear-gradient(145deg,#fff 0%,#f5f7fb 100%);box-shadow:0 20px 55px rgba(15,23,42,.12)}${selector}>svg:only-child{display:block;width:min(100%,360px);height:auto;max-height:360px}`;
+  }
+
   function renderAiPreview() {
     const preview = field('cwe-preview');
     if (!aiDraft) {
@@ -452,7 +465,8 @@
       return item ? escape(values[key]) : '';
     });
     const html = interpolate(aiDraft.html, esc);
-    const css = interpolate(normalizeAiCss(aiDraft.css), cssValue);
+    const draftCss = normalizeAiCss(aiDraft.css);
+    const css = interpolate(draftCss || fallbackAiCss(aiDraft.html), cssValue);
     const settingsJson = JSON.stringify(values).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
     const styleText = `${AI_PREVIEW_BASE_CSS}\n${css}`.replace(/<\/style/gi, '<\\/style');
     const source = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><style>${styleText}</style></head><body>${html}<script>window.MTW_SETTINGS=${settingsJson};</script><script>${aiDraft.js.replace(/<\/script/gi, '<\\/script')}</script></body></html>`;
