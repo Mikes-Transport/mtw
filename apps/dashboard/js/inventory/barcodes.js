@@ -1164,6 +1164,28 @@ gap: 4px;
 min-width: 0;
 }
 
+.barcode-extra-fields-compact {
+flex-direction: row;
+gap: 4px;
+}
+
+.barcode-extra-fields-compact .barcode-extra-field {
+min-width: 0;
+}
+
+.barcode-ka .barcode-extra-fields-compact {
+gap: 4px;
+}
+
+.barcode-extra-fields-compact .barcode-extra-heading,
+.barcode-extra-fields-compact .barcode-extra-subtext {
+white-space: nowrap;
+}
+
+.barcode-card[data-barcode-template="xlarge"] .barcode-extra-fields-compact {
+gap: 2px;
+}
+
 .barcode-extra-field {
 display: flex;
 flex-direction: column;
@@ -1213,32 +1235,28 @@ text-align: center;
 align-self: center;
 }
 
-.db-left-content.editing{
-width:100%!important;
-height: 100% !important;
-min-height:0!important;
-max-height: 100% !important;
-overflow:hidden!important;
-display:flex!important;
-flex-direction:column!important;
-overscroll-behavior:contain!important;
-overscroll-behavior-y:contain!important;
-}
-
-.db-left-content.editing .barcode-edit-panel {
-flex: 1 1 auto !important;
-width: 100% !important;
-height: 50% !important;
-min-height: 0 !important;
-max-height: 50% !important;
-overflow-y: auto !important;
-overflow-x: hidden !important;
-box-sizing: border-box !important;
-padding-right: 10px !important;
-overscroll-behavior: contain !important;
--webkit-overflow-scrolling: touch !important;
+.barcode-edit-panel {
+position: fixed;
+top: var(--barcode-edit-top, 148px);
+right: 20px;
+z-index: 10000;
+display: flex;
+flex-direction: column;
+width: min(390px, calc(100vw - 32px));
+max-height: calc(100dvh - var(--barcode-edit-top, 148px) - 16px);
+box-sizing: border-box;
+padding: 18px;
+overflow-y: auto;
+overflow-x: hidden;
+overscroll-behavior: contain;
+-webkit-overflow-scrolling: touch;
 scrollbar-width: thin;
 touch-action: pan-y;
+border: 1px solid #deddd9;
+border-radius: 12px;
+background: #fff;
+color: #242424;
+box-shadow: 0 16px 48px rgba(0, 0, 0, .2);
 }
 
 .barcode-edit-panel::-webkit-scrollbar {
@@ -1259,13 +1277,17 @@ background: #aaa;
 }
 
 .barcode-edit-panel-header {
+position: sticky;
+top: -18px;
+z-index: 2;
 display: flex;
 justify-content: space-between;
 align-items: center;
 flex: 0 0 auto;
-margin-bottom: 14px;
-padding-bottom: 12px;
+margin: -18px -18px 14px;
+padding: 16px 18px 12px;
 border-bottom: 1px solid #e2e2e2;
+background: #fff;
 }
 
 .barcode-edit-panel-title {
@@ -1397,13 +1419,17 @@ accent-color: #111;
 }
 
 .barcode-edit-panel-footer {
+position: sticky;
+bottom: -18px;
+z-index: 2;
 display: flex;
 justify-content: flex-end;
 align-items: center;
 gap: 8px;
-margin-top: 18px;
-padding-top: 14px;
+margin: 18px -18px -18px;
+padding: 12px 18px 16px;
 border-top: 1px solid #e2e2e2;
+background: #fff;
 }
 
 .barcode-edit-button {
@@ -2304,6 +2330,13 @@ display: none !important;
 
 }
 
+@media (max-width: 700px) {
+.barcode-edit-panel {
+right: 10px;
+width: calc(100vw - 20px);
+}
+}
+
 `;
 
 document.head.appendChild(
@@ -2982,6 +3015,19 @@ extras
 
 extras.innerHTML = '';
 
+const compactExtras =
+card.template === 'xlarge' ||
+(
+card.template === 'large' &&
+card.showDate &&
+card.showQty
+);
+
+extras.classList.toggle(
+'barcode-extra-fields-compact',
+compactExtras
+);
+
 let hasExtras =
 false;
 
@@ -3011,12 +3057,19 @@ heading.className =
 heading.textContent =
 'Date';
 
+const headingSize =
+Number(card.dateHeadingSize) ||
+DEFAULTS.dateHeadingSize;
+const headingScale =
+card.template === 'xlarge'
+? 0.2
+: compactExtras
+? 0.5
+: 1;
 heading.style.fontSize =
-(
-Number(
-card.dateHeadingSize
-) ||
-DEFAULTS.dateHeadingSize
+Math.min(
+headingSize * headingScale,
+card.template === 'xlarge' ? 8 : compactExtras ? 20 : headingSize
 ) +
 'px';
 
@@ -3033,12 +3086,19 @@ formatBarcodeDate(
 card.date
 );
 
+const subtextSize =
+Number(card.dateSubtextSize) ||
+DEFAULTS.dateSubtextSize;
+const subtextScale =
+card.template === 'xlarge'
+? 0.35
+: compactExtras
+? 0.55
+: 1;
 subtext.style.fontSize =
-(
-Number(
-card.dateSubtextSize
-) ||
-DEFAULTS.dateSubtextSize
+Math.min(
+subtextSize * subtextScale,
+card.template === 'xlarge' ? 6 : compactExtras ? 10 : subtextSize
 ) +
 'px';
 
@@ -3079,12 +3139,19 @@ heading.className =
 heading.textContent =
 'QTY';
 
+const headingSize =
+Number(card.qtyHeadingSize) ||
+DEFAULTS.qtyHeadingSize;
+const headingScale =
+card.template === 'xlarge'
+? 0.2
+: compactExtras
+? 0.5
+: 1;
 heading.style.fontSize =
-(
-Number(
-card.qtyHeadingSize
-) ||
-DEFAULTS.qtyHeadingSize
+Math.min(
+headingSize * headingScale,
+card.template === 'xlarge' ? 8 : compactExtras ? 20 : headingSize
 ) +
 'px';
 
@@ -3109,12 +3176,19 @@ card.manualQty
 : 0
 );
 
+const subtextSize =
+Number(card.qtySubtextSize) ||
+DEFAULTS.qtySubtextSize;
+const subtextScale =
+card.template === 'xlarge'
+? 0.35
+: compactExtras
+? 0.55
+: 1;
 subtext.style.fontSize =
-(
-Number(
-card.qtySubtextSize
-) ||
-DEFAULTS.qtySubtextSize
+Math.min(
+subtextSize * subtextScale,
+card.template === 'xlarge' ? 6 : compactExtras ? 10 : subtextSize
 ) +
 'px';
 
@@ -4967,11 +5041,18 @@ return;
 }
 
 const host =
-els.left ||
-els.panel;
+document.body;
 
 if (!host) {
 return;
+}
+
+if (els.left) {
+els.left.classList.remove('editing');
+}
+
+if (els.menu) {
+els.menu.style.removeProperty('display');
 }
 
 closeHistoryPanel();
@@ -4979,7 +5060,7 @@ closeHistoryPanel();
 openBarcodePanel();
 
 const old =
-host.querySelector(
+document.querySelector(
 '.barcode-edit-panel'
 );
 
@@ -4990,21 +5071,6 @@ old.remove();
 editing =
 card.id;
 
-if (els.left) {
-
-if (els.menu) {
-
-els.menu.style.display =
-'none';
-
-}
-
-els.left.classList.add(
-'editing'
-);
-
-}
-
 const panel =
 buildEditPanel(
 card
@@ -5012,6 +5078,19 @@ card
 
 host.appendChild(
 panel
+);
+
+const navigation =
+document.querySelector('.db-menu-list');
+const navigationBottom =
+navigation
+? navigation.getBoundingClientRect().bottom
+: document.querySelector('.db-menu-header')?.getBoundingClientRect().bottom || 0;
+const panelTop =
+Math.max(16, Math.ceil(navigationBottom + 12));
+panel.style.setProperty(
+'--barcode-edit-top',
+panelTop + 'px'
 );
 
 requestAnimationFrame(
@@ -5029,39 +5108,19 @@ function hideEdit() {
 
 editing = null;
 
-[
-els.left,
-els.panel
-].forEach(
-host => {
-
-if (!host) return;
-
-const panel =
-host.querySelector(
-'.barcode-edit-panel'
-);
-
-if (panel) {
-panel.remove();
-}
-
-}
-);
-
 if (els.left) {
-
-els.left.classList.remove(
-'editing'
-);
-
+els.left.classList.remove('editing');
 }
 
 if (els.menu) {
+els.menu.style.removeProperty('display');
+}
 
-els.menu.style.display =
-'';
+const panel =
+document.querySelector('.barcode-edit-panel');
 
+if (panel) {
+panel.remove();
 }
 
 }
@@ -5261,17 +5320,7 @@ selectTemplate(
 selectedTemplate
 );
 
-keepDropdownOpen();
-
-setTimeout(
-keepDropdownOpen,
-0
-);
-
-setTimeout(
-keepDropdownOpen,
-50
-);
+closeDropdown();
 
 },
 true

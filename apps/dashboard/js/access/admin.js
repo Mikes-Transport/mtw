@@ -18,8 +18,7 @@
       'promotion-label',
       'barcodes',
       'secondhand-tool',
-      'product-info',
-      'custom-web-element'
+      'product-info'
     ],
 
     Developer: '*'
@@ -42,25 +41,25 @@
       return;
     }
 
-    const allowed =
-      ACCESS[user];
-
-    document
-      .querySelectorAll(
-        '.db-list-toolcard'
-      )
-      .forEach(card => {
-
-        const tool =
-          card.dataset.select;
-
-        const canAccess =
-          allowed === '*' ||
-          allowed?.includes(tool);
-
-        card.style.display =
-          canAccess ? '' : 'none';
+    function applyAccess(settings) {
+      const allowed = ACCESS[user];
+      document.querySelectorAll('.db-list-toolcard').forEach(card => {
+        const tool = card.dataset.select;
+        const configured = settings && settings[tool];
+        const roleOverrides = configured && Array.isArray(configured.roles);
+        const canAccess = user === 'Developer' ||
+          (roleOverrides
+            ? configured.roles.includes(user)
+            : allowed === '*' || allowed?.includes(tool));
+        const enabled = !configured || configured.enabled !== false;
+        card.style.display = canAccess && enabled ? '' : 'none';
       });
+    }
+
+    applyAccess(window.MTW_TOOL_SETTINGS || {});
+    document.addEventListener('db-tools-ready', event => {
+      applyAccess(event.detail && event.detail.settings);
+    });
 
     const userField =
       document.querySelector(
