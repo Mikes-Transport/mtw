@@ -1,14 +1,14 @@
 # Dashboard: simple maintenance guide
 
-The dashboard page layout is managed in Webflow. Its behavior and shared styling live in this folder.
+The Webflow page provides the existing tool panels. `js/navigation/dashboard-navigation.js` loads `js/navigation/dashboard-shell.js`, which assembles those panels and the existing tool navigation into the dashboard interface. Tool behavior and data remain in their current modules.
 
-## Change the look
+## Change the dashboard interface
 
-Edit `styles/admin-dashboard.css`.
+The shell is created by `js/navigation/dashboard-shell.js`; update its structure there. Shared layout and responsive styles are in `styles/admin-dashboard.css`.
 
-- The color variables at the top control the shared dashboard palette.
-- Tool data and actions live in the tool's JavaScript, not in this stylesheet.
-- The shared top navigation and updates timeline are styled here; changing colors or spacing does not change saved data.
+- The color variables at the top control the dashboard palette.
+- The shell reuses the existing Webflow tool panels and navigation hooks; it does not replace tool data or actions.
+- Keep A4 paper and barcode label dimensions in `js/inventory/barcodes.js` unchanged when editing the dashboard shell.
 
 ## Manage navigation (Developers)
 

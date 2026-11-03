@@ -10,6 +10,9 @@ const { $, $$ } = window.MTW;
   const DEVELOPER_TOOLS_URL = navigationScript && navigationScript.src
     ? new URL('../access/developer-tools.js', navigationScript.src).href
     : 'https://raw.githack.com/Mikes-Transport/mtw/main/apps/dashboard/js/access/developer-tools.js';
+  const DASHBOARD_SHELL_URL = navigationScript && navigationScript.src
+    ? new URL('./dashboard-shell.js', navigationScript.src).href
+    : 'https://raw.githack.com/Mikes-Transport/mtw/main/apps/dashboard/js/navigation/dashboard-shell.js';
 
   const TOOLS = {
     'activity-logs': { panel: '.activity-logs-panel', name: 'Activity Logs', roles: ['Developer'] },
@@ -33,7 +36,7 @@ const { $, $$ } = window.MTW;
       const el = $(tool.panel);
 
       if (el) {
-        el.style.display = 'none';
+        el.style.setProperty('display', 'none', 'important');
       }
     });
   }
@@ -68,7 +71,7 @@ const { $, $$ } = window.MTW;
     }
 
     if (panel) {
-      panel.style.display = 'block';
+      panel.style.setProperty('display', 'block', 'important');
     }
 
     if (heading) {
@@ -88,6 +91,10 @@ const { $, $$ } = window.MTW;
         }
       })
     );
+
+    if (panel) {
+      panel.style.setProperty('display', 'block', 'important');
+    }
   }
 
   function closeDBTool() {
@@ -356,6 +363,16 @@ const { $, $$ } = window.MTW;
         console.error('[dashboard] failed to load developer tools:', manager.src);
       };
       document.head.appendChild(manager);
+    }
+
+    if (!document.querySelector('script[data-mtw-dashboard-shell]')) {
+      const shell = document.createElement('script');
+      shell.dataset.mtwDashboardShell = 'true';
+      shell.src = DASHBOARD_SHELL_URL;
+      shell.onerror = function () {
+        console.error('[dashboard] failed to load dashboard shell:', shell.src);
+      };
+      document.head.appendChild(shell);
     }
   }
 
