@@ -772,3 +772,304 @@ body:has(.db-main-wrapper) {
     box-shadow: none;
   }
 }
+
+.mtw-dashboard-shell.db-main-wrapper {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: auto auto minmax(0, 1fr) !important;
+  gap: 0 !important;
+  align-items: stretch;
+  width: 100% !important;
+  max-width: none !important;
+  min-height: 100vh;
+  margin: 0 !important;
+  background: var(--mtw-canvas);
+}
+
+.mtw-shell-header {
+  box-sizing: border-box;
+  display: flex;
+  min-height: 82px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px clamp(18px, 4vw, 56px);
+  border-bottom: 1px solid #343434;
+  background: var(--mtw-shell);
+  color: #f7f7f5;
+}
+
+.mtw-shell-brand {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 13px;
+}
+
+.mtw-shell-mark {
+  display: grid;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid #777774;
+  border-radius: 50%;
+  background: #303030;
+  color: #f7f7f5;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.mtw-shell-brand-text {
+  min-width: 0;
+}
+
+.mtw-shell-title {
+  margin: 0;
+  color: #f7f7f5;
+  font-size: 19px;
+  font-weight: 680;
+  letter-spacing: -.035em;
+  line-height: 1.2;
+}
+
+.mtw-shell-subtitle {
+  margin: 4px 0 0;
+  color: #b7b7b2;
+  font-size: 11px;
+  letter-spacing: .02em;
+}
+
+.mtw-shell-account {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+
+.mtw-shell-account-label {
+  color: #b7b7b2;
+  font-size: 10px;
+}
+
+.mtw-shell-account-role {
+  color: #f7f7f5;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.mtw-shell-navigation {
+  position: relative;
+  z-index: 4;
+  display: block;
+  min-width: 0;
+  padding: 0 clamp(12px, 3vw, 32px);
+  overflow: visible;
+  border-bottom: 1px solid var(--mtw-line);
+  background: #fff;
+}
+
+.mtw-dashboard-shell .db-menu-list {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: row !important;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 2px;
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  scrollbar-width: thin;
+}
+
+.mtw-dashboard-shell .db-list-toolcard.dark,
+.mtw-dashboard-shell .db-list-dropdown-wrapper > .db-list-toolcard.dark {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  width: max-content !important;
+  min-width: max-content;
+  min-height: 58px;
+  margin: 0;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #686865;
+  cursor: pointer;
+  transition: color .14s ease, background .14s ease;
+}
+
+.mtw-dashboard-shell .db-list-toolcard.dark::after,
+.mtw-dashboard-shell .db-list-dropdown-wrapper > .db-list-toolcard.dark::after,
+.mtw-home-tab::after {
+  position: absolute;
+  right: 12px;
+  bottom: -1px;
+  left: 12px;
+  height: 2px;
+  transform: scaleX(0);
+  background: #252525;
+  content: "";
+  transition: transform .14s ease;
+}
+
+.mtw-dashboard-shell .db-list-toolcard.dark:hover,
+.mtw-home-tab:hover {
+  color: #202020;
+}
+
+.mtw-dashboard-shell .db-list-toolcard.dark.is-active,
+.mtw-dashboard-shell .db-list-dropdown-wrapper > .db-list-toolcard.dark.is-active,
+.mtw-home-tab[aria-current="page"] {
+  background: transparent !important;
+  color: #202020;
+}
+
+.mtw-dashboard-shell .db-list-toolcard.dark.is-active::after,
+.mtw-dashboard-shell .db-list-dropdown-wrapper > .db-list-toolcard.dark.is-active::after,
+.mtw-home-tab[aria-current="page"]::after {
+  transform: scaleX(1);
+}
+
+.mtw-dashboard-shell .db-list-toolcard.dark:focus,
+.mtw-dashboard-shell .db-list-toolcard.dark:focus-visible,
+.mtw-dashboard-shell .db-list-toolcard.dark:active,
+.mtw-home-tab:focus,
+.mtw-home-tab:focus-visible,
+.mtw-home-tab:active {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.mtw-dashboard-shell .db-list-toolcard.dark:focus-visible,
+.mtw-home-tab:focus-visible {
+  outline: 2px solid var(--mtw-focus);
+  outline-offset: -3px;
+}
+
+.mtw-dashboard-shell .db-list-toolcard.dark .db-heading-list {
+  margin: 0;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 620;
+  white-space: nowrap;
+}
+
+.mtw-dashboard-shell .db-list-toolcard.dark .db-list-icon {
+  display: grid;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  background: transparent;
+}
+
+.mtw-dashboard-shell .db-list-toolcard.dark .db-list-icon img,
+.mtw-dashboard-shell .db-list-toolcard.dark .db-list-icon svg {
+  max-width: 16px;
+  max-height: 16px;
+  filter: brightness(0);
+  opacity: .72;
+}
+
+.mtw-dashboard-shell .db-list-dropdown-wrapper {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+  width: max-content !important;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.mtw-home-tab {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 58px;
+  align-items: center;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: #686865;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 620;
+  cursor: pointer;
+}
+
+.mtw-shell-content,
+.mtw-dashboard-shell .db-right-content {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: calc(100vh - 140px);
+  padding: clamp(24px, 4vw, 56px) clamp(18px, 5vw, 72px);
+  background:
+    radial-gradient(ellipse at 82% 0%, rgba(0, 0, 0, .025), transparent 34rem),
+    var(--mtw-canvas);
+}
+
+@media (max-width: 760px) {
+  .mtw-shell-header {
+    min-height: 70px;
+    padding: 12px 16px;
+  }
+
+  .mtw-shell-title {
+    font-size: 17px;
+  }
+
+  .mtw-shell-navigation {
+    flex-wrap: wrap;
+    gap: 0;
+    padding: 0 8px;
+  }
+
+  .mtw-dashboard-shell .db-menu-list {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .mtw-home-tab {
+    min-height: 46px;
+  }
+
+  .mtw-dashboard-shell .db-list-toolcard.dark,
+  .mtw-dashboard-shell .db-list-dropdown-wrapper > .db-list-toolcard.dark {
+    min-height: 46px;
+    padding: 0 7px;
+  }
+
+  .mtw-shell-content,
+  .mtw-dashboard-shell .db-right-content {
+    min-height: calc(100vh - 116px);
+    padding: 24px 14px;
+  }
+}
+
+@media print {
+  .mtw-shell-header,
+  .mtw-shell-navigation {
+    display: none !important;
+  }
+
+  .mtw-dashboard-shell.db-main-wrapper {
+    display: block !important;
+  }
+}
