@@ -69,7 +69,7 @@ Remove any old pasted or inline copies of `dashboard-shell.js` or `dashboard-nav
 
 ## Deploying a change
 
-1. Open a PR. CI runs `npm run check` (parses every script) and `npm test` (loads the real scripts into a minimal host page).
+1. Open a PR. CI runs `npm run check` (parses every script) and `npm test` from `tests/` (loads the real scripts into a minimal host page).
 2. Merge to `main`.
 3. Update the Webflow script URL to the new commit SHA (or purge the CDN cache), then publish Webflow.
 4. Run the smoke test below on the published site.
