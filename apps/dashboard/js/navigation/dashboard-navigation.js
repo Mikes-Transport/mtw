@@ -23,18 +23,18 @@
   const DASHBOARD_SHELL_URL = new URL('js/navigation/dashboard-shell.js', BASE_URL).href;
 
   // Bump on each release so the live page can be checked for the version it runs.
-  const NAVIGATION_BUILD = '2026-11-11.8';
+  const NAVIGATION_BUILD = '2026-11-11.9';
 
   const TOOLS = {
-    'activity-logs': { panel: '.activity-logs-panel', name: 'Activity Logs', roles: ['Developer'] },
-    'secondhand-tool': { panel: '.second-hand-panel', name: 'Secondhand Stock', roles: ['Counter', 'Admin'] },
-    'product-info': { panel: '.product-tool-panel', name: 'Product Information', roles: ['Admin'] },
-    'csv-config': { panel: '.csv-tool-panel', name: 'CSV Config', roles: ['Developer'] },
-    'mte-config': { panel: '.master-list-config', name: 'MTE Config', roles: ['Developer'] },
-    'promotion-label': { panel: '.et-body-wrapper', name: 'Promotional Labels', roles: ['Counter', 'Admin'] },
-    'barcodes': { panel: '.barcode-label-panels', name: 'Barcode Labels', roles: ['Counter', 'Stores', 'KeyAccounts', 'Admin'] },
-    'model-tool-access': { panel: '.model-access-panel', name: 'Assign Model Tool Access', roles: ['Developer'] },
-    'developer-tools': { panel: '.developer-tools-panel', name: 'Developer Tools', roles: ['Developer'] }
+    'activity-logs': { panel: '.activity-logs-panel', name: 'Activity Logs', roles: ['Managers'] },
+    'secondhand-tool': { panel: '.second-hand-panel', name: 'Secondhand Stock', roles: ['Counter'] },
+    'product-info': { panel: '.product-tool-panel', name: 'Product Information', roles: ['Managers'] },
+    'csv-config': { panel: '.csv-tool-panel', name: 'CSV Config', roles: ['Managers'] },
+    'mte-config': { panel: '.master-list-config', name: 'MTE Config', roles: ['Managers'] },
+    'promotion-label': { panel: '.et-body-wrapper', name: 'Promotional Labels', roles: ['Counter'] },
+    'barcodes': { panel: '.barcode-label-panels', name: 'Barcode Labels', roles: ['Counter', 'Stores', 'KeyAccounts'] },
+    'model-tool-access': { panel: '.model-access-panel', name: 'Assign Model Tool Access', roles: ['Managers'] },
+    'developer-tools': { panel: '.developer-tools-panel', name: 'Manager Tools', roles: ['Managers'] }
   };
 
   // Panel markup lives in apps/dashboard/templates/<tool>.html. js/dashboard.js fetches
@@ -208,7 +208,16 @@
 
   window.MTW_ENSURE_DASHBOARD_MARKUP = ensureDashboardMarkup;
 
-  const ROLE_NAMES = ['Counter', 'Stores', 'KeyAccounts', 'Admin', 'Developer'];
+  // Roles set by the /admin sign-in page (sessionStorage.mtw_admin_name). Managers see
+  // every tool. 'Manager' is accepted as Managers; 'Developer' (the old name) in saved
+  // tool settings becomes Managers; the Admin role was removed.
+  const ROLE_NAMES = ['Counter', 'Stores', 'KeyAccounts', 'Managers'];
+  const MANAGER = 'Managers';
+  const normalizeRole = role => {
+    const value = String(role || '').trim();
+    return value === 'Manager' || value === 'Developer' ? MANAGER : value;
+  };
+  const isManager = role => normalizeRole(role) === MANAGER;
   let toolSettings = {};
   let activeToolId = null;
 
@@ -298,7 +307,7 @@
   }
 
   // The tool's X button steps back one level first: a tool showing a sub-view
-  // (e.g. Developer Tools editing one item) cancels 'db-tool-exit-request' and
+  // (e.g. Manager Tools editing one item) cancels 'db-tool-exit-request' and
   // handles the step itself. Only when nothing cancels does the tool close.
   function exitDBTool() {
     const request = new CustomEvent('db-tool-exit-request', {
@@ -342,7 +351,7 @@
 
   function validRoles(value) {
     return Array.isArray(value)
-      ? [...new Set(value.filter(role => ROLE_NAMES.includes(role)))]
+      ? [...new Set(value.map(normalizeRole).filter(role => ROLE_NAMES.includes(role)))]
       : [];
   }
 
@@ -393,7 +402,7 @@
 
   function canShowTool(id, tool) {
     const user = sessionStorage.getItem('mtw_admin_name');
-    return user === 'Developer' || (Array.isArray(tool.roles) && tool.roles.includes(user));
+    return isManager(user) || (Array.isArray(tool.roles) && tool.roles.includes(normalizeRole(user)));
   }
 
   function createCustomCard(id, name) {
@@ -447,7 +456,7 @@
       panel.appendChild(note);
     }
     const help = document.createElement('p');
-    help.textContent = 'This navigation item is ready to be connected to a tool by a developer.';
+    help.textContent = 'This navigation item is not connected to a tool yet.';
     panel.appendChild(help);
   }
 
@@ -562,7 +571,7 @@
     window.MTW_TOOL_REGISTRY = TOOLS;
     window.MTW_APPLY_TOOL_SETTINGS = applyToolSettings;
     applyToolSettings({});
-    createCustomCard('developer-tools', 'Developer Tools');
+    createCustomCard('developer-tools', 'Manager Tools');
     loadToolSettings().catch(error => {
       console.error('[dashboard] could not load tool settings:', error);
       applyToolSettings({});
@@ -576,7 +585,7 @@
       manager.dataset.mtwDeveloperTools = 'true';
       manager.src = DEVELOPER_TOOLS_URL;
       manager.onerror = function () {
-        console.error('[dashboard] failed to load developer tools:', manager.src);
+        console.error('[dashboard] failed to load manager tools:', manager.src);
       };
       document.head.appendChild(manager);
     }

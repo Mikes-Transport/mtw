@@ -58,7 +58,7 @@ function host(bodyHtml, { withTemplates = true } = {}) {
     pretendToBeVisual: true,
     virtualConsole,
     beforeParse(window) {
-      window.sessionStorage.setItem('mtw_admin_name', 'Developer');
+      window.sessionStorage.setItem('mtw_admin_name', 'Managers');
       window.MTW_DASHBOARD_BASE_URL = BASE_URL;
       if (withTemplates) window.MTW_DASHBOARD_TEMPLATES = { ...templates };
       const empty = { empty: true, size: 0, docs: [], forEach() {} };

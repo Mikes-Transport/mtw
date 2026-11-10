@@ -26,7 +26,7 @@ class RepoLoader extends ResourceLoader {
   }
 }
 
-function host(bodyHtml, { role = 'Developer', firebase = true, startupTimeoutMs } = {}) {
+function host(bodyHtml, { role = 'Managers', firebase = true, startupTimeoutMs } = {}) {
   const errors = [];
   const virtualConsole = new VirtualConsole();
   virtualConsole.on('error', (...args) => errors.push(args.join(' ')));
@@ -189,7 +189,7 @@ test('Webflow tool wrapper outside .db-right-content survives the shell', async 
 test('every navigation card has an SVG icon, including custom tools', async () => {
   const { dom, window, document } = host('<script src="dashboard-navigation.js"></script>');
   await waitFor(window, () => document.querySelector('.mtw-dashboard-shell'));
-  window.MTW_APPLY_TOOL_SETTINGS({ test: { custom: true, name: 'TEST', roles: ['Developer'] } });
+  window.MTW_APPLY_TOOL_SETTINGS({ test: { custom: true, name: 'TEST', roles: ['Managers'] } });
   const cards = [...document.querySelectorAll('.db-list-toolcard')];
   assert.ok(cards.some(card => card.dataset.select === 'test'));
   for (const card of cards) {
@@ -200,7 +200,7 @@ test('every navigation card has an SVG icon, including custom tools', async () =
   dom.window.close();
 });
 
-test('Developer Tools "Disable item" saves without a ReferenceError', async () => {
+test('Manager Tools "Disable item" saves without a ReferenceError', async () => {
   const { dom, window, document, errors } = host('<script src="dashboard-navigation.js"></script>');
   await waitFor(window, () => document.querySelector('.mtw-dashboard-shell') &&
     document.querySelector('.developer-tools-panel .developer-tool-row'));
@@ -214,7 +214,7 @@ test('Developer Tools "Disable item" saves without a ReferenceError', async () =
   dom.window.close();
 });
 
-test('X in a Developer Tools item returns to the list; X again closes the tool', async () => {
+test('X in a Manager Tools item returns to the list; X again closes the tool', async () => {
   const { dom, window, document, errors } = host('<script src="dashboard-navigation.js"></script>');
   await waitFor(window, () => document.querySelector('.mtw-dashboard-shell') &&
     document.querySelector('.developer-tools-panel .developer-tool-row'));
@@ -246,5 +246,27 @@ test('X in a Developer Tools item returns to the list; X again closes the tool',
   exit.click();
   assert.equal(wrapper.style.display, 'none');
   assert.deepEqual(relevantErrors(errors), []);
+  dom.window.close();
+});
+
+test('Managers (or Manager) see every tool; old Developer/Admin roles in saved settings are mapped or dropped', async () => {
+  for (const role of ['Managers', 'Manager']) {
+    const { dom, window, document } = host('<script src="dashboard-navigation.js"></script>', { role });
+    await waitFor(window, () => document.querySelector('.mtw-dashboard-shell'));
+    const visible = [...document.querySelectorAll('.db-list-toolcard')].filter(card => card.style.display !== 'none');
+    assert.equal(visible.length, Object.keys(window.MTW_TOOL_REGISTRY).length, `${role} sees every tool`);
+    assert.ok([...document.querySelectorAll('.db-heading-list')].some(el => el.textContent === 'Manager Tools'));
+    assert.equal(document.body.textContent.includes('Developer'), false, 'no Developer wording');
+    dom.window.close();
+  }
+
+  const { dom, window, document } = host('<script src="dashboard-navigation.js"></script>', { role: 'Counter' });
+  await waitFor(window, () => document.querySelector('.mtw-dashboard-shell'));
+  const shown = id => document.querySelector(`.db-list-toolcard[data-select="${id}"]`).style.display !== 'none';
+  assert.equal(shown('product-info'), false, 'Product Information was Admin-only; now Managers');
+  assert.equal(shown('barcodes'), true);
+
+  window.MTW_APPLY_TOOL_SETTINGS({ 'csv-config': { roles: ['Developer', 'Admin', 'Counter'] } });
+  assert.deepEqual([...window.MTW_TOOL_REGISTRY['csv-config'].roles], ['Managers', 'Counter']);
   dom.window.close();
 });

@@ -1,7 +1,8 @@
 'use strict';
 
 (function () {
-  const ROLES = ['Counter', 'Stores', 'KeyAccounts', 'Admin', 'Developer'];
+  const ROLES = ['Counter', 'Stores', 'KeyAccounts', 'Managers'];
+  const isManager = role => ['Managers', 'Manager'].includes(String(role || '').trim());
   const statusClass = 'developer-tools-status';
 
   function node(tag, className, text) {
@@ -58,7 +59,8 @@
 
     const roleGroup = node('fieldset', 'developer-tool-roles');
     roleGroup.appendChild(node('legend', '', 'Visible to'));
-    const roles = Array.isArray(settings.roles) ? settings.roles : getDefaultRoles(registry);
+    const roles = (Array.isArray(settings.roles) ? settings.roles : getDefaultRoles(registry))
+      .map(role => (role === 'Developer' || role === 'Manager' ? 'Managers' : role));
     ROLES.forEach(role => {
       const label = node('label');
       const checkbox = node('input');
@@ -149,8 +151,8 @@
   function render(panel) {
     panel.dataset.view = 'list';
     panel.replaceChildren();
-    panel.appendChild(node('h2', '', 'Developer tools'));
-    panel.appendChild(node('p', '', 'Manage navigation labels and access. New items create a safe placeholder only; a developer must connect the actual tool behavior in code.'));
+    panel.appendChild(node('h2', '', 'Manager tools'));
+    panel.appendChild(node('p', '', 'Manage navigation labels and access. New items create a placeholder only; the tool itself is added in code.'));
 
     const addButton = node('button', 'developer-tool-add', 'Add navigation item');
     addButton.type = 'button';
@@ -217,7 +219,7 @@
 
   function init() {
     const user = sessionStorage.getItem('mtw_admin_name');
-    if (user !== 'Developer') return;
+    if (!isManager(user)) return;
 
     const panel = document.querySelector('.developer-tools-panel');
     if (!panel) return;
