@@ -109,7 +109,7 @@ On the live dashboard, signed in, with DevTools open and **Disable cache** ticke
 - [ ] Every visible navigation item opens its tool. Tools without a migrated interface show the "has no repository-built interface yet" note.
 - [ ] Overview returns to the overview.
 - [ ] Normal refresh and hard refresh both render the dashboard.
-- [ ] Sign in as a Counter user: only Counter tools are visible.
+- [ ] Sign in as Counter: only Counter tools are visible. Sign in as Managers: every tool, including Manager Tools.
 
 ## Migrated from Webflow
 
