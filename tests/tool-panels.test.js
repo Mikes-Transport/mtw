@@ -180,6 +180,15 @@ test('the real tool scripts start against the templates without errors', async (
     document.querySelector('.db-list-dropdown-wrapper #barcode-drop') &&
     document.querySelectorAll('.db-list-dropdown-wrapper [data-barcode-template]').length === 4);
 
+  // Each label-sheet page (barcodes.js copies these for every printed page) carries
+  // its image, loaded eagerly.
+  const sheets = document.querySelectorAll('.barcode-label-panels .barcode-page img.image');
+  assert.equal(sheets.length, 4);
+  for (const img of sheets) {
+    assert.match(img.getAttribute('src'), /^http:\/\/mtw\.test\/apps\/dashboard\/assets\/labels\/x(2|8|10|30)-labels\.jpg$/);
+    assert.equal(img.hasAttribute('loading'), false, 'not lazy-loaded');
+  }
+
   // Promotional labels: renders its starter card into the template's containers.
   document.querySelector('.db-list-toolcard[data-select="promotion-label"]').click();
   await waitFor(window, () => document.querySelector('.card-view-container .et-current-card') &&

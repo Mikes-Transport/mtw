@@ -23,7 +23,7 @@
   const DASHBOARD_SHELL_URL = new URL('js/navigation/dashboard-shell.js', BASE_URL).href;
 
   // Bump on each release so the live page can be checked for the version it runs.
-  const NAVIGATION_BUILD = '2026-11-11.4';
+  const NAVIGATION_BUILD = '2026-11-11.5';
 
   const TOOLS = {
     'activity-logs': { panel: '.activity-logs-panel', name: 'Activity Logs', roles: ['Developer'] },
@@ -621,7 +621,13 @@
       shells: document.querySelectorAll('.mtw-dashboard-shell').length,
       toolWrappers: document.querySelectorAll('.db-tool-wrapper').length,
       scripts,
-      tools
+      tools,
+      // Label-sheet backgrounds in the barcode tool: loaded means naturalWidth > 0.
+      labelImages: [...document.querySelectorAll('.barcode-page img.image')].map(img => ({
+        src: img.currentSrc || img.src,
+        generatedPage: Boolean(img.closest('.barcode-page[data-generated]')),
+        loaded: img.complete && img.naturalWidth > 0
+      }))
     };
     console.table(tools);
     return JSON.stringify(report, null, 2);
