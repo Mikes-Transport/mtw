@@ -239,3 +239,51 @@ test('tools.css: modals sit above the dashboard, product grid is 4 wide, row tex
   assert.notEqual(style(row).color, 'rgb(255, 255, 255)', 'row text is not white');
   dom.window.close();
 });
+
+test('barcode label-sheet menu closes on pick, outside click, Escape, tabbing away and other tools', async () => {
+  const { dom, window, document, errors } = await boot('');
+  runToolScripts(window);
+  await waitFor(window, () => document.querySelectorAll('[data-barcode-template]').length === 4);
+  const menu = document.querySelector('.db-list-dropdown-wrapper');
+  const drop = document.querySelector('#barcode-drop');
+  const isOpen = () => menu.classList.contains('barcode-dropdown-open');
+  const open = () => { drop.click(); assert.equal(isOpen(), true, 'opens'); };
+  const press = (target, type, init = {}) =>
+    target.dispatchEvent(new window.Event(type, { bubbles: true, ...init }));
+
+  open();
+  document.querySelector('[data-barcode-template="medium"]').click();
+  assert.equal(isOpen(), false, 'closes on pick');
+
+  open();
+  press(menu.querySelector('[data-barcode-template="large"]'), 'pointerdown');
+  assert.equal(isOpen(), true, 'pointer inside the menu keeps it open');
+  press(document.querySelector('.change-logs'), 'pointerdown');
+  assert.equal(isOpen(), false, 'closes on outside click');
+
+  open();
+  document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(isOpen(), false, 'closes on Escape');
+
+  open();
+  document.querySelector('.db-list-toolcard[data-select="csv-config"]').focus();
+  assert.equal(isOpen(), false, 'closes when focus tabs away');
+
+  open();
+  document.querySelector('.db-list-toolcard[data-select="product-info"]').click();
+  assert.equal(isOpen(), false, 'closes when another tool opens');
+
+  await new Promise(resolve => window.setTimeout(resolve, 300));
+  assert.deepEqual(dashboardErrors(errors), []);
+  dom.window.close();
+});
+
+test('change logs are one centred column', async () => {
+  const css = fs.readFileSync(path.join(DASHBOARD, 'styles', 'admin-dashboard.css'), 'utf8');
+  const { dom, window, document } = await boot(`<style>${css}</style>`);
+  const logs = window.getComputedStyle(document.querySelector('.mtw-dashboard-shell .change-logs'));
+  assert.equal(logs.maxWidth, '760px');
+  assert.equal(logs.marginLeft, 'auto');
+  assert.equal(logs.marginRight, 'auto');
+  dom.window.close();
+});
