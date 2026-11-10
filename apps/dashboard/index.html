@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MTW Dashboard (minimal host)</title>
+</head>
+<body>
+  <!--
+    Minimal host for the MTW dashboard. This is everything a host page (Webflow or
+    otherwise) has to provide: an optional mount point and ONE script tag.
+    dashboard-navigation.js builds the markup and tool registry, then loads
+    dashboard-shell.js, developer-tools.js and the stylesheet from the same base URL.
+    Without the mount point the dashboard is appended to <body>.
+
+    The live Webflow page additionally provides Firebase (window.MTW) and loads
+    js/access/admin.js, which redirects to /admin unless signed in.
+    See docs/dashboard-troubleshooting.md.
+  -->
+  <div data-mtw-dashboard-mount></div>
+  <script src="js/navigation/dashboard-navigation.js"></script>
+</body>
+</html>

@@ -169,7 +169,7 @@
 
     if (!tool || tool.enabled === false || !canShowTool(id, tool)) return;
 
-    $('.db-list-toolcard').forEach(card => {
+    $$('.db-list-toolcard').forEach(card => {
       const active = card.dataset.select === id;
       card.classList.toggle('is-active', active);
       if (active) {
@@ -489,7 +489,7 @@
       }));
     });
 
-    if (!document.querySelector('script[data-mtw-developer-tools]')) {
+    if (!document.querySelector('script[data-mtw-developer-tools], script[src*="developer-tools.js"]')) {
       const manager = document.createElement('script');
       manager.dataset.mtwDeveloperTools = 'true';
       manager.src = DEVELOPER_TOOLS_URL;
@@ -499,7 +499,13 @@
       document.head.appendChild(manager);
     }
 
-    if (!document.querySelector('script[data-mtw-dashboard-shell]')) {
+    // Navigation globals are in place: let the shell (loaded now or already waiting) build.
+    window.MTW_DASHBOARD_NAVIGATION_READY = true;
+    document.dispatchEvent(new CustomEvent('mtw-dashboard-navigation-ready'));
+
+    // Load the shell once, even if Webflow also includes it with its own <script> tag.
+    if (!window.MTW_DASHBOARD_SHELL_STARTED &&
+        !document.querySelector('script[data-mtw-dashboard-shell], script[src*="dashboard-shell.js"]')) {
       const shell = document.createElement('script');
       shell.dataset.mtwDashboardShell = 'true';
       shell.src = DASHBOARD_SHELL_URL;
