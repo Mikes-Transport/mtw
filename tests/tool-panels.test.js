@@ -285,6 +285,15 @@ test('change logs are one centred column', async () => {
   assert.equal(logs.maxWidth, '760px');
   assert.equal(logs.marginLeft, 'auto');
   assert.equal(logs.marginRight, 'auto');
+
+  // Each card is one full-width row: title left, date right (no half-empty grid).
+  const box = document.querySelector('.mtw-dashboard-shell .change-logs');
+  box.innerHTML = '<div class="change-log-scroll"><div class="change-log-card"><div class="change-log-card-top">' +
+    '<div class="change-log-title">T</div><div class="change-log-date">D</div></div></div></div>';
+  assert.equal(window.getComputedStyle(box.querySelector('.change-log-card')).display, 'block');
+  const top = window.getComputedStyle(box.querySelector('.change-log-card-top'));
+  assert.equal(top.display, 'flex');
+  assert.equal(top.justifyContent, 'space-between');
   dom.window.close();
 });
 

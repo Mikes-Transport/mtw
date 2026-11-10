@@ -405,3 +405,75 @@
     flex-direction: column;
   }
 }
+
+/* Tabs */
+.ts-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  border-bottom: 1px solid var(--mtw-line, #deddd9);
+}
+
+.ts-tab {
+  position: relative;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  color: #686865;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.ts-tab:hover {
+  color: #202020;
+}
+
+.ts-tab.active {
+  color: #202020;
+}
+
+.ts-tab.active::after {
+  position: absolute;
+  right: 10px;
+  bottom: -1px;
+  left: 10px;
+  height: 2px;
+  background: #202020;
+  content: "";
+}
+
+.ts-tab:focus-visible {
+  outline: 2px solid var(--mtw-focus, #777774);
+  outline-offset: -3px;
+}
+
+.ts-person-picker {
+  width: auto;
+  min-width: 180px;
+}
+
+/* Settings */
+.ts-settings {
+  max-width: 760px;
+}
+
+.ts-setting-break {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) 110px 120px;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ts-setting-head {
+  margin-bottom: 4px;
+  color: var(--mtw-muted, #777774);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ts-settings-actions {
+  justify-content: flex-end;
+  margin-top: 16px;
+}
