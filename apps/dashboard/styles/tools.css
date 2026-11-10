@@ -2,6 +2,88 @@
    (webflow.shared.75eb50e92.css) for the classes the dashboard templates and
    tool scripts use. Generated once during the Webflow migration; edit freely. */
 
+.w-webflow-badge, .w-webflow-badge > img {
+  box-sizing: unset;
+  width: unset;
+  height: unset;
+  max-height: unset;
+  max-width: unset;
+  min-height: unset;
+  min-width: unset;
+  margin: unset;
+  padding: unset;
+  float: unset;
+  clear: unset;
+  border: unset;
+  border-radius: unset;
+  background: unset;
+  background-image: unset;
+  background-position: unset;
+  background-size: unset;
+  background-repeat: unset;
+  background-origin: unset;
+  background-clip: unset;
+  background-attachment: unset;
+  background-color: unset;
+  box-shadow: unset;
+  transform: unset;
+  direction: unset;
+  font-family: unset;
+  font-weight: unset;
+  color: unset;
+  font-size: unset;
+  line-height: unset;
+  font-style: unset;
+  font-variant: unset;
+  text-align: unset;
+  letter-spacing: unset;
+  -webkit-text-decoration: unset;
+  text-decoration: unset;
+  text-indent: unset;
+  text-transform: unset;
+  list-style-type: unset;
+  text-shadow: unset;
+  vertical-align: unset;
+  cursor: unset;
+  white-space: unset;
+  word-break: unset;
+  word-spacing: unset;
+  word-wrap: unset;
+  transition: unset;
+}
+
+.w-webflow-badge {
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px #0000001a, 0 1px 3px #0000001a;
+  visibility: visible !important;
+  opacity: 1 !important;
+  z-index: 2147483647 !important;
+  color: #aaadb0 !important;
+  width: auto !important;
+  height: auto !important;
+  overflow: unset !important;
+  background-color: #fff !important;
+  border-radius: 3px !important;
+  margin: 0 !important;
+  padding: 6px !important;
+  font-size: 12px !important;
+  line-height: 14px !important;
+  text-decoration: none !important;
+  display: inline-block !important;
+  position: fixed !important;
+  inset: auto 12px 12px auto !important;
+  transform: none !important;
+}
+
+.w-webflow-badge > img {
+  position: unset;
+  visibility: unset !important;
+  opacity: 1 !important;
+  vertical-align: middle !important;
+  display: inline-block !important;
+}
+
 .w-embed:before, .w-embed:after {
   content: " ";
   grid-area: 1 / 1 / 2 / 2;
@@ -305,6 +387,21 @@ textarea.w-input, textarea.w-select {
 
 .activity-table-wrapper {
   width: 100%;
+}
+
+.row-text {
+  color: #fff;
+  font-family: Exo, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.row-text.admin {
+  color: #b92b27;
+}
+
+.row-text.exit-text {
+  color: #646464;
 }
 
 .logs-text {
@@ -834,8 +931,45 @@ textarea.w-input, textarea.w-select {
   grid-template-columns: 1fr 1fr 1fr;
 }
 
+.product-image {
+  object-fit: cover;
+  border-radius: 5px;
+  width: 100%;
+  height: 220px;
+  margin-bottom: 15px;
+}
+
+.product-card-text {
+  color: #535863;
+  margin-bottom: 15px;
+  font-family: Inter, sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.product-card-text.admin {
+  color: #b92b27;
+}
+
+.product-card-text.exit-text {
+  color: #646464;
+}
+
 .product-card-text.black {
   color: #353535;
+}
+
+.product-card-text.xsmall-margin {
+  margin-bottom: 2px;
+}
+
+.product-card-button-wrapper {
+  grid-column-gap: 16px;
+  grid-row-gap: 16px;
+  width: 100%;
+  margin-bottom: 10px;
+  display: flex;
 }
 
 .product-card-edit {
@@ -854,6 +988,11 @@ textarea.w-input, textarea.w-select {
   background-color: #eee;
 }
 
+.product-card-button-grid {
+  grid-template-rows: auto;
+  width: 100%;
+}
+
 .product-card-copy {
   grid-column-gap: 5px;
   grid-row-gap: 5px;
@@ -868,6 +1007,13 @@ textarea.w-input, textarea.w-select {
 
 .product-card-copy:hover {
   background-color: #eee;
+}
+
+.product-card-delete-wrapper {
+  grid-column-gap: 16px;
+  grid-row-gap: 16px;
+  width: 100%;
+  display: flex;
 }
 
 .product-card-delete {
@@ -886,6 +1032,38 @@ textarea.w-input, textarea.w-select {
 
 .product-card-delete:hover {
   background-color: red;
+}
+
+.product-text-delete {
+  color: #fff;
+  font-family: Inter, sans-serif;
+  font-weight: 500;
+}
+
+.product-text-delete.admin {
+  color: #b92b27;
+}
+
+.product-text-delete.exit-text {
+  color: #646464;
+}
+
+.delete-icon {
+  color: #fff;
+  justify-content: flex-end;
+  align-items: center;
+  width: 20px;
+  padding-bottom: 0;
+  display: flex;
+}
+
+.copy-icon, .edit-icon {
+  color: #000;
+  justify-content: flex-end;
+  align-items: center;
+  width: 20px;
+  padding-bottom: 0;
+  display: flex;
 }
 
 .product-add-product-panel {
@@ -1292,6 +1470,33 @@ textarea.w-input, textarea.w-select {
   box-shadow: 0 0 20px 2px #00000075;
 }
 
+.et-grid-cards {
+  grid-column-gap: 2px;
+  grid-row-gap: 2px;
+  grid-template-rows: auto auto auto;
+  grid-template-columns: 1fr 1fr 1fr;
+  min-height: 1123px;
+}
+
+.et-everyday-card {
+  flex-flow: column;
+  min-width: 263px;
+  min-height: 374.33px;
+  display: flex;
+  position: relative;
+  overflow: hidden;
+}
+
+.everyday-card {
+  background-color: #0ba500;
+  flex-flow: column;
+  justify-content: flex-start;
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+  display: flex;
+}
+
 .h2-text-card.warning-text {
   color: #86ccff;
   font-size: 24px;
@@ -1314,8 +1519,67 @@ textarea.w-input, textarea.w-select {
   color: #fff;
 }
 
+.everyday-card-body-wrapper {
+  width: 100%;
+  height: 100%;
+  padding: 0 15px 15px;
+}
+
+.everyday-card-body {
+  grid-column-gap: 5px;
+  grid-row-gap: 5px;
+  background-color: #fff;
+  flex-flow: column;
+  justify-content: flex-start;
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+  padding: 10px;
+  display: flex;
+}
+
+.card-text-title {
+  color: #000;
+  text-align: left;
+  overflow-wrap: anywhere;
+  font-family: Arial, Helvetica Neue, Helvetica, sans-serif;
+  font-size: 18.66px;
+  font-weight: 700;
+}
+
+.card-text-title.admin {
+  color: #b92b27;
+}
+
+.card-text-title.exit-text {
+  color: #646464;
+}
+
 .card-text-title.black {
   color: #000;
+}
+
+.card-text-title.xsmall-margin {
+  margin-bottom: 2px;
+}
+
+.card-text-title.four {
+  font-size: 32px;
+  line-height: 32px;
+}
+
+.card-text-title.two {
+  font-size: 40px;
+  line-height: 40px;
+}
+
+.card-text-price {
+  color: #0ba500;
+  margin-top: 0;
+  font-family: Arial, Helvetica Neue, Helvetica, sans-serif;
+  font-size: 50px;
+  font-weight: 700;
+  line-height: 60px;
 }
 
 .card-text-price.warning-text {
@@ -1336,12 +1600,122 @@ textarea.w-input, textarea.w-select {
   color: #000;
 }
 
+.card-text-price.red {
+  color: #ff0900;
+}
+
+.card-text-price.four {
+  margin-top: 15px;
+  margin-bottom: 15px;
+  font-size: 95px;
+}
+
+.card-text-price.two {
+  margin-top: 15px;
+  margin-bottom: 15px;
+  font-size: 150px;
+  line-height: 150px;
+}
+
+.card-text-description {
+  color: #000;
+  text-align: left;
+  overflow-wrap: anywhere;
+  margin-bottom: 5px;
+  font-family: Arial, Helvetica Neue, Helvetica, sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 15px;
+}
+
+.card-text-description.admin {
+  color: #b92b27;
+}
+
+.card-text-description.exit-text {
+  color: #646464;
+}
+
 .card-text-description.black {
   color: #000;
 }
 
+.card-text-description.xsmall-margin {
+  margin-bottom: 2px;
+}
+
+.card-text-description.four {
+  font-size: 17px;
+}
+
+.card-text-description.two {
+  font-size: 18px;
+}
+
+.card-extra-info {
+  grid-column-gap: 16px;
+  grid-row-gap: 16px;
+  justify-content: space-between;
+  align-items: baseline;
+  display: flex;
+}
+
+.card-extra-info.two {
+  font-size: 16px;
+}
+
+.card-text-extra {
+  color: #000;
+  text-align: left;
+  overflow-wrap: anywhere;
+  font-family: Arial, Helvetica Neue, Helvetica, sans-serif;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 12px;
+}
+
+.card-text-extra.admin {
+  color: #b92b27;
+}
+
+.card-text-extra.exit-text {
+  color: #646464;
+}
+
 .card-text-extra.black {
   color: #000;
+}
+
+.card-text-extra.xsmall-margin {
+  margin-bottom: 2px;
+}
+
+.card-text-extra.four {
+  font-size: 14px;
+}
+
+.card-text-extra.two {
+  font-size: 18px;
+}
+
+.card-old-price-wrapper {
+  grid-column-gap: 16px;
+  grid-row-gap: 16px;
+  justify-content: flex-end;
+  align-items: flex-start;
+  margin-bottom: 2px;
+  display: flex;
+}
+
+.card-text-price-old {
+  color: #000;
+  margin-top: 0;
+  font-family: Arial, Helvetica Neue, Helvetica, sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 22px;
+  -webkit-text-decoration: line-through red;
+  text-decoration: line-through red;
 }
 
 .card-text-price-old.warning-text {
@@ -1356,6 +1730,93 @@ textarea.w-input, textarea.w-select {
 
 .card-text-price-old.warning-text.orange {
   color: #ffcb31;
+}
+
+.card-text-price-old.four {
+  margin-bottom: 10px;
+  font-size: 30px;
+}
+
+.card-text-price-old.two {
+  margin-bottom: 15px;
+  font-size: 50px;
+  line-height: 50px;
+}
+
+.et-clearance-card {
+  flex-flow: column;
+  min-width: 263px;
+  height: 100%;
+  max-height: 374.33px;
+  position: relative;
+  overflow: hidden;
+}
+
+.clearance-card {
+  background-color: #e9d600;
+  flex-flow: column;
+  justify-content: flex-start;
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+  display: flex;
+}
+
+.clearance-card-body-wrapper {
+  width: 100%;
+  height: 100%;
+  padding: 0 15px 15px;
+}
+
+.clearance-card-body {
+  grid-column-gap: 5px;
+  grid-row-gap: 5px;
+  background-color: #fff;
+  flex-flow: column;
+  justify-content: flex-start;
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+  padding: 10px;
+  display: flex;
+}
+
+.et-promo-card {
+  flex-flow: column;
+  min-width: 263px;
+  min-height: 374.33px;
+  display: flex;
+  position: relative;
+  overflow: hidden;
+}
+
+.promo-card {
+  background-color: red;
+  flex-flow: column;
+  justify-content: flex-start;
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+  display: flex;
+}
+
+.promo-card-body-wrapper {
+  width: 100%;
+  height: 100%;
+  padding: 0 15px 15px;
+}
+
+.promo-card-body {
+  grid-column-gap: 5px;
+  grid-row-gap: 5px;
+  background-color: #fff;
+  flex-flow: column;
+  justify-content: flex-start;
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+  padding: 10px;
+  display: flex;
 }
 
 .et-print-card-wrapper {
@@ -1806,4 +2267,118 @@ textarea.w-input, textarea.w-select {
 
 #w-node-_12f19eda-7d41-5219-d6e5-0b9100a9d63c-9cb95a9b {
   justify-self: end;
+}
+
+/* ------------------------------------------------------------------------------
+   Dashboard theme adjustments (hand-written, not from Webflow).
+   Webflow styled these tools for the old dark sidebar page; the repository
+   dashboard is light. Dark modals (edit item, add product) keep their white text.
+   ------------------------------------------------------------------------------ */
+
+/* Table text and record counts on light backgrounds. */
+.row-text,
+.logs-text,
+.items-text {
+  color: var(--mtw-ink, #242424);
+  font-family: inherit;
+}
+
+.activity-resultsmain-wrapper,
+.second-hand-resultsmain-wrapper {
+  border: 1px solid var(--mtw-line, #deddd9);
+  border-radius: 5px;
+  background: #fff;
+}
+
+/* Rows rendered by activity-logs.js and secondhand-stock.js line up with their
+   header grids (same columns and 16px gap as .w-layout-grid). */
+.activity-row,
+.second-hand-row {
+  display: grid;
+  grid-column-gap: 16px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--mtw-line, #deddd9);
+}
+
+.activity-row {
+  grid-template-columns: 1fr 1fr 1.25fr 1fr .75fr .75fr .75fr;
+}
+
+.second-hand-row {
+  grid-template-columns: .75fr 2fr .25fr 2fr 1fr .75fr 1fr;
+}
+
+.activity-row:last-child,
+.second-hand-row:last-child {
+  border-bottom: 0;
+}
+
+.activity-row:hover,
+.second-hand-row:hover {
+  background: rgba(0, 0, 0, .025);
+}
+
+.activity-row > *,
+.second-hand-row > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.activity-action-box {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  padding: 3px 8px;
+  border: 1px solid var(--mtw-line, #deddd9);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--mtw-ink, #242424);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.second-hand-row .delete-btn {
+  border-color: #f0c4cc;
+  color: #9e2424;
+}
+
+.activity-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.activity-page-button {
+  padding: 6px 12px;
+  border: 1px solid var(--mtw-line, #deddd9);
+  border-radius: 4px;
+  background: #fff;
+  color: var(--mtw-ink, #242424);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.activity-page-button:hover {
+  background: var(--mtw-canvas, #f2f1ef);
+}
+
+.activity-page-text {
+  color: var(--mtw-muted, #777774);
+  font-size: 12px;
+}
+
+/* Product grid: as many cards per row as fit (was a fixed 3 columns x 5 rows). */
+.product-results-grid {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-rows: none;
+  grid-auto-rows: auto;
+}
+
+.product-image {
+  height: 160px;
 }
