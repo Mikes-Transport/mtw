@@ -1106,34 +1106,183 @@ body:has(.db-main-wrapper) {
   background: #f9f9f8;
 }
 
-/* The old sidebar is now an edit drawer: hidden until a tool (promotional labels)
-   adds .editing and puts its edit panel in it. */
+/* The old sidebar only hosts the promotional label edit panel (promotion-cards.js
+   adds .editing and appends .et-edit-panel). It takes no space; the panel floats
+   below the navigation, styled like the barcode edit panel. */
 .mtw-dashboard-shell .db-left-content {
   display: none !important;
 }
 
 .mtw-dashboard-shell .db-left-content.editing {
-  position: fixed !important;
-  top: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  z-index: 9000;
-  box-sizing: border-box;
-  display: flex !important;
-  flex-direction: column !important;
-  width: min(440px, 100vw) !important;
-  height: 100vh !important;
-  max-height: 100vh !important;
-  padding: 20px !important;
-  background: var(--mtw-shell, #202020);
-  color: #f2f2f2;
-  box-shadow: -16px 0 48px rgba(0, 0, 0, .25);
+  position: static !important;
+  display: block !important;
+  width: 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible !important;
 }
 
 .mtw-dashboard-shell .db-left-content.editing .et-edit-panel {
-  flex: 1 1 auto !important;
+  position: fixed !important;
+  top: var(--promo-edit-top, 148px) !important;
+  right: 20px !important;
+  z-index: 10000;
+  display: block !important;
+  box-sizing: border-box !important;
+  width: min(390px, calc(100vw - 32px)) !important;
   height: auto !important;
-  max-height: none !important;
+  max-height: calc(100dvh - var(--promo-edit-top, 148px) - 16px) !important;
+  padding: 18px !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  border: 1px solid #deddd9;
+  border-radius: 12px;
+  background: #fff;
+  color: #242424;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, .2);
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  scrollbar-width: thin;
+}
+
+.mtw-dashboard-shell .et-edit-panel .et-edit-panel-header {
+  position: sticky;
+  top: -18px;
+  z-index: 2;
+  margin: -18px -18px 14px;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid #e2e2e2;
+  background: #fff;
+}
+
+.mtw-dashboard-shell .et-edit-panel .et-edit-panel-title {
+  color: #242424;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: .01em;
+}
+
+.mtw-dashboard-shell .et-edit-panel .et-edit-panel-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: #242424;
+}
+
+.mtw-dashboard-shell .et-edit-panel .et-edit-panel-close:hover {
+  background: rgba(127, 127, 127, .18);
+}
+
+/* Section titles, labels and rows: dark text on white, as in the barcode panel. */
+.mtw-dashboard-shell .et-edit-panel .np-sec-label {
+  margin: 14px 0 10px;
+  padding-top: 14px;
+  border-top: 1px solid #e2e2e2;
+  color: #242424;
+  font-size: 11px;
+  letter-spacing: .06em;
+  opacity: .7;
+}
+
+.mtw-dashboard-shell .et-edit-panel .et-edit-panel-header + .np-sec-label {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.mtw-dashboard-shell .et-edit-panel .np-f > label,
+.mtw-dashboard-shell .et-edit-panel .np-check,
+.mtw-dashboard-shell .et-edit-panel .np-stepper-name,
+.mtw-dashboard-shell .et-edit-panel .np-stepper-val,
+.mtw-dashboard-shell .et-edit-panel .np-order-row,
+.mtw-dashboard-shell .et-edit-panel .np-linkbtn,
+.mtw-dashboard-shell .et-edit-panel .np-color-row,
+.mtw-dashboard-shell .et-edit-panel .np-descbox-head {
+  color: #242424;
+}
+
+.mtw-dashboard-shell .et-edit-panel .np-f > label {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: .85;
+}
+
+.mtw-dashboard-shell .et-edit-panel .np-f input,
+.mtw-dashboard-shell .et-edit-panel .np-f textarea,
+.mtw-dashboard-shell .et-edit-panel .np-f select,
+.mtw-dashboard-shell .et-edit-panel .np-descbox-edit textarea {
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: #fff;
+  color: #111;
+}
+
+.mtw-dashboard-shell .et-edit-panel .np-f input:focus,
+.mtw-dashboard-shell .et-edit-panel .np-f textarea:focus,
+.mtw-dashboard-shell .et-edit-panel .np-f select:focus,
+.mtw-dashboard-shell .et-edit-panel .np-descbox-edit textarea:focus {
+  outline: none;
+  border-color: #111;
+}
+
+.mtw-dashboard-shell .et-edit-panel .np-check input {
+  accent-color: #111;
+}
+
+.mtw-dashboard-shell .et-edit-panel .np-descbox-edit,
+.mtw-dashboard-shell .et-edit-panel .np-order-row {
+  border-color: #deddd9;
+  border-radius: 8px;
+}
+
+.mtw-dashboard-shell .et-edit-panel .np-stepper button,
+.mtw-dashboard-shell .et-edit-panel .np-mini {
+  border-color: #ccc;
+  border-radius: 8px;
+}
+
+.mtw-dashboard-shell .et-edit-panel .np-mini.go {
+  border-color: #111;
+  background: #111;
+  color: #fff;
+}
+
+.mtw-dashboard-shell .et-edit-panel .et-edit-panel-footer {
+  position: sticky;
+  bottom: -18px;
+  z-index: 2;
+  margin: 18px -18px -18px;
+  padding: 12px 18px 16px;
+  border-top: 1px solid #e2e2e2;
+  background: #fff;
+}
+
+.mtw-dashboard-shell .et-edit-panel .et-edit-button {
+  padding: 9px 14px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: #fff;
+  color: #111;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mtw-dashboard-shell .et-edit-panel .et-edit-button:hover {
+  background: #f5f5f5;
+}
+
+.mtw-dashboard-shell .et-edit-panel .et-edit-button.primary {
+  border-color: #111;
+  background: #111;
+  color: #fff;
+}
+
+.mtw-dashboard-shell .et-edit-panel .et-edit-button.primary:hover {
+  background: #333;
 }
 
 @media screen {

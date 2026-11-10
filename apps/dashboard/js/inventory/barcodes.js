@@ -957,17 +957,34 @@ cursor: pointer;
 position: relative;
 }
 
+/* Same hover as promotional label cards: dark wash with an Edit pill. */
 .barcode-card-overlay {
 position: absolute;
 inset: 0;
 z-index: 5;
-display: block;
+display: flex;
+align-items: center;
+justify-content: center;
 cursor: pointer;
-background: transparent;
+background: rgba(0,0,0,.55);
+opacity: 0;
+transition: opacity .18s ease;
 }
 
-.barcode-card-overlay:hover {
-background: rgba(0,0,0,.08);
+.barcode-card:hover .barcode-card-overlay,
+.barcode-card-overlay:hover,
+.barcode-card-overlay:focus-visible {
+opacity: 1;
+}
+
+.barcode-card-overlay-btn {
+border: 2px solid #fff;
+border-radius: 999px;
+padding: 8px 22px;
+color: #fff;
+font-size: 13px;
+font-weight: 800;
+pointer-events: none;
 }
 
 .barcode-multi-parts {
@@ -3763,6 +3780,22 @@ document.createElement(
 overlay.className =
 'barcode-card-overlay';
 
+overlay.setAttribute('role', 'button');
+overlay.setAttribute('aria-label', 'Edit card');
+
+const overlayButton =
+document.createElement('span');
+
+overlayButton.className =
+'barcode-card-overlay-btn';
+
+overlayButton.textContent =
+'Edit';
+
+overlay.appendChild(
+overlayButton
+);
+
 overlay.addEventListener(
 'click',
 function (e) {
@@ -5064,6 +5097,10 @@ document.querySelector(
 '.barcode-edit-panel'
 );
 
+// Rebuilding the panel (another card, copy) keeps its scroll position.
+const keepScroll =
+old ? old.scrollTop : 0;
+
 if (old) {
 old.remove();
 }
@@ -5093,11 +5130,14 @@ panel.style.setProperty(
 panelTop + 'px'
 );
 
+panel.scrollTop =
+keepScroll;
+
 requestAnimationFrame(
 () => {
 
 panel.scrollTop =
-0;
+keepScroll;
 
 }
 );

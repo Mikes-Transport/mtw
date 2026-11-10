@@ -287,3 +287,56 @@ test('change logs are one centred column', async () => {
   assert.equal(logs.marginRight, 'auto');
   dom.window.close();
 });
+
+// jsdom has no layout, so give elements a settable scrollTop to observe the editors.
+function trackScrollTop(window) {
+  Object.defineProperty(window.HTMLElement.prototype, 'scrollTop', {
+    configurable: true,
+    get() { return this.__scrollTop || 0; },
+    set(value) { this.__scrollTop = value; }
+  });
+}
+
+test('promotional edit panel keeps its scroll position when rebuilt', async () => {
+  const { dom, window, document } = await boot('');
+  trackScrollTop(window);
+  runToolScripts(window);
+  document.querySelector('.db-list-toolcard[data-select="promotion-label"]').click();
+  await waitFor(window, () => document.querySelector('.card-view-container [btn="edit"]'));
+
+  document.querySelector('.card-view-container [btn="edit"]').click();
+  await waitFor(window, () => document.querySelector('.et-edit-panel'));
+  const first = document.querySelector('.et-edit-panel');
+  first.scrollTop = 420;
+
+  document.querySelector('.card-view-container [btn="edit"]').click();
+  await waitFor(window, () => document.querySelector('.et-edit-panel') !== first);
+  const second = document.querySelector('.et-edit-panel');
+  assert.equal(second.scrollTop, 420);
+  assert.match(second.style.getPropertyValue('--promo-edit-top'), /^\d+px$/);
+  await new Promise(resolve => window.setTimeout(resolve, 300));
+  dom.window.close();
+});
+
+test('barcode cards get the Edit hover pill, and the edit panel keeps its scroll position', async () => {
+  const { dom, window, document } = await boot('');
+  trackScrollTop(window);
+  runToolScripts(window);
+  document.querySelector('.db-list-toolcard[data-select="barcodes"]').click();
+  await waitFor(window, () => document.querySelector('.barcode-add-card-button'));
+
+  document.querySelector('.barcode-add-card-button').click();
+  await waitFor(window, () => document.querySelector('.barcode-edit-panel') &&
+    document.querySelector('.barcode-card .barcode-card-overlay'));
+  const pill = document.querySelector('.barcode-card .barcode-card-overlay .barcode-card-overlay-btn');
+  assert.ok(pill, 'overlay has an Edit pill');
+  assert.equal(pill.textContent, 'Edit');
+
+  const first = document.querySelector('.barcode-edit-panel');
+  first.scrollTop = 310;
+  document.querySelector('.barcode-card .barcode-card-overlay').click();
+  await waitFor(window, () => document.querySelector('.barcode-edit-panel') !== first);
+  assert.equal(document.querySelector('.barcode-edit-panel').scrollTop, 310);
+  await new Promise(resolve => window.setTimeout(resolve, 300));
+  dom.window.close();
+});
