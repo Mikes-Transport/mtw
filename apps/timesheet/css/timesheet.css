@@ -1,0 +1,407 @@
+/* Timesheet tool. Uses the dashboard tokens (--mtw-*) with fallbacks. */
+.timesheet-panel {
+  width: min(100%, 1180px);
+  margin: 0 auto;
+  color: var(--mtw-ink, #242424);
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+}
+
+.timesheet-panel.is-busy {
+  cursor: progress;
+}
+
+.ts-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.ts-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 750;
+  letter-spacing: -.02em;
+}
+
+.ts-sub,
+.ts-hint {
+  margin: 4px 0 0;
+  color: var(--mtw-muted, #777774);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ts-body {
+  display: grid;
+  gap: 16px;
+}
+
+.ts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.ts-card {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--mtw-line, #deddd9);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.ts-card h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.ts-card h4 {
+  margin: 14px 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  opacity: .7;
+}
+
+.ts-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ts-unlock {
+  width: min(100%, 360px);
+  margin: 24px auto;
+  text-align: center;
+}
+
+.ts-unlock .ts-input {
+  margin: 12px 0;
+}
+
+.ts-pin-input {
+  font-size: 24px;
+  letter-spacing: .4em;
+  text-align: center;
+}
+
+.ts-field {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  color: var(--mtw-muted, #777774);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ts-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: #fff;
+  color: #111;
+  font: inherit;
+  font-size: 13px;
+}
+
+.ts-input:focus {
+  outline: none;
+  border-color: #111;
+}
+
+.ts-btn {
+  padding: 8px 14px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: #fff;
+  color: #111;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.ts-btn:hover:not(:disabled) {
+  background: #f5f5f5;
+}
+
+.ts-btn:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.ts-btn.primary {
+  border-color: #111;
+  background: #111;
+  color: #fff;
+}
+
+.ts-btn.primary:hover:not(:disabled) {
+  background: #333;
+}
+
+.ts-btn.danger {
+  border-color: #f0c4cc;
+  color: #9e2424;
+}
+
+.ts-btn.big {
+  padding: 12px 22px;
+  font-size: 14px;
+}
+
+.ts-message {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f2f1ef;
+  font-size: 13px;
+}
+
+.ts-message.ts-error {
+  background: #fdecee;
+  color: #9e2424;
+}
+
+.ts-pin-reveal {
+  padding: 12px 14px;
+  border: 1px dashed #111;
+  border-radius: 10px;
+  background: #fffbea;
+}
+
+.ts-pin {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: .2em;
+}
+
+.ts-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ts-state-label {
+  font-size: 20px;
+  font-weight: 750;
+}
+
+.ts-state-working .ts-state-label { color: #137a3a; }
+.ts-state-break .ts-state-label { color: #a15c00; }
+.ts-state-off .ts-state-label { color: var(--mtw-muted, #777774); }
+
+.ts-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ts-stat {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #f7f7f6;
+}
+
+.ts-stat.strong {
+  background: #111;
+  color: #fff;
+}
+
+.ts-stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  opacity: .75;
+}
+
+.ts-stat-value {
+  font-size: 18px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.ts-break {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #eee;
+  font-size: 13px;
+}
+
+.ts-break.running strong { color: #a15c00; }
+.ts-break.over strong,
+.ts-break .over { color: #9e2424; }
+
+.ts-weeknav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.ts-week-label {
+  min-width: 260px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.ts-table-wrap {
+  overflow-x: auto;
+}
+
+.ts-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ts-table th,
+.ts-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #eee;
+  text-align: left;
+  vertical-align: top;
+}
+
+.ts-table th {
+  color: var(--mtw-muted, #777774);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ts-table .num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ts-table .strong,
+.ts-table tfoot td {
+  font-weight: 700;
+}
+
+.ts-table tr.is-today td {
+  background: #fafaf8;
+}
+
+.ts-flag {
+  display: inline-block;
+  margin: 0 4px 4px 0;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ts-flag.warn { background: #fff4dc; color: #8a5300; }
+.ts-flag.alert { background: #fdecee; color: #9e2424; }
+
+.ts-tasks ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ts-tasks li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 13px;
+}
+
+.ts-team {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.ts-member {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--mtw-line, #deddd9);
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.ts-member.selected {
+  border-color: #111;
+  box-shadow: 0 0 0 1px #111;
+}
+
+.ts-member .ts-state-label {
+  font-size: 14px;
+}
+
+.ts-people {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.ts-person {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid #eee;
+  font-size: 13px;
+}
+
+.ts-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ts-add {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1.6fr auto;
+  gap: 8px;
+}
+
+.ts-people-card > .ts-pin-reveal {
+  margin-bottom: 12px;
+}
+
+@media (max-width: 900px) {
+  .ts-grid,
+  .ts-add {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ts-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ts-status-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

@@ -23,7 +23,7 @@
   const DASHBOARD_SHELL_URL = new URL('js/navigation/dashboard-shell.js', BASE_URL).href;
 
   // Bump on each release so the live page can be checked for the version it runs.
-  const NAVIGATION_BUILD = '2026-11-11.9';
+  const NAVIGATION_BUILD = '2026-11-11.10';
 
   const TOOLS = {
     'activity-logs': { panel: '.activity-logs-panel', name: 'Activity Logs', roles: ['Managers'] },
@@ -34,6 +34,7 @@
     'promotion-label': { panel: '.et-body-wrapper', name: 'Promotional Labels', roles: ['Counter'] },
     'barcodes': { panel: '.barcode-label-panels', name: 'Barcode Labels', roles: ['Counter', 'Stores', 'KeyAccounts'] },
     'model-tool-access': { panel: '.model-access-panel', name: 'Assign Model Tool Access', roles: ['Managers'] },
+    'timesheet': { panel: '.timesheet-panel', name: 'Timesheet', roles: ['Managers'] },
     'developer-tools': { panel: '.developer-tools-panel', name: 'Manager Tools', roles: ['Managers'] }
   };
 
@@ -371,6 +372,7 @@
     'promotion-label': ['M19 5 5 19', 'M5 6.5a1.5 1.5 0 1 0 3 0 1.5 1.5 0 0 0-3 0', 'M16 17.5a1.5 1.5 0 1 0 3 0 1.5 1.5 0 0 0-3 0'],
     'barcodes': ['M4 5v14', 'M7 5v14', 'M10.5 5v14', 'M14 5v14', 'M16.5 5v14', 'M20 5v14'],
     'model-tool-access': ['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', 'M4 21a8 8 0 0 1 16 0'],
+    'timesheet': ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z', 'M12 7v5l3 2'],
     'developer-tools': ['M4 7h9', 'M17 7h3', 'M4 17h3', 'M11 17h9', 'M8 7a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0', 'M7 17a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0'],
     default: ['M4 4h6v6H4z', 'M14 4h6v6h-6z', 'M4 14h6v6H4z', 'M14 14h6v6h-6z']
   };

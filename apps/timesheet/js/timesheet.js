@@ -1,0 +1,682 @@
+// Timesheet tool for the MTW dashboard (Managers only in the navigation).
+//
+// A PIN identifies the person using it:
+//   - employee: clock in/out, task, breaks, today and this week, daily work summary;
+//   - gm: live team status, weekly timesheets for any employee, CSV export, people & PINs.
+// PINs are 6 digits, generated here and stored in Firestore only as salted SHA-256 hashes.
+//
+// Firestore collections:
+//   timesheet-people    { name, role: 'employee'|'gm', timeZone, pinSalt, pinHash, active, createdAt }
+//   timesheet-sessions  { personId, startAt, endAt|null, task, breaks: [{ type, paid, startAt, endAt|null }], createdAt, updatedAt }
+//   timesheet-summaries { personId, date, text, updatedAt }            (id: `${personId}_${date}`)
+//   timesheet-audit     { actorId, action, targetType, targetId, at, details }
+// Times are UTC milliseconds. Reporting dates and weeks use New Zealand time.
+(function () {
+  'use strict';
+
+  if (window.MTW_TIMESHEET_STARTED) return;
+  window.MTW_TIMESHEET_STARTED = true;
+
+  const TOOL_ID = 'timesheet';
+  const PANEL_CLASS = 'timesheet-panel';
+  const UNLOCK_KEY = 'mtw_timesheet_person';
+  const C = {
+    people: 'timesheet-people',
+    sessions: 'timesheet-sessions',
+    summaries: 'timesheet-summaries',
+    audit: 'timesheet-audit'
+  };
+
+  const core = () => window.MTW_TIMESHEET_CORE;
+  const api = () => window.MTW || {};
+
+  const state = {
+    people: [],
+    sessions: [],
+    person: null,
+    weekStart: null,
+    viewPersonId: null,
+    message: null,
+    busy: false,
+    loaded: false
+  };
+  let panel = null;
+  let ticker = null;
+  let refresher = null;
+
+  // ---------- helpers ----------
+
+  function h(tag, attrs, ...children) {
+    const el = document.createElement(tag);
+    for (const [key, value] of Object.entries(attrs || {})) {
+      if (value == null || value === false) continue;
+      if (key === 'class') el.className = value;
+      else if (key === 'text') el.textContent = value;
+      else if (key.startsWith('on')) el.addEventListener(key.slice(2), value);
+      else if (key in el && typeof value !== 'string') el[key] = value;
+      else el.setAttribute(key, value === true ? '' : value);
+    }
+    for (const child of children.flat()) {
+      if (child == null || child === false) continue;
+      el.append(child instanceof Node ? child : document.createTextNode(String(child)));
+    }
+    return el;
+  }
+
+  function reportingZone() { return core().DEFAULTS.reportingTimeZone; }
+
+  function personZone(person) {
+    return (person && person.timeZone) || core().DEFAULTS.employeeTimeZone;
+  }
+
+  function today() { return core().dateKey(Date.now(), reportingZone()); }
+
+  function sessionsFor(personId) {
+    return state.sessions.filter(s => s.personId === personId);
+  }
+
+  // Errors meant for the person using the tool (shown in the panel, not logged as bugs).
+  function userError(message) {
+    const error = new Error(message);
+    error.userFacing = true;
+    return error;
+  }
+
+  function requireDb() {
+    const a = api();
+    if (!a.db || typeof a.collection !== 'function' || typeof a.getDocs !== 'function') {
+      throw userError('The dashboard database is unavailable.');
+    }
+    return a;
+  }
+
+  async function readAll(name) {
+    const a = requireDb();
+    const snapshot = await a.getDocs(a.collection(a.db, name));
+    const rows = [];
+    snapshot.forEach(item => rows.push({ id: item.id, ...(item.data() || {}) }));
+    return rows;
+  }
+
+  async function audit(action, targetType, targetId, details) {
+    try {
+      const a = requireDb();
+      await a.addDoc(a.collection(a.db, C.audit), {
+        actorId: state.person ? state.person.id : null,
+        action, targetType, targetId: targetId || null,
+        at: Date.now(),
+        details: details || null
+      });
+    } catch (error) {
+      console.warn('[timesheet] audit write failed:', error);
+    }
+  }
+
+  async function load() {
+    const [people, sessions] = await Promise.all([readAll(C.people), readAll(C.sessions)]);
+    state.people = people.filter(p => p.active !== false);
+    state.sessions = sessions.map(s => ({
+      ...s,
+      startAt: core().toMillis(s.startAt),
+      endAt: core().toMillis(s.endAt),
+      breaks: (s.breaks || []).map(b => ({ ...b, startAt: core().toMillis(b.startAt), endAt: core().toMillis(b.endAt) }))
+    }));
+    const unlockedId = sessionStorage.getItem(UNLOCK_KEY);
+    state.person = state.people.find(p => p.id === unlockedId) || null;
+    if (!state.person) sessionStorage.removeItem(UNLOCK_KEY);
+    state.loaded = true;
+  }
+
+  function say(text, kind = 'info') {
+    state.message = text ? { text, kind } : null;
+  }
+
+  async function act(work) {
+    if (state.busy) return;
+    state.busy = true;
+    render();
+    try {
+      await work();
+    } catch (error) {
+      if (!error.userFacing) console.error('[timesheet]', error);
+      say(error.message || 'Something went wrong.', 'error');
+    } finally {
+      state.busy = false;
+      try { await load(); } catch (error) { say(error.message, 'error'); }
+      render();
+    }
+  }
+
+  // ---------- PINs and people ----------
+
+  async function createPerson(name, role, timeZone) {
+    const clean = String(name || '').trim().slice(0, 60);
+    if (!clean) throw userError('Enter a name.');
+    const pin = core().generatePin();
+    const pinSalt = core().generateSalt();
+    const pinHash = await core().hashPin(pin, pinSalt);
+    const a = requireDb();
+    const ref = await a.addDoc(a.collection(a.db, C.people), {
+      name: clean,
+      role: role === 'gm' ? 'gm' : 'employee',
+      timeZone: timeZone || (role === 'gm' ? reportingZone() : core().DEFAULTS.employeeTimeZone),
+      pinSalt, pinHash,
+      active: true,
+      createdAt: Date.now()
+    });
+    await audit('person-created', 'person', ref && ref.id, { name: clean, role });
+    return pin;
+  }
+
+  async function resetPin(person) {
+    const pin = core().generatePin();
+    const pinSalt = core().generateSalt();
+    const pinHash = await core().hashPin(pin, pinSalt);
+    const a = requireDb();
+    await a.updateDoc(a.doc(a.db, C.people, person.id), { pinSalt, pinHash });
+    await audit('pin-reset', 'person', person.id);
+    return pin;
+  }
+
+  async function unlock(pin) {
+    const value = String(pin || '').trim();
+    if (!/^\d{6}$/.test(value)) throw userError('Enter your 6-digit PIN.');
+    await load();
+    for (const person of state.people) {
+      if (person.pinSalt && person.pinHash === await core().hashPin(value, person.pinSalt)) {
+        sessionStorage.setItem(UNLOCK_KEY, person.id);
+        state.person = person;
+        state.weekStart = core().weekStart(today());
+        state.viewPersonId = null;
+        say(null);
+        return;
+      }
+    }
+    throw userError('That PIN does not match anyone.');
+  }
+
+  function lock() {
+    sessionStorage.removeItem(UNLOCK_KEY);
+    state.person = null;
+    say(null);
+    render();
+  }
+
+  // ---------- sessions and breaks ----------
+
+  function currentStatus(personId) {
+    return core().status(sessionsFor(personId));
+  }
+
+  async function clockIn(task) {
+    await load();
+    if (currentStatus(state.person.id).state !== 'off') throw userError('You are already clocked in.');
+    const a = requireDb();
+    const now = Date.now();
+    const ref = await a.addDoc(a.collection(a.db, C.sessions), {
+      personId: state.person.id,
+      startAt: now,
+      endAt: null,
+      task: task || null,
+      breaks: [],
+      createdAt: now,
+      updatedAt: now
+    });
+    await audit('clock-in', 'session', ref && ref.id, { task });
+    say('Clocked in.');
+  }
+
+  async function updateSession(session, changes, action) {
+    const a = requireDb();
+    await a.updateDoc(a.doc(a.db, C.sessions, session.id), { ...changes, updatedAt: Date.now() });
+    await audit(action, 'session', session.id, changes);
+  }
+
+  async function clockOut() {
+    await load();
+    const { session } = currentStatus(state.person.id);
+    if (!session) throw userError('You are not clocked in.');
+    const now = Date.now();
+    const breaks = (session.breaks || []).map(b => (b.endAt == null ? { ...b, endAt: now } : b));
+    await updateSession(session, { endAt: now, breaks }, 'clock-out');
+    say('Clocked out.');
+  }
+
+  async function changeTask(task) {
+    const { session } = currentStatus(state.person.id);
+    if (!session) return;
+    await updateSession(session, { task }, 'task-changed');
+  }
+
+  async function startBreak(type) {
+    await load();
+    const status = currentStatus(state.person.id);
+    if (status.state === 'off') throw userError('Clock in before starting a break.');
+    if (status.state === 'break') throw userError('A break is already running.');
+    const config = core().DEFAULTS.breaks.find(b => b.id === type);
+    const breaks = [...(status.session.breaks || []), { type, paid: Boolean(config && config.paid), startAt: Date.now(), endAt: null }];
+    await updateSession(status.session, { breaks }, 'break-start');
+    say(`${config ? config.label : 'Break'} started.`);
+  }
+
+  async function endBreak() {
+    await load();
+    const status = currentStatus(state.person.id);
+    if (status.state !== 'break') throw userError('No break is running.');
+    const now = Date.now();
+    const breaks = status.session.breaks.map(b => (b.endAt == null ? { ...b, endAt: now } : b));
+    await updateSession(status.session, { breaks }, 'break-end');
+    say('Break ended.');
+  }
+
+  async function saveSummary(date, text) {
+    const a = requireDb();
+    await a.setDoc(a.doc(a.db, C.summaries, `${state.person.id}_${date}`), {
+      personId: state.person.id, date, text: String(text || '').slice(0, 4000), updatedAt: Date.now()
+    });
+    say('Work summary saved.');
+  }
+
+  // ---------- rendering ----------
+
+  function clockLine(person) {
+    const now = Date.now();
+    const nz = `${core().formatTime(now, reportingZone())} NZ`;
+    const local = personZone(person) === reportingZone()
+      ? null
+      : `${core().formatTime(now, personZone(person))} ${person && person.role === 'employee' ? 'Calgary' : 'local'}`;
+    return h('span', { class: 'ts-clocks', 'data-live': 'clocks' }, local ? `${local} · ${nz}` : nz);
+  }
+
+  function header(title) {
+    return h('div', { class: 'ts-header' },
+      h('div', null,
+        h('h2', { class: 'ts-title', text: title }),
+        state.person ? h('p', { class: 'ts-sub' },
+          `${state.person.name} · ${state.person.role === 'gm' ? 'GM' : 'Employee'} · `, clockLine(state.person)) : null),
+      state.person ? h('button', { type: 'button', class: 'ts-btn', onclick: lock, text: 'Lock' }) : null);
+  }
+
+  function messageBar() {
+    if (!state.message) return null;
+    return h('p', { class: `ts-message ts-${state.message.kind}`, role: 'status', text: state.message.text });
+  }
+
+  function pinReveal(name, pin) {
+    return h('div', { class: 'ts-pin-reveal', role: 'status' },
+      h('strong', { text: `PIN for ${name}: ` }),
+      h('span', { class: 'ts-pin', text: pin }),
+      h('p', { class: 'ts-hint', text: 'Shown once. Give it to them now; you can reset it later.' }));
+  }
+
+  function renderSetup() {
+    let revealed = null;
+    const name = h('input', { class: 'ts-input', type: 'text', placeholder: 'Your name', maxLength: 60 });
+    const box = h('div', { class: 'ts-card' },
+      h('h3', { text: 'Set up Timesheet' }),
+      h('p', { class: 'ts-hint', text: 'No one has a Timesheet PIN yet. Create the first GM PIN; GMs can then add employees and other GMs.' }),
+      h('label', { class: 'ts-field' }, 'GM name', name),
+      h('button', {
+        type: 'button', class: 'ts-btn primary', text: 'Create GM PIN',
+        onclick: () => act(async () => {
+          const pin = await createPerson(name.value, 'gm', reportingZone());
+          revealed = pinReveal(name.value.trim(), pin);
+          say('GM created. Use the PIN below to unlock.');
+        }).then(() => { if (revealed) panel.querySelector('.ts-body').prepend(revealed); })
+      }));
+    return box;
+  }
+
+  function renderUnlock() {
+    const pin = h('input', {
+      class: 'ts-input ts-pin-input', type: 'password', inputMode: 'numeric', autocomplete: 'off',
+      maxLength: 6, placeholder: '••••••', 'aria-label': 'Timesheet PIN'
+    });
+    const submit = () => act(() => unlock(pin.value));
+    pin.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
+    setTimeout(() => pin.focus(), 0);
+    return h('div', { class: 'ts-card ts-unlock' },
+      h('h3', { text: 'Enter your PIN' }),
+      h('p', { class: 'ts-hint', text: 'Your 6-digit Timesheet PIN identifies you.' }),
+      pin,
+      h('button', { type: 'button', class: 'ts-btn primary', text: 'Unlock', onclick: submit }));
+  }
+
+  function totalsGrid(t) {
+    const cell = (label, ms, strong) => h('div', { class: `ts-stat${strong ? ' strong' : ''}` },
+      h('span', { class: 'ts-stat-label', text: label }),
+      h('span', { class: 'ts-stat-value', text: core().formatDuration(ms) }));
+    return h('div', { class: 'ts-stats' },
+      cell('On clock', t.onClock), cell('Active work', t.active), cell('Paid breaks', t.paidBreak),
+      cell('Unpaid breaks', t.unpaidBreak), cell('Payable', t.payable, true));
+  }
+
+  function flagText(flag) {
+    if (flag === 'open') return 'In progress';
+    if (flag === 'open-long') return 'Possible missed clock-out';
+    if (flag.startsWith('break-over:')) {
+      const config = core().DEFAULTS.breaks.find(b => b.id === flag.split(':')[1]);
+      return `${config ? config.label : 'Break'} over allowance`;
+    }
+    return flag;
+  }
+
+  function weekNav() {
+    const move = n => () => { state.weekStart = core().addDays(state.weekStart, 7 * n); render(); };
+    return h('div', { class: 'ts-weeknav' },
+      h('button', { type: 'button', class: 'ts-btn', onclick: move(-1), 'aria-label': 'Previous week', text: '‹' }),
+      h('span', { class: 'ts-week-label', text: `${core().formatDate(state.weekStart)} – ${core().formatDate(core().addDays(state.weekStart, 6))} (NZ)` }),
+      h('button', { type: 'button', class: 'ts-btn', onclick: move(1), 'aria-label': 'Next week', text: '›' }),
+      h('button', { type: 'button', class: 'ts-btn', text: 'This week', onclick: () => { state.weekStart = core().weekStart(today()); render(); } }));
+  }
+
+  function weekTable(person, week) {
+    const zone = reportingZone();
+    const rows = week.days.map(day => {
+      const spans = day.sessions.map(s =>
+        `${core().formatTime(s.startAt, zone)}–${s.endAt == null ? 'now' : core().formatTime(s.endAt, zone)}`).join(', ');
+      return h('tr', { class: day.date === today() ? 'is-today' : null },
+        h('td', null, h('strong', { text: day.weekday.slice(0, 3) }), ` ${day.date.slice(8)}/${day.date.slice(5, 7)}`),
+        h('td', { text: spans || '—' }),
+        h('td', { class: 'num', text: core().formatDuration(day.onClock) }),
+        h('td', { class: 'num', text: core().formatDuration(day.active) }),
+        h('td', { class: 'num', text: core().formatDuration(day.paidBreak) }),
+        h('td', { class: 'num', text: core().formatDuration(day.unpaidBreak) }),
+        h('td', { class: 'num strong', text: core().formatDuration(day.payable) }),
+        h('td', null, day.flags.map(f => h('span', { class: `ts-flag ${f.startsWith('open') ? 'warn' : 'alert'}`, text: flagText(f) }))));
+    });
+    const t = week.totals;
+    return h('div', { class: 'ts-table-wrap' },
+      h('table', { class: 'ts-table' },
+        h('thead', null, h('tr', null,
+          ['Day (NZ)', 'Sessions (NZ time)', 'On clock', 'Active', 'Paid brk', 'Unpaid brk', 'Payable', 'Notes']
+            .map(label => h('th', { text: label })))),
+        h('tbody', null, rows),
+        h('tfoot', null, h('tr', null,
+          h('td', { text: 'Week total' }), h('td'),
+          h('td', { class: 'num', text: core().formatDuration(t.onClock) }),
+          h('td', { class: 'num', text: core().formatDuration(t.active) }),
+          h('td', { class: 'num', text: core().formatDuration(t.paidBreak) }),
+          h('td', { class: 'num', text: core().formatDuration(t.unpaidBreak) }),
+          h('td', { class: 'num strong', text: `${core().formatDuration(t.payable)} (${core().formatHours(t.payable)} h)` }),
+          h('td')))));
+  }
+
+  function taskTotals(week) {
+    const entries = Object.entries(week.tasks).filter(([, ms]) => ms > 0).sort((a, b) => b[1] - a[1]);
+    if (!entries.length) return null;
+    return h('div', { class: 'ts-tasks' },
+      h('h4', { text: 'Active time by task' }),
+      h('ul', null, entries.map(([task, ms]) => h('li', null, h('span', { text: task }), h('span', { class: 'num', text: core().formatDuration(ms) })))));
+  }
+
+  function renderEmployee() {
+    const person = state.person;
+    const mine = sessionsFor(person.id);
+    const status = core().status(mine);
+    const [todayRow] = core().summarize(mine, [today()]);
+    const tasks = core().DEFAULTS.tasks;
+
+    const taskSelect = h('select', { class: 'ts-input', 'aria-label': 'Task' },
+      h('option', { value: '', text: 'Select a task…' }),
+      tasks.map(t => h('option', { value: t, text: t, selected: status.session && status.session.task === t })));
+    if (status.session) taskSelect.addEventListener('change', () => act(() => changeTask(taskSelect.value || null)));
+
+    const stateText = status.state === 'off'
+      ? 'Clocked out'
+      : status.state === 'break'
+        ? `On ${(core().DEFAULTS.breaks.find(b => b.id === status.break.type) || { label: 'break' }).label.toLowerCase()}`
+        : 'Working';
+    const since = status.session
+      ? h('span', { class: 'ts-live', 'data-live': 'since', 'data-from': String(status.break ? status.break.startAt : status.session.startAt) })
+      : null;
+
+    const clockCard = h('div', { class: `ts-card ts-status ts-state-${status.state}` },
+      h('div', { class: 'ts-status-row' },
+        h('div', null,
+          h('span', { class: 'ts-state-label', text: stateText }),
+          status.session ? h('p', { class: 'ts-hint' },
+            `Since ${core().formatTime(status.session.startAt, personZone(person))} your time (${core().formatTime(status.session.startAt, reportingZone())} NZ) · `, since) : null),
+        status.state === 'off'
+          ? h('button', { type: 'button', class: 'ts-btn primary big', text: 'Clock in', disabled: state.busy, onclick: () => act(() => clockIn(taskSelect.value || null)) })
+          : h('button', { type: 'button', class: 'ts-btn danger big', text: 'Clock out', disabled: state.busy, onclick: () => act(clockOut) })),
+      h('label', { class: 'ts-field' }, 'Task', taskSelect));
+
+    const allowances = core().breakAllowances(todayRow);
+    const breakCard = h('div', { class: 'ts-card' },
+      h('h3', { text: 'Breaks today' }),
+      h('p', { class: 'ts-hint', text: 'Webcam checks will pause during registered breaks (coming later).' }),
+      allowances.map(b => {
+        const running = status.state === 'break' && status.break.type === b.id;
+        return h('div', { class: `ts-break${b.over ? ' over' : ''}${running ? ' running' : ''}` },
+          h('div', null,
+            h('strong', { text: b.label }), ` · ${b.paid ? 'paid' : 'unpaid'} · ${Math.round(b.allowedMs / 60000)} min`,
+            h('p', { class: 'ts-hint' },
+              running ? h('span', { 'data-live': 'countdown', 'data-from': String(status.break.startAt), 'data-allowed': String(b.allowedMs), 'data-used': String(b.usedMs - (Date.now() - status.break.startAt)) })
+                : `${core().formatDuration(b.usedMs)} used · ${core().formatDuration(b.remainingMs)} left${b.over ? ' · over allowance' : ''}`)),
+          running
+            ? h('button', { type: 'button', class: 'ts-btn primary', text: 'End break', disabled: state.busy, onclick: () => act(endBreak) })
+            : h('button', {
+              type: 'button', class: 'ts-btn', text: 'Start',
+              disabled: state.busy || status.state !== 'working' || b.remainingMs === 0,
+              onclick: () => act(() => startBreak(b.id))
+            }));
+      }));
+
+    const summaryInput = h('textarea', { class: 'ts-input', rows: 4, maxLength: 4000, placeholder: 'Products uploaded, pages updated, flyers finished, meetings…' });
+    const summaryCard = h('div', { class: 'ts-card' },
+      h('h3', { text: `Work summary · ${core().formatDate(today())}` }),
+      summaryInput,
+      h('button', { type: 'button', class: 'ts-btn', text: 'Save summary', onclick: () => act(() => saveSummary(today(), summaryInput.value)) }));
+    loadSummary(person.id, today()).then(text => { if (!summaryInput.value) summaryInput.value = text; });
+
+    const week = core().weekSummary(mine, state.weekStart || core().weekStart(today()));
+    return [
+      h('div', { class: 'ts-grid' }, clockCard, h('div', { class: 'ts-card' }, h('h3', { text: `Today · ${core().formatDate(today())} (NZ)` }), totalsGrid(todayRow))),
+      h('div', { class: 'ts-grid' }, breakCard, summaryCard),
+      h('div', { class: 'ts-card' }, h('h3', { text: 'My timesheet' }), weekNav(), weekTable(person, week), taskTotals(week))
+    ];
+  }
+
+  async function loadSummary(personId, date) {
+    try {
+      const a = requireDb();
+      if (typeof a.getDoc !== 'function') return '';
+      const snap = await a.getDoc(a.doc(a.db, C.summaries, `${personId}_${date}`));
+      return snap && snap.exists() ? (snap.data().text || '') : '';
+    } catch (error) {
+      return '';
+    }
+  }
+
+  function csvFor(person, week) {
+    const q = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+    const zone = reportingZone();
+    const lines = [['Employee', 'NZ date', 'Weekday', 'Sessions (NZ)', 'On clock (h)', 'Active (h)', 'Paid breaks (h)', 'Unpaid breaks (h)', 'Payable (h)', 'Notes'].map(q).join(',')];
+    for (const day of week.days) {
+      const spans = day.sessions.map(s => `${core().formatTime(s.startAt, zone)}-${s.endAt == null ? 'open' : core().formatTime(s.endAt, zone)}`).join(' ');
+      lines.push([person.name, day.date, day.weekday, spans, core().formatHours(day.onClock), core().formatHours(day.active),
+        core().formatHours(day.paidBreak), core().formatHours(day.unpaidBreak), core().formatHours(day.payable), day.flags.map(flagText).join('; ')].map(q).join(','));
+    }
+    const t = week.totals;
+    lines.push([person.name, `${week.start} to ${week.end}`, 'Week total', '', core().formatHours(t.onClock), core().formatHours(t.active),
+      core().formatHours(t.paidBreak), core().formatHours(t.unpaidBreak), core().formatHours(t.payable), ''].map(q).join(','));
+    return lines.join('\r\n');
+  }
+
+  function download(name, text) {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
+    const a = h('a', { href: url, download: name });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function renderGm() {
+    const employees = state.people.filter(p => p.role === 'employee');
+    const team = h('div', { class: 'ts-card' },
+      h('h3', { text: 'Team status' }),
+      employees.length
+        ? h('div', { class: 'ts-team' }, employees.map(p => {
+          const status = currentStatus(p.id);
+          const [todayRow] = core().summarize(sessionsFor(p.id), [today()]);
+          const label = status.state === 'off' ? 'Clocked out' : status.state === 'break' ? 'On break' : 'Working';
+          return h('button', {
+            type: 'button', class: `ts-member ts-state-${status.state}${state.viewPersonId === p.id ? ' selected' : ''}`,
+            onclick: () => { state.viewPersonId = p.id; render(); }
+          },
+          h('strong', { text: p.name }),
+          h('span', { class: 'ts-state-label', text: label }),
+          status.session ? h('span', { class: 'ts-hint', text: `since ${core().formatTime(status.break ? status.break.startAt : status.session.startAt, reportingZone())} NZ` }) : null,
+          h('span', { class: 'ts-hint', text: `Today ${core().formatDuration(todayRow.payable)} payable` }));
+        }))
+        : h('p', { class: 'ts-hint', text: 'No employees yet. Add one under People & PINs.' }));
+
+    if (!state.viewPersonId && employees.length) state.viewPersonId = employees[0].id;
+    const viewing = employees.find(p => p.id === state.viewPersonId);
+    let sheet = null;
+    if (viewing) {
+      const week = core().weekSummary(sessionsFor(viewing.id), state.weekStart || core().weekStart(today()));
+      sheet = h('div', { class: 'ts-card' },
+        h('div', { class: 'ts-card-head' },
+          h('h3', { text: `Timesheet · ${viewing.name}` }),
+          h('button', {
+            type: 'button', class: 'ts-btn', text: 'Export CSV',
+            onclick: () => download(`timesheet-${viewing.name.replace(/\W+/g, '-').toLowerCase()}-${week.start}.csv`, csvFor(viewing, week))
+          })),
+        weekNav(), weekTable(viewing, week), taskTotals(week));
+    }
+    return [team, sheet, renderPeople()];
+  }
+
+  function renderPeople() {
+    let revealed = null;
+    const list = h('div', { class: 'ts-people' }, state.people.map(p =>
+      h('div', { class: 'ts-person' },
+        h('div', null, h('strong', { text: p.name }), ` · ${p.role === 'gm' ? 'GM' : 'Employee'} · ${p.timeZone || ''}`),
+        h('div', { class: 'ts-actions' },
+          h('button', {
+            type: 'button', class: 'ts-btn', text: 'Reset PIN',
+            onclick: () => act(async () => { revealed = pinReveal(p.name, await resetPin(p)); say(`New PIN created for ${p.name}.`); })
+              .then(() => { if (revealed) panel.querySelector('.ts-people-card').prepend(revealed); })
+          }),
+          p.id === state.person.id ? null : h('button', {
+            type: 'button', class: 'ts-btn danger', text: 'Remove',
+            onclick: () => act(async () => {
+              const a = requireDb();
+              await a.updateDoc(a.doc(a.db, C.people, p.id), { active: false });
+              await audit('person-removed', 'person', p.id);
+              say(`${p.name} removed. Their timesheet records are kept.`);
+            })
+          })))));
+
+    const name = h('input', { class: 'ts-input', type: 'text', placeholder: 'Name', maxLength: 60 });
+    const role = h('select', { class: 'ts-input' }, h('option', { value: 'employee', text: 'Employee' }), h('option', { value: 'gm', text: 'GM' }));
+    const zone = h('select', { class: 'ts-input' },
+      h('option', { value: 'America/Edmonton', text: 'Calgary (America/Edmonton)' }),
+      h('option', { value: 'Pacific/Auckland', text: 'New Zealand (Pacific/Auckland)' }));
+    role.addEventListener('change', () => { zone.value = role.value === 'gm' ? 'Pacific/Auckland' : 'America/Edmonton'; });
+
+    return h('div', { class: 'ts-card ts-people-card' },
+      h('h3', { text: 'People & PINs' }),
+      list,
+      h('div', { class: 'ts-add' },
+        name, role, zone,
+        h('button', {
+          type: 'button', class: 'ts-btn primary', text: 'Add & create PIN',
+          onclick: () => act(async () => {
+            revealed = pinReveal(name.value.trim(), await createPerson(name.value, role.value, zone.value));
+            say('Person added.');
+          }).then(() => { if (revealed) panel.querySelector('.ts-people-card').prepend(revealed); })
+        })));
+  }
+
+  function render() {
+    if (!panel) return;
+    const body = h('div', { class: 'ts-body' });
+    let title = 'Timesheet';
+    if (!core()) {
+      body.append(h('p', { class: 'ts-message ts-error', text: 'Timesheet could not load (timesheet-core.js missing).' }));
+    } else if (!state.loaded) {
+      body.append(h('p', { class: 'ts-hint', text: 'Loading…' }));
+    } else if (!state.people.length) {
+      body.append(renderSetup());
+    } else if (!state.person) {
+      body.append(renderUnlock());
+    } else {
+      if (!state.weekStart) state.weekStart = core().weekStart(today());
+      title = state.person.role === 'gm' ? 'Timesheets' : 'My Timesheet';
+      body.append(...[].concat(state.person.role === 'gm' ? renderGm() : renderEmployee()).filter(Boolean));
+    }
+    panel.replaceChildren(header(title), messageBar() || '', body);
+    panel.classList.toggle('is-busy', state.busy);
+  }
+
+  // Live clocks, elapsed time and break countdowns, without re-rendering.
+  function tick() {
+    if (!panel || !panel.isConnected) return;
+    const now = Date.now();
+    panel.querySelectorAll('[data-live="since"]').forEach(el => {
+      el.textContent = core().formatDuration(now - Number(el.dataset.from));
+    });
+    panel.querySelectorAll('[data-live="countdown"]').forEach(el => {
+      const used = Number(el.dataset.used) + (now - Number(el.dataset.from));
+      const left = Number(el.dataset.allowed) - used;
+      el.textContent = left >= 0
+        ? `${core().formatDuration(left)} left`
+        : `${core().formatDuration(-left)} over allowance`;
+      el.classList.toggle('over', left < 0);
+    });
+    panel.querySelectorAll('[data-live="clocks"]').forEach(el => {
+      el.replaceWith(clockLine(state.person));
+    });
+  }
+
+  function ensurePanel() {
+    panel = document.querySelector(`.${PANEL_CLASS}`);
+    if (panel) return panel;
+    const host = document.querySelector('.db-selected-panel-wrapper');
+    if (!host) return null;
+    panel = h('section', { class: PANEL_CLASS, 'data-panel': TOOL_ID, style: 'display: none' });
+    host.appendChild(panel);
+    return panel;
+  }
+
+  async function open() {
+    if (!ensurePanel()) return;
+    render();
+    try {
+      await load();
+    } catch (error) {
+      console.error('[timesheet] load failed:', error);
+      say(error.message || 'Could not load timesheets.', 'error');
+      state.loaded = true;
+    }
+    render();
+    clearInterval(ticker);
+    ticker = setInterval(tick, 1000);
+    clearInterval(refresher);
+    // GMs see live status: refresh data every 30 seconds while open.
+    refresher = setInterval(() => {
+      if (state.person && state.person.role === 'gm' && !state.busy) load().then(render).catch(() => {});
+    }, 30000);
+  }
+
+  function close() {
+    clearInterval(ticker);
+    clearInterval(refresher);
+  }
+
+  document.addEventListener('db-tool-open', event => {
+    if (event.detail && event.detail.id === TOOL_ID) open();
+    else close();
+  });
+  document.addEventListener('db-tool-close', close);
+
+  // Create the (hidden) panel now so navigation can show it.
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ensurePanel, { once: true });
+  else ensurePanel();
+
+  window.MTW_TIMESHEET = { open, lock, state };
+})();
