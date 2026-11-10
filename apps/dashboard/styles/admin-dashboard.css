@@ -1331,3 +1331,26 @@ body:has(.db-main-wrapper) {
   box-sizing: border-box;
   width: 100%;
 }
+
+/* change-logs.js injects `.change-log-card-top { display: flex }`, which squeezed
+   the title and date into the first of the card's two grid columns and left the
+   second empty, so the list looked off-centre. Cards are simple full-width rows. */
+.mtw-dashboard-shell .change-log-scroll > .change-log-card {
+  display: block !important;
+}
+
+.mtw-dashboard-shell .change-log-card-top {
+  display: flex !important;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+
+.mtw-dashboard-shell .change-log-title {
+  min-width: 0;
+}
+
+.mtw-dashboard-shell .change-log-date {
+  flex: 0 0 auto;
+}
