@@ -14,14 +14,7 @@
     KeyAccounts: [
       'barcodes'
     ],
-    Admin: [
-      'promotion-label',
-      'barcodes',
-      'secondhand-tool',
-      'product-info'
-    ],
-
-    Developer: '*'
+    Managers: '*'
   };
 
   function init() {
@@ -31,10 +24,12 @@
         'mtw_admin_logged_in'
       );
 
-    const user =
+    const stored =
       sessionStorage.getItem(
         'mtw_admin_name'
       );
+    // 'Manager' is accepted as Managers.
+    const user = stored === 'Manager' ? 'Managers' : stored;
 
     if (loggedIn !== 'true') {
       window.location.href = '/admin';
@@ -47,7 +42,7 @@
         const tool = card.dataset.select;
         const configured = settings && settings[tool];
         const roleOverrides = configured && Array.isArray(configured.roles);
-        const canAccess = user === 'Developer' ||
+        const canAccess = user === 'Managers' ||
           (roleOverrides
             ? configured.roles.includes(user)
             : allowed === '*' || allowed?.includes(tool));

@@ -129,11 +129,14 @@ function getUserRole() {
 
 try {
 
-return String(
+const role = String(
 sessionStorage.getItem(
 'mtw_admin_name'
 ) || ''
 ).trim();
+
+// 'Manager' is accepted as Managers.
+return role === 'Manager' ? 'Managers' : role;
 
 } catch (error) {
 
@@ -163,16 +166,12 @@ Counter: [
 '.label-select-template-wrapper'
 ],
 
-Admin: [
-'.label-save-template-wrapper',
-'.label-select-template-wrapper'
-],
 
 KeyAccounts: [
 '.barcode-import-card-wrapper'
 ],
 
-Developer: []
+Managers: []
 
 };
 
@@ -6602,7 +6601,7 @@ getUserRole();
 
 if (
 role !== 'KeyAccounts' &&
-role !== 'Developer'
+role !== 'Managers'
 ) {
 
 return;
