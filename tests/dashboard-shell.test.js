@@ -44,7 +44,9 @@ function host(bodyHtml, { role = 'Developer', firebase = true, startupTimeoutMs 
         window.MTW = {
           db: {},
           collection: () => ({}),
-          getDocs: async () => ({ forEach() {} })
+          getDocs: async () => ({ forEach() {} }),
+          doc: (db, collection, id) => ({ collection, id }),
+          setDoc: async (ref, data) => { (window.__saved = window.__saved || []).push({ ref, data }); }
         };
       }
     }
@@ -155,5 +157,59 @@ test('a navigation script that fails to load produces a specific, actionable err
   assert.match(message, /dashboard-navigation\.js never ran/);
   assert.match(message, /window\.openDBTool/);
   assert.equal(document.querySelector('.mtw-dashboard-shell'), null);
+  dom.window.close();
+});
+
+test('Webflow tool wrapper outside .db-right-content survives the shell', async () => {
+  // Legacy layout: the tool wrapper (with its panels) is a direct child of .db-main-wrapper.
+  const { dom, window, document } = host(
+    '<section class="db-main-wrapper">' +
+      '<div class="db-left-content"><div class="db-menu-list"></div></div>' +
+      '<div class="db-right-content"></div>' +
+      '<div class="db-tool-wrapper"><div class="db-selected-panel-wrapper">' +
+        '<div class="barcode-label-panels"><button class="legacy-button">Print</button></div>' +
+      '</div></div>' +
+      '<div class="legacy-modal">modal</div>' +
+    '</section>' +
+    // A tool script grabs its element at load time, like barcodes.js does.
+    '<script>window.__legacyPanel = document.querySelector(".barcode-label-panels");</script>' +
+    '<script src="dashboard-navigation.js"></script>'
+  );
+  await waitFor(window, () => document.querySelector('.mtw-dashboard-shell'));
+  assert.equal(document.querySelectorAll('.db-tool-wrapper').length, 1, 'no duplicate wrapper');
+  assert.ok(document.contains(window.__legacyPanel), 'legacy panel still in the page');
+  assert.ok(window.__legacyPanel.closest('.mtw-dashboard-shell'), 'legacy panel inside the shell');
+  assert.ok(document.querySelector('.mtw-dashboard-shell .legacy-modal'), 'other children kept');
+  document.querySelector('.db-list-toolcard[data-select="barcodes"]').click();
+  assert.equal(window.__legacyPanel.style.display, 'block');
+  assert.equal(document.querySelector('.mtw-dashboard-missing-tool'), null);
+  dom.window.close();
+});
+
+test('every navigation card has an SVG icon, including custom tools', async () => {
+  const { dom, window, document } = host('<script src="dashboard-navigation.js"></script>');
+  await waitFor(window, () => document.querySelector('.mtw-dashboard-shell'));
+  window.MTW_APPLY_TOOL_SETTINGS({ test: { custom: true, name: 'TEST', roles: ['Developer'] } });
+  const cards = [...document.querySelectorAll('.db-list-toolcard')];
+  assert.ok(cards.some(card => card.dataset.select === 'test'));
+  for (const card of cards) {
+    const icon = card.querySelector('.db-list-icon');
+    assert.ok(icon && icon.querySelector('svg path'), `icon for ${card.dataset.select}`);
+    assert.equal(icon.textContent.trim(), '', `no letter icon for ${card.dataset.select}`);
+  }
+  dom.window.close();
+});
+
+test('Developer Tools "Disable item" saves without a ReferenceError', async () => {
+  const { dom, window, document, errors } = host('<script src="dashboard-navigation.js"></script>');
+  await waitFor(window, () => document.querySelector('.mtw-dashboard-shell') &&
+    document.querySelector('.developer-tools-panel .developer-tool-row'));
+  document.querySelector('.db-list-toolcard[data-select="developer-tools"]').click();
+  document.querySelector('.developer-tools-panel .developer-tool-row').click();
+  document.querySelector('.developer-tool-disable').click();
+  await waitFor(window, () => /Saved/.test(document.querySelector('.developer-tools-status')?.textContent || ''));
+  assert.equal(window.__saved.length, 1);
+  assert.equal(window.__saved[0].data.enabled, false);
+  assert.deepEqual(errors.filter(e => /ReferenceError|enabledInput/.test(e)), []);
   dom.window.close();
 });

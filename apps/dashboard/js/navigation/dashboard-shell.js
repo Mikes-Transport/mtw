@@ -166,6 +166,9 @@
     left.hidden = true;
     left.style.display = 'none';
     content.appendChild(left);
+    // Keep any other Webflow children (panels, overlays, modals) instead of dropping
+    // them with the old wrapper. Moving keeps the element references tool scripts hold.
+    [...original.children].forEach(child => content.appendChild(child));
     original.replaceWith(shell);
   }
 

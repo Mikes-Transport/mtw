@@ -23,6 +23,9 @@
     ? new URL('./dashboard-shell.js', navigationScript.src).href
     : 'https://raw.githack.com/Mikes-Transport/mtw/main/apps/dashboard/js/navigation/dashboard-shell.js';
 
+  // Bump on each release so the live page can be checked for the version it runs.
+  const NAVIGATION_BUILD = '2026-11-11.2';
+
   const TOOLS = {
     'activity-logs': { panel: '.activity-logs-panel', name: 'Activity Logs', roles: ['Developer'] },
     'secondhand-tool': { panel: '.second-hand-panel', name: 'Secondhand Stock', roles: ['Counter', 'Admin'] },
@@ -71,10 +74,15 @@
       left.appendChild(menu);
     }
 
-    let wrapper = right.querySelector('.db-tool-wrapper');
+    // Reuse Webflow's tool wrapper wherever it sits in the dashboard (it may be a
+    // direct child of .db-main-wrapper). Move it, never recreate it: tool scripts
+    // hold references to the panels inside it.
+    let wrapper = root.querySelector('.db-tool-wrapper');
     if (!wrapper) {
       wrapper = document.createElement('section');
       wrapper.className = 'db-tool-wrapper';
+      right.appendChild(wrapper);
+    } else if (!right.contains(wrapper)) {
       right.appendChild(wrapper);
     }
     if (!wrapper.querySelector('.tool-wrapper-h2')) {
@@ -101,7 +109,7 @@
       exit.setAttribute('aria-label', 'Close dashboard tool');
       wrapper.appendChild(exit);
     }
-    let panels = right.querySelector('.db-selected-panel-wrapper');
+    let panels = root.querySelector('.db-selected-panel-wrapper');
     if (!panels) {
       panels = document.createElement('div');
       panels.className = 'db-selected-panel-wrapper';
@@ -117,14 +125,11 @@
       card.type = 'button';
       card.className = 'db-list-toolcard dark';
       card.dataset.select = id;
-      const icon = document.createElement('span');
-      icon.className = 'db-list-icon';
-      icon.setAttribute('aria-hidden', 'true');
-      icon.textContent = tool.name.charAt(0);
       const label = document.createElement('span');
       label.className = 'db-heading-list';
       label.textContent = tool.name;
-      card.append(icon, label);
+      card.append(label);
+      setToolIcon(card, id);
       menu.appendChild(card);
     });
 
@@ -197,6 +202,8 @@
       }
       missingPanel.textContent = tool.name +
         ' has no repository-built interface yet. Its existing Webflow panel must be migrated.';
+      console.warn('[dashboard] ' + tool.name + ': no element matches ' + tool.panel +
+        ' on this page. Run MTW_DASHBOARD_DIAGNOSE() in the console for details.');
       missingPanel.style.display = 'block';
     } else if (missingPanel) {
       missingPanel.style.display = 'none';
@@ -275,9 +282,28 @@
     else card.textContent = name;
   }
 
-  function setDeveloperIcon(card) {
-    const icon = card.querySelector('.db-list-icon');
-    if (!icon) return;
+  // 24×24 stroke icons (drawn for this dashboard). Custom tools use 'default'.
+  const TOOL_ICONS = {
+    'activity-logs': ['M3 12h4l3-8 4 16 3-8h4'],
+    'secondhand-tool': ['M3 7.5 12 3l9 4.5-9 4.5-9-4.5z', 'M3 7.5v9L12 21l9-4.5v-9', 'M12 12v9'],
+    'product-info': ['M3 3h8l10 10-8 8L3 11z', 'M7.5 7.5h.01'],
+    'csv-config': ['M3 4h18v16H3z', 'M3 9.5h18', 'M3 15h18', 'M9 4v16'],
+    'mte-config': ['M12 3l9 5-9 5-9-5z', 'M3 12.5l9 5 9-5', 'M3 17l9 5 9-5'],
+    'promotion-label': ['M19 5 5 19', 'M5 6.5a1.5 1.5 0 1 0 3 0 1.5 1.5 0 0 0-3 0', 'M16 17.5a1.5 1.5 0 1 0 3 0 1.5 1.5 0 0 0-3 0'],
+    'barcodes': ['M4 5v14', 'M7 5v14', 'M10.5 5v14', 'M14 5v14', 'M16.5 5v14', 'M20 5v14'],
+    'model-tool-access': ['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', 'M4 21a8 8 0 0 1 16 0'],
+    'developer-tools': ['M4 7h9', 'M17 7h3', 'M4 17h3', 'M11 17h9', 'M8 7a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0', 'M7 17a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0'],
+    default: ['M4 4h6v6H4z', 'M14 4h6v6h-6z', 'M4 14h6v6H4z', 'M14 14h6v6h-6z']
+  };
+
+  function setToolIcon(card, id) {
+    let icon = card.querySelector('.db-list-icon');
+    if (!icon) {
+      icon = document.createElement('span');
+      icon.className = 'db-list-icon';
+      card.prepend(icon);
+    }
+    icon.setAttribute('aria-hidden', 'true');
 
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', '0 0 24 24');
@@ -287,25 +313,12 @@
     svg.setAttribute('stroke-linecap', 'round');
     svg.setAttribute('stroke-linejoin', 'round');
     svg.setAttribute('aria-hidden', 'true');
-
-    const paths = [
-      'M4 7h9',
-      'M17 7h3',
-      'M4 17h3',
-      'M11 17h9',
-      'M13 4v6',
-      'M7 14v6',
-      'M8 7a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0',
-      'M7 17a2.5 2.5 0 1 0 5 0 2.5 2.5 0 0 0-5 0'
-    ];
-    paths.forEach(d => {
+    (TOOL_ICONS[id] || TOOL_ICONS.default).forEach(d => {
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.setAttribute('d', d);
       svg.appendChild(path);
     });
-
     icon.replaceChildren(svg);
-    card.setAttribute('aria-label', 'Developer Tools');
   }
 
   function canShowTool(id, tool) {
@@ -336,7 +349,7 @@
     }
 
     updateCardName(card, name);
-    if (id === 'developer-tools') setDeveloperIcon(card);
+    setToolIcon(card, id);
     card.onclick = () => openDBTool(id);
     card.style.display = canShowTool(id, TOOLS[id]) ? '' : 'none';
     card.onkeydown = event => {
@@ -515,6 +528,36 @@
       document.head.appendChild(shell);
     }
   }
+
+  // Paste the output of MTW_DASHBOARD_DIAGNOSE() into a bug report.
+  function diagnose() {
+    const scripts = [...document.scripts]
+      .map(script => script.src)
+      .filter(src => /mtw|dashboard|githack|jsdelivr/i.test(src));
+    const tools = Object.entries(TOOLS).map(([id, tool]) => {
+      const panel = document.querySelector(tool.panel);
+      return {
+        id,
+        panel: tool.panel,
+        found: Boolean(panel),
+        insideShell: Boolean(panel && panel.closest('.mtw-dashboard-shell')),
+        children: panel ? panel.children.length : 0,
+        visibleCard: Boolean(document.querySelector(`.db-list-toolcard[data-select="${id}"]`)?.offsetParent)
+      };
+    });
+    const report = {
+      navigationBuild: NAVIGATION_BUILD,
+      role: sessionStorage.getItem('mtw_admin_name'),
+      firebase: Boolean(window.MTW && window.MTW.db),
+      shells: document.querySelectorAll('.mtw-dashboard-shell').length,
+      toolWrappers: document.querySelectorAll('.db-tool-wrapper').length,
+      scripts,
+      tools
+    };
+    console.table(tools);
+    return JSON.stringify(report, null, 2);
+  }
+  window.MTW_DASHBOARD_DIAGNOSE = diagnose;
 
   window.openDBTool =
     openDBTool;

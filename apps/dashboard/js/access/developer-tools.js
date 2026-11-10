@@ -71,9 +71,11 @@
     });
     form.appendChild(roleGroup);
 
+    // Declared outside the block: the Disable button and submit handler both use it.
+    let enabledInput = null;
     if (!isNew) {
       const enabledLabel = node('label');
-      const enabledInput = node('input');
+      enabledInput = node('input');
       enabledInput.type = 'checkbox';
       enabledInput.name = 'enabled';
       enabledInput.checked = settings.enabled !== false;
@@ -114,7 +116,7 @@
         name,
         description: descriptionInput.value.trim(),
         roles: selectedRoles,
-        enabled: isNew ? true : enabledInput.checked,
+        enabled: isNew || !enabledInput ? true : enabledInput.checked,
         custom: isNew || settings.custom === true
       };
       saveButton.disabled = true;
