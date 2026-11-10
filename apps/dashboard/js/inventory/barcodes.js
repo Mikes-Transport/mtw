@@ -5343,6 +5343,34 @@ DROPDOWN_OPEN_CLASS
 
 }
 
+// The label-sheet menu closes when a choice is made (see createDropdown), on a click
+// or tap outside it, on Escape, when focus tabs out of it, and when any other tool
+// opens or the tool closes.
+function setupDropdownDismiss() {
+
+const isInside = target =>
+!!(els.dropdown && target instanceof Node && els.dropdown.contains(target));
+
+document.addEventListener('pointerdown', e => {
+if (!isInside(e.target)) closeDropdown();
+}, true);
+
+document.addEventListener('keydown', e => {
+if (e.key === 'Escape') closeDropdown();
+});
+
+document.addEventListener('focusin', e => {
+if (!isInside(e.target)) closeDropdown();
+});
+
+document.addEventListener('db-tool-open', e => {
+if (e.detail?.id !== 'barcodes') closeDropdown();
+});
+
+document.addEventListener('db-tool-close', closeDropdown);
+
+}
+
 function toggleDropdown() {
 
 if (!els.dropdown) {
@@ -10531,6 +10559,8 @@ toggleDropdown();
 );
 
 }
+
+setupDropdownDismiss();
 
 window.addEventListener(
 'afterprint',
