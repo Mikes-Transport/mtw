@@ -2,19 +2,31 @@
 
 ## What a host page must provide
 
-Only this:
+The whole Webflow dashboard page body and custom code should be just this:
 
 ```html
-<div data-mtw-dashboard-mount></div>   <!-- optional; without it the dashboard is appended to <body> -->
-<script src="BASE/apps/dashboard/js/navigation/dashboard-navigation.js"></script>
+<script type="module" src="https://raw.githack.com/Mikes-Transport/mtw/main/apps/dashboard/js/dashboard.js"></script>
 ```
 
-`apps/dashboard/index.html` is a working minimal host. The live Webflow page must also provide:
+`js/dashboard.js` loads everything else from the same base URL, in order:
 
-- `window.MTW` (Firebase: `db`, `collection`, `getDocs`, …). Without it, tool settings fail to load and the built-in defaults are used.
-- `apps/dashboard/js/access/admin.js`, which sends the visitor to `/admin` unless `sessionStorage.mtw_admin_logged_in === 'true'`.
+1. `styles/tools.css` (tool panel styles) and the Exo/Inter/Montserrat fonts.
+2. `js/firebase.js`, which sets up Firebase and `window.MTW`, unless the page already did.
+3. Every `templates/<tool>.html` panel file.
+4. `js/navigation/dashboard-navigation.js`, which builds the dashboard, installs the panels, then loads the shell, `admin-dashboard.css` and `developer-tools.js`.
+5. The tool scripts (`activity/`, `inventory/`, `config/`, `products/`), as ES modules.
 
-No Webflow Designer wrappers, menu cards or panels are required. If legacy Webflow markup (`.db-main-wrapper` etc.) is present, it is reused instead of duplicated.
+No Webflow Designer markup is needed. If the page still has the old Webflow dashboard markup (`.change-logs` and `.db-tool-wrapper` in `<body>`), it is removed, because the repository templates replace it (a console note says so). Without the loader (old embeds), that markup is moved into the dashboard instead.
+
+`apps/dashboard/index.html` is a working minimal host for development.
+
+Not loaded by the loader: `js/access/admin.js` (the `/admin` sign-in redirect). The previous Webflow embed didn't load it either. Add it to the loader if the dashboard should redirect signed-out visitors.
+
+## Changing a tool's layout
+
+- Markup: `apps/dashboard/templates/<tool>.html`. Keep the class names; the tool scripts find their elements by class. `{{BASE}}` becomes the `apps/dashboard/` URL (used for the label sheet images in `assets/labels/`).
+- Styles: `apps/dashboard/styles/tools.css` (tool panels, extracted from the Webflow site stylesheet) and `apps/dashboard/styles/admin-dashboard.css` (shell, navigation and tool frame).
+- Promotional label editing opens the old sidebar (`.db-left-content.editing`) as a drawer on the right.
 
 ## Startup sequence
 
@@ -99,6 +111,6 @@ On the live dashboard, signed in, with DevTools open and **Disable cache** ticke
 - [ ] Normal refresh and hard refresh both render the dashboard.
 - [ ] Sign in as a Counter user: only Counter tools are visible.
 
-## Not yet migrated
+## Migrated from Webflow
 
-Tool panels such as `.barcode-label-panels`, `.product-tool-panel` and `.et-body-wrapper` are still expected to come from Webflow markup or from each tool's own script. Where a panel is missing, the dashboard shows a clear "not migrated" note instead of failing.
+All tool panels now come from `apps/dashboard/templates/`: activity logs, secondhand stock, product information, CSV config, MTE config, promotional labels, barcode labels (with its x2/x8/x10/x30 label-sheet dropdown in the navigation), model access and change logs. The Webflow page needs no dashboard markup. The barcode panel class is `barcode-label-panels` (Webflow had renamed it `barcode-label-panels-2`, which broke the barcode tool).

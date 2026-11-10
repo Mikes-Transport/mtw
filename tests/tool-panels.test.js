@@ -1,0 +1,212 @@
+'use strict';
+
+// Loads the repository panel templates, navigation and the real tool scripts into a
+// page shaped like the published Webflow dashboard, then checks every tool opens its
+// own panel inside the shell and the tool scripts start without errors.
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { JSDOM, VirtualConsole, ResourceLoader } = require('jsdom');
+
+const ORIGIN = 'http://mtw.test/';
+const REPO_ROOT = path.join(__dirname, '..');
+const DASHBOARD = path.join(REPO_ROOT, 'apps', 'dashboard');
+const BASE_URL = ORIGIN + 'apps/dashboard/';
+
+class RepoLoader extends ResourceLoader {
+  fetch(url) {
+    if (!url.startsWith(ORIGIN)) return null;
+    const file = path.join(REPO_ROOT, decodeURIComponent(new URL(url).pathname));
+    if (!file.startsWith(REPO_ROOT) || !fs.existsSync(file)) return Promise.reject(new Error('404 ' + url));
+    return Promise.resolve(fs.readFileSync(file));
+  }
+}
+
+const TEMPLATE_IDS = fs.readdirSync(path.join(DASHBOARD, 'templates'))
+  .filter(name => name.endsWith('.html'))
+  .map(name => name.replace(/\.html$/, ''));
+const templates = Object.fromEntries(TEMPLATE_IDS.map(id =>
+  [id, fs.readFileSync(path.join(DASHBOARD, 'templates', id + '.html'), 'utf8')]));
+
+// Same order as js/dashboard.js.
+const loaderSource = fs.readFileSync(path.join(DASHBOARD, 'js', 'dashboard.js'), 'utf8');
+const TOOL_SCRIPTS = [...loaderSource.match(/const TOOL_SCRIPTS = \[([\s\S]*?)\]/)[1].matchAll(/'([^']+)'/g)]
+  .map(match => match[1]);
+const LOADER_TEMPLATES = [...loaderSource.match(/const TEMPLATES = \[([\s\S]*?)\]/)[1].matchAll(/'([^']+)'/g)]
+  .map(match => match[1]);
+
+// Roughly what the published Webflow page has: the old dashboard markup directly in
+// <body>, with Webflow's renamed barcode panel.
+const LEGACY_WEBFLOW_BODY =
+  '<div class="change-logs"><h2 class="change-log-head">CHANGE LOGS</h2></div>' +
+  '<div class="db-tool-wrapper"><h1 class="tool-wrapper-h2">Activity Logs</h1>' +
+    '<div class="db-selected-panel-wrapper">' +
+      '<div class="activity-logs-panel legacy-webflow">old</div>' +
+      '<div class="barcode-label-panels-2 legacy-webflow">old</div>' +
+    '</div></div>';
+
+function host(bodyHtml, { withTemplates = true } = {}) {
+  const errors = [];
+  const virtualConsole = new VirtualConsole();
+  virtualConsole.on('error', (...args) => errors.push(args.map(String).join(' ')));
+  virtualConsole.on('jsdomError', error => errors.push(String(error.message || error)));
+  const dom = new JSDOM(`<!DOCTYPE html><html><head></head><body>${bodyHtml}</body></html>`, {
+    url: BASE_URL + 'host.html',
+    runScripts: 'dangerously',
+    resources: new RepoLoader(),
+    pretendToBeVisual: true,
+    virtualConsole,
+    beforeParse(window) {
+      window.sessionStorage.setItem('mtw_admin_name', 'Developer');
+      window.MTW_DASHBOARD_BASE_URL = BASE_URL;
+      if (withTemplates) window.MTW_DASHBOARD_TEMPLATES = { ...templates };
+      const empty = { empty: true, size: 0, docs: [], forEach() {} };
+      window.MTW = {
+        db: {},
+        $: selector => window.document.querySelector(selector),
+        $$: selector => Array.from(window.document.querySelectorAll(selector)),
+        collection: () => ({}),
+        getDocs: async () => empty,
+        doc: (db, ...parts) => ({ path: parts.join('/') }),
+        getDoc: async () => ({ exists: () => false, data: () => ({}) }),
+        addDoc: async () => ({ id: 'new' }),
+        updateDoc: async () => {},
+        deleteDoc: async () => {},
+        setDoc: async () => {}
+      };
+      window.print = () => {};
+    }
+  });
+  return { dom, window: dom.window, document: dom.window.document, errors };
+}
+
+function waitFor(window, predicate, timeout = 5000) {
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    (function poll() {
+      let ok = false;
+      try { ok = predicate(); } catch (error) { /* not ready */ }
+      if (ok) return resolve();
+      if (Date.now() - started > timeout) return reject(new Error('timed out'));
+      window.setTimeout(poll, 20);
+    })();
+  });
+}
+
+// Tool scripts are ES modules (top-level `const { db } = window.MTW` in each), so
+// give each its own scope, as import() does in the browser.
+function runToolScripts(window) {
+  for (const script of TOOL_SCRIPTS) {
+    const source = fs.readFileSync(path.join(DASHBOARD, 'js', script), 'utf8');
+    window.eval(`(function () {\n${source}\n})();\n//# sourceURL=${script}`);
+  }
+}
+
+const dashboardErrors = errors => errors.filter(message =>
+  !/stylesheet|Could not parse CSS|Not implemented|\.css|fonts\.googleapis|IDAutomation|font/i.test(message));
+
+async function boot(body, options) {
+  const page = host(body + '<script src="js/navigation/dashboard-navigation.js"></script>', options);
+  await waitFor(page.window, () => page.document.querySelector('.mtw-dashboard-shell'));
+  return page;
+}
+
+test('the loader lists every template file', () => {
+  assert.deepEqual([...LOADER_TEMPLATES].sort(), [...TEMPLATE_IDS].sort());
+});
+
+test('templates replace the Webflow markup and every tool opens its own panel', async () => {
+  const { dom, window, document, errors } = await boot(LEGACY_WEBFLOW_BODY);
+
+  assert.equal(document.querySelectorAll('.legacy-webflow').length, 0, 'Webflow panels removed');
+  assert.equal(document.querySelectorAll('.db-tool-wrapper').length, 1);
+  assert.equal(document.querySelectorAll('.change-logs').length, 1);
+  assert.ok(document.querySelector('.mtw-dashboard-shell .change-logs'), 'change logs inside the shell');
+
+  const ids = ['activity-logs', 'secondhand-tool', 'product-info', 'csv-config', 'mte-config',
+    'promotion-label', 'barcodes', 'model-tool-access'];
+  for (const id of ids) {
+    const selector = window.MTW_TOOL_REGISTRY[id].panel;
+    const panels = document.querySelectorAll(selector);
+    assert.equal(panels.length, 1, `one ${selector}`);
+    assert.ok(panels[0].closest('.mtw-dashboard-shell .db-selected-panel-wrapper'), `${id} inside the shell`);
+
+    document.querySelector(`.db-list-toolcard[data-select="${id}"]`).click();
+    assert.equal(panels[0].style.display, 'block', `${id} shown`);
+    const others = ids.filter(other => other !== id)
+      .map(other => document.querySelector(window.MTW_TOOL_REGISTRY[other].panel));
+    assert.ok(others.every(panel => panel.style.display === 'none'), `only ${id} shown`);
+    const missing = document.querySelector('.mtw-dashboard-missing-tool');
+    assert.ok(!missing || missing.style.display === 'none', `${id} has its panel`);
+  }
+
+  const img = document.querySelector('.barcode-label-panels img.image');
+  assert.equal(img.getAttribute('src'), BASE_URL + 'assets/labels/x2-labels.jpg');
+  assert.ok(fs.existsSync(path.join(DASHBOARD, 'assets', 'labels', 'x2-labels.jpg')));
+  assert.deepEqual(dashboardErrors(errors), []);
+  dom.window.close();
+});
+
+test('without templates, the Webflow markup is adopted into the shell', async () => {
+  const { dom, document } = await boot(LEGACY_WEBFLOW_BODY, { withTemplates: false });
+  assert.equal(document.querySelectorAll('.db-tool-wrapper').length, 1, 'no duplicate wrapper');
+  assert.ok(document.querySelector('.mtw-dashboard-shell .activity-logs-panel.legacy-webflow'));
+  assert.ok(document.querySelector('.mtw-dashboard-shell .change-logs'));
+  document.querySelector('.db-list-toolcard[data-select="activity-logs"]').click();
+  assert.equal(document.querySelector('.activity-logs-panel').style.display, 'block');
+  dom.window.close();
+});
+
+test('template forms never submit the page', async () => {
+  const { dom, window, document } = await boot('');
+  const forms = document.querySelectorAll('.db-selected-panel-wrapper form');
+  assert.ok(forms.length >= 3, 'product, secondhand and CSV forms are installed');
+  for (const form of forms) {
+    const event = new window.Event('submit', { cancelable: true });
+    form.dispatchEvent(event);
+    assert.equal(event.defaultPrevented, true);
+  }
+  dom.window.close();
+});
+
+test('the real tool scripts start against the templates without errors', async () => {
+  const { dom, window, document, errors } = await boot(LEGACY_WEBFLOW_BODY);
+  runToolScripts(window);
+
+  // Barcodes: label sheet choices are added to the dropdown around its nav card.
+  await waitFor(window, () =>
+    document.querySelectorAll('#barcode-drop').length === 1 &&
+    document.querySelector('.db-list-dropdown-wrapper #barcode-drop') &&
+    document.querySelectorAll('.db-list-dropdown-wrapper [data-barcode-template]').length === 4);
+
+  // Promotional labels: renders its starter card into the template's containers.
+  document.querySelector('.db-list-toolcard[data-select="promotion-label"]').click();
+  await waitFor(window, () => document.querySelector('.card-view-container .et-current-card') &&
+    document.querySelector('.et-card-body-wrapper .et-page'));
+
+  // Model access: fills the empty panel itself.
+  document.querySelector('.db-list-toolcard[data-select="model-tool-access"]').click();
+  await waitFor(window, () => document.querySelector('.model-access-panel .ma-root'));
+
+  await new Promise(resolve => window.setTimeout(resolve, 300));
+  assert.deepEqual(dashboardErrors(errors), []);
+  dom.window.close();
+});
+
+test('promotional label editing opens in the drawer, not the hidden sidebar', async () => {
+  const { dom, window, document } = await boot('');
+  runToolScripts(window);
+  document.querySelector('.db-list-toolcard[data-select="promotion-label"]').click();
+  await waitFor(window, () => document.querySelector('.card-view-container .et-current-card'));
+
+  document.querySelector('.card-view-container [btn="edit"]').click();
+  const left = document.querySelector('.db-left-content');
+  await waitFor(window, () => left.classList.contains('editing') && left.querySelector('.et-edit-panel'));
+  assert.ok(left.closest('.mtw-dashboard-shell'), 'drawer is inside the shell');
+  assert.ok(left.classList.contains('mtw-shell-editor'));
+  assert.equal(left.hasAttribute('hidden'), false);
+  assert.equal(left.style.display, '');
+  await new Promise(resolve => window.setTimeout(resolve, 300));
+  dom.window.close();
+});
