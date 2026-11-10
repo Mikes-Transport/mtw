@@ -9,8 +9,8 @@
   const $ = window.MTW && typeof window.MTW.$ === 'function'
     ? window.MTW.$
     : selector => document.querySelector(selector);
-  const $ = window.MTW && typeof window.MTW.$ === 'function'
-    ? window.MTW.$
+  const $$ = window.MTW && typeof window.MTW.$$ === 'function'
+    ? window.MTW.$$
     : selector => [...document.querySelectorAll(selector)];
   const navigationScript = document.currentScript;
   const DASHBOARD_THEME_URL = navigationScript && navigationScript.src
