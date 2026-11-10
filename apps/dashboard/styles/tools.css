@@ -2372,13 +2372,65 @@ textarea.w-input, textarea.w-select {
   font-size: 12px;
 }
 
-/* Product grid: as many cards per row as fit (was a fixed 3 columns x 5 rows). */
+/* Product grid: 4 cards per row on desktop (Webflow had 3), fewer on narrow screens. */
 .product-results-grid {
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   grid-template-rows: none;
   grid-auto-rows: auto;
 }
 
 .product-image {
   height: 160px;
+}
+
+@media (max-width: 1200px) {
+  .product-results-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .product-results-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .product-results-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Modals (Add New Product, secondhand Edit Item) cover the whole page, above the
+   dashboard header and navigation, and scroll when taller than the window.
+   Their scripts still toggle display. */
+.product-add-product-panel,
+.second-hand-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  height: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.add-product-main-wrapper,
+.second-hand-overlay-main-wrapper {
+  box-sizing: border-box;
+  align-items: flex-start;
+  min-height: 100%;
+  padding: 40px 16px;
+}
+
+/* Print copies: barcodes.js and promotion-cards.js add a print-only copy of the
+   pages to the end of <body> (forced visible with an inline style) while the print
+   dialog is open. Keep it off screen; @media print still lays it out. */
+@media screen {
+  #barcode-print-root,
+  #np-print-root {
+    position: fixed !important;
+    top: 0 !important;
+    left: -100000px !important;
+    pointer-events: none !important;
+  }
 }
