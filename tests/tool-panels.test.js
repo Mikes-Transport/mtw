@@ -219,3 +219,23 @@ test('promotional label editing opens in the drawer, not the hidden sidebar', as
   await new Promise(resolve => window.setTimeout(resolve, 300));
   dom.window.close();
 });
+
+test('tools.css: modals sit above the dashboard, product grid is 4 wide, row text is readable', async () => {
+  const css = fs.readFileSync(path.join(DASHBOARD, 'styles', 'tools.css'), 'utf8');
+  // Webflow's site stylesheet still loads first on the live page; tools.css must win.
+  const webflow = '.row-text{color:#fff}.product-results-grid{grid-template-columns:1fr 1fr 1fr}' +
+    '.product-add-product-panel{position:fixed;display:none}';
+  const { dom, window, document } = await boot(`<style>${webflow}</style><style>${css}</style>`);
+  const style = el => window.getComputedStyle(el);
+
+  assert.equal(style(document.querySelector('.product-add-product-panel')).zIndex, '10000');
+  assert.equal(style(document.querySelector('.second-hand-overlay')).zIndex, '10000');
+  assert.equal(style(document.querySelector('.product-results-grid')).gridTemplateColumns,
+    'repeat(4, minmax(0, 1fr))');
+
+  const row = document.createElement('div');
+  row.className = 'row-text';
+  document.querySelector('.activity-table-body').appendChild(row);
+  assert.notEqual(style(row).color, 'rgb(255, 255, 255)', 'row text is not white');
+  dom.window.close();
+});
