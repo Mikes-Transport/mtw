@@ -14,8 +14,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+          cache-dependency-path: tests/package-lock.json
+      - run: npm ci --prefix tests
       - name: Syntax check every browser script
-        run: npm run check
+        run: npm run check --prefix tests
       - name: Dashboard shell tests
-        run: npm test
+        run: npm test --prefix tests

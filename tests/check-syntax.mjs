@@ -1,7 +1,8 @@
 // Parse every browser script in apps/ so a syntax error (like the duplicate `const $`
 // that shipped in PR #1) fails before merge instead of on the live site.
 import { readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 function walk(dir, out = []) {
@@ -14,12 +15,13 @@ function walk(dir, out = []) {
   return out;
 }
 
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 let failed = 0;
-for (const file of walk('apps')) {
+for (const file of walk(join(ROOT, 'apps'))) {
   const result = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' });
   if (result.status !== 0) {
     failed += 1;
-    console.error(`✗ ${file}\n${result.stderr}`);
+    console.error(`✗ ${relative(ROOT, file)}\n${result.stderr}`);
   }
 }
 if (failed) {
