@@ -32,7 +32,10 @@ const TOOL_SCRIPTS = [
   'config/mte-config.js',
   'products/promotion-cards.js',
   'inventory/barcodes.js',
-  'config/model-access.js'
+  'config/model-access.js',
+  // Timesheet is its own app (apps/timesheet); the dashboard loads it as a tool.
+  '../../timesheet/js/timesheet-core.js',
+  '../../timesheet/js/timesheet.js'
 ];
 
 function stylesheet(href) {
@@ -66,6 +69,7 @@ async function start() {
 
   stylesheet('https://fonts.googleapis.com/css2?family=Exo:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&family=Montserrat:wght@400;500;600;700;800;900&display=swap');
   stylesheet(`${BASE}styles/tools.css`);
+  stylesheet(new URL('../timesheet/css/timesheet.css', BASE).href);
 
   if (!window.MTW || !window.MTW.db) await import('./firebase.js');
   await loadTemplates();
