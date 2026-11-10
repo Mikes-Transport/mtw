@@ -227,6 +227,18 @@
       if (panel.dataset.view !== 'form') start();
     });
 
+    // X while editing an item (or adding one) returns to the Developer Tools list.
+    document.addEventListener('db-tool-exit-request', event => {
+      if (event.detail?.id !== 'developer-tools' || panel.dataset.view !== 'form') return;
+      event.preventDefault();
+      render(panel);
+    });
+
+    // Leaving the tool (Overview, another tool) discards an unsaved edit view.
+    document.addEventListener('db-tool-close', () => {
+      if (panel.dataset.view === 'form') render(panel);
+    });
+
     document.addEventListener('db-tools-load-error', event => {
       showStatus(panel, event.detail.message, true);
     });

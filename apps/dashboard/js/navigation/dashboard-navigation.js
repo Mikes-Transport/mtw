@@ -24,7 +24,7 @@
     : 'https://raw.githack.com/Mikes-Transport/mtw/main/apps/dashboard/js/navigation/dashboard-shell.js';
 
   // Bump on each release so the live page can be checked for the version it runs.
-  const NAVIGATION_BUILD = '2026-11-11.2';
+  const NAVIGATION_BUILD = '2026-11-11.3';
 
   const TOOLS = {
     'activity-logs': { panel: '.activity-logs-panel', name: 'Activity Logs', roles: ['Developer'] },
@@ -155,6 +155,7 @@
 
   const ROLE_NAMES = ['Counter', 'Stores', 'KeyAccounts', 'Admin', 'Developer'];
   let toolSettings = {};
+  let activeToolId = null;
 
   function hideAll() {
 
@@ -173,6 +174,7 @@
     const tool = TOOLS[id];
 
     if (!tool || tool.enabled === false || !canShowTool(id, tool)) return;
+    activeToolId = id;
 
     $$('.db-list-toolcard').forEach(card => {
       const active = card.dataset.select === id;
@@ -240,7 +242,20 @@
     }
   }
 
+  // The tool's X button steps back one level first: a tool showing a sub-view
+  // (e.g. Developer Tools editing one item) cancels 'db-tool-exit-request' and
+  // handles the step itself. Only when nothing cancels does the tool close.
+  function exitDBTool() {
+    const request = new CustomEvent('db-tool-exit-request', {
+      cancelable: true,
+      detail: { id: activeToolId }
+    });
+    if (!document.dispatchEvent(request)) return;
+    closeDBTool();
+  }
+
   function closeDBTool() {
+    activeToolId = null;
 
     $$('.db-list-toolcard').forEach(card => {
       card.classList.remove('is-active');
@@ -486,8 +501,7 @@
     $$('#exit-btn')
       .forEach(button => {
 
-        button.onclick =
-          closeDBTool;
+        button.onclick = exitDBTool;
       });
 
     window.MTW_TOOL_REGISTRY = TOOLS;
@@ -564,6 +578,8 @@
 
   window.closeDBTool =
     closeDBTool;
+
+  window.exitDBTool = exitDBTool;
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init, { once: true });

@@ -213,3 +213,38 @@ test('Developer Tools "Disable item" saves without a ReferenceError', async () =
   assert.deepEqual(errors.filter(e => /ReferenceError|enabledInput/.test(e)), []);
   dom.window.close();
 });
+
+test('X in a Developer Tools item returns to the list; X again closes the tool', async () => {
+  const { dom, window, document, errors } = host('<script src="dashboard-navigation.js"></script>');
+  await waitFor(window, () => document.querySelector('.mtw-dashboard-shell') &&
+    document.querySelector('.developer-tools-panel .developer-tool-row'));
+  const panel = document.querySelector('.developer-tools-panel');
+  const wrapper = document.querySelector('.db-tool-wrapper');
+  const exit = document.querySelector('#exit-btn');
+
+  document.querySelector('.db-list-toolcard[data-select="developer-tools"]').click();
+  document.querySelector('.developer-tool-row').click();
+  assert.equal(panel.dataset.view, 'form');
+
+  exit.click();
+  assert.equal(panel.dataset.view, 'list', 'back to the list');
+  assert.equal(wrapper.style.display, 'block', 'tool still open');
+
+  exit.click();
+  assert.equal(wrapper.style.display, 'none', 'tool closed');
+
+  // The Overview tab always leaves the tool, even mid-edit.
+  document.querySelector('.db-list-toolcard[data-select="developer-tools"]').click();
+  document.querySelector('.developer-tool-add').click();
+  assert.equal(panel.dataset.view, 'form');
+  document.querySelector('.mtw-home-tab').click();
+  assert.equal(wrapper.style.display, 'none');
+  assert.equal(panel.dataset.view, 'list', 'reopens at the list');
+
+  // Other tools close on the first X.
+  document.querySelector('.db-list-toolcard[data-select="barcodes"]').click();
+  exit.click();
+  assert.equal(wrapper.style.display, 'none');
+  assert.deepEqual(relevantErrors(errors), []);
+  dom.window.close();
+});
