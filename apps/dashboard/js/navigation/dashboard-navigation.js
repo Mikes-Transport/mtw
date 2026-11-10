@@ -167,9 +167,9 @@
 
     const tool = TOOLS[id];
 
-    if (!tool) return;
+    if (!tool || tool.enabled === false || !canShowTool(id, tool)) return;
 
-    $$('.db-list-toolcard').forEach(card => {
+    $('.db-list-toolcard').forEach(card => {
       const active = card.dataset.select === id;
       card.classList.toggle('is-active', active);
       if (active) {
@@ -479,6 +479,7 @@
 
     window.MTW_TOOL_REGISTRY = TOOLS;
     window.MTW_APPLY_TOOL_SETTINGS = applyToolSettings;
+    applyToolSettings({});
     createCustomCard('developer-tools', 'Developer Tools');
     loadToolSettings().catch(error => {
       console.error('[dashboard] could not load tool settings:', error);
