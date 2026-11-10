@@ -161,10 +161,12 @@
     content.appendChild(right);
     shell.append(header, navigation, content);
 
-    // Keep existing left-side nodes available to legacy modules during migration.
-    // Only the menu is moved to the new navigation bar.
-    left.hidden = true;
-    left.style.display = 'none';
+    // The old sidebar is kept for tools that edit in it: promotion-cards.js adds
+    // .editing and its edit panel here. CSS hides it until then and shows it as a
+    // drawer while editing. The menu itself moves to the navigation bar.
+    left.removeAttribute('hidden');
+    left.style.removeProperty('display');
+    left.classList.add('mtw-shell-editor');
     content.appendChild(left);
     // Keep any other Webflow children (panels, overlays, modals) instead of dropping
     // them with the old wrapper. Moving keeps the element references tool scripts hold.
