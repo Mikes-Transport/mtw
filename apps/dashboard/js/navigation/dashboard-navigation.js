@@ -13,18 +13,17 @@
     ? window.MTW.$$
     : selector => [...document.querySelectorAll(selector)];
   const navigationScript = document.currentScript;
-  const DASHBOARD_THEME_URL = navigationScript && navigationScript.src
-    ? new URL('../../styles/admin-dashboard.css', navigationScript.src).href
-    : 'https://raw.githack.com/Mikes-Transport/mtw/main/apps/dashboard/styles/admin-dashboard.css';
-  const DEVELOPER_TOOLS_URL = navigationScript && navigationScript.src
-    ? new URL('../access/developer-tools.js', navigationScript.src).href
-    : 'https://raw.githack.com/Mikes-Transport/mtw/main/apps/dashboard/js/access/developer-tools.js';
-  const DASHBOARD_SHELL_URL = navigationScript && navigationScript.src
-    ? new URL('./dashboard-shell.js', navigationScript.src).href
-    : 'https://raw.githack.com/Mikes-Transport/mtw/main/apps/dashboard/js/navigation/dashboard-shell.js';
+  // apps/dashboard/ — set by js/dashboard.js, or derived from this script's own URL.
+  const BASE_URL = window.MTW_DASHBOARD_BASE_URL ||
+    (navigationScript && navigationScript.src
+      ? new URL('../../', navigationScript.src).href
+      : 'https://raw.githack.com/Mikes-Transport/mtw/main/apps/dashboard/');
+  const DASHBOARD_THEME_URL = new URL('styles/admin-dashboard.css', BASE_URL).href;
+  const DEVELOPER_TOOLS_URL = new URL('js/access/developer-tools.js', BASE_URL).href;
+  const DASHBOARD_SHELL_URL = new URL('js/navigation/dashboard-shell.js', BASE_URL).href;
 
   // Bump on each release so the live page can be checked for the version it runs.
-  const NAVIGATION_BUILD = '2026-11-11.3';
+  const NAVIGATION_BUILD = '2026-11-11.4';
 
   const TOOLS = {
     'activity-logs': { panel: '.activity-logs-panel', name: 'Activity Logs', roles: ['Developer'] },
@@ -37,6 +36,33 @@
     'model-tool-access': { panel: '.model-access-panel', name: 'Assign Model Tool Access', roles: ['Developer'] },
     'developer-tools': { panel: '.developer-tools-panel', name: 'Developer Tools', roles: ['Developer'] }
   };
+
+  // Panel markup lives in apps/dashboard/templates/<tool>.html. js/dashboard.js fetches
+  // it into window.MTW_DASHBOARD_TEMPLATES before this script runs, so every panel
+  // exists before the tool scripts look for their elements.
+  function installTemplates(right, panels) {
+    const templates = window.MTW_DASHBOARD_TEMPLATES;
+    if (!templates) return;
+    Object.entries(templates).forEach(([id, html]) => {
+      const selector = id === 'change-logs' ? '.change-logs' : TOOLS[id] && TOOLS[id].panel;
+      if (!selector || document.querySelector(selector)) return;
+      const holder = document.createElement('template');
+      holder.innerHTML = String(html).split('{{BASE}}').join(BASE_URL);
+      const fragment = holder.content;
+      // Webflow forms submitted the page on Enter; tools save through their own buttons.
+      fragment.querySelectorAll('form').forEach(form => {
+        form.addEventListener('submit', event => event.preventDefault());
+      });
+      if (id === 'change-logs') right.prepend(fragment);
+      else panels.appendChild(fragment);
+    });
+  }
+
+  function setCardVisible(card, visible) {
+    const target = card.closest('.db-list-dropdown-wrapper') || card;
+    target.style.display = visible ? '' : 'none';
+    if (target !== card) card.style.display = visible ? '' : 'none';
+  }
 
   // Create the layout and navigation when no Webflow Designer markup exists.
   // Existing Webflow sections are reused rather than overwritten during migration.
@@ -64,6 +90,23 @@
       right.className = 'db-right-content';
       root.appendChild(right);
     }
+
+    // Webflow pages put .change-logs and .db-tool-wrapper directly in <body>, outside
+    // the dashboard. When the repository templates are loaded they own the panels, so
+    // the Webflow copies are removed; otherwise they are adopted into the dashboard.
+    const templates = window.MTW_DASHBOARD_TEMPLATES;
+    const outside = selector => [...document.querySelectorAll(selector)].filter(el => !root.contains(el));
+    outside('.db-tool-wrapper').concat(outside('.change-logs')).forEach(el => {
+      if (templates) {
+        console.info('[dashboard] removed Webflow ' + el.className.split(' ')[0] +
+          ' markup; the repository templates replace it.');
+        el.remove();
+      } else if (el.matches('.change-logs')) {
+        right.prepend(el);
+      } else {
+        right.appendChild(el);
+      }
+    });
 
     let menu = root.querySelector('.db-menu-list');
     if (!menu) {
@@ -118,6 +161,8 @@
       wrapper.appendChild(panels);
     }
 
+    installTemplates(right, panels);
+
     // Generate navigation cards from the code registry; no Designer cards needed.
     Object.entries(TOOLS).forEach(([id, tool]) => {
       if (menu.querySelector(`.db-list-toolcard[data-select="${id}"]`)) return;
@@ -130,7 +175,17 @@
       label.textContent = tool.name;
       card.append(label);
       setToolIcon(card, id);
-      menu.appendChild(card);
+      if (id === 'barcodes') {
+        // barcodes.js looks for #barcode-drop inside .db-list-dropdown-wrapper and adds
+        // the x2/x8/x10/x30 label-sheet choices to it.
+        card.id = 'barcode-drop';
+        const dropdown = document.createElement('div');
+        dropdown.className = 'db-list-dropdown-wrapper';
+        dropdown.appendChild(card);
+        menu.appendChild(dropdown);
+      } else {
+        menu.appendChild(card);
+      }
     });
 
     // Standalone overview: visible until a tool is selected.
@@ -411,7 +466,7 @@
       const card = $(`.db-list-toolcard[data-select="${id}"]`);
       if (card) {
         updateCardName(card, tool.name);
-        card.style.display = tool.enabled === false || !canShowTool(id, tool) ? 'none' : '';
+        setCardVisible(card, tool.enabled !== false && canShowTool(id, tool));
       }
     });
 
@@ -427,7 +482,7 @@
       createCustomCard(id, TOOLS[id].name);
       const card = $(`.db-list-toolcard[data-select="${id}"]`);
       if (card) {
-        card.style.display = TOOLS[id].enabled && canShowTool(id, TOOLS[id]) ? '' : 'none';
+        setCardVisible(card, TOOLS[id].enabled && canShowTool(id, TOOLS[id]));
       }
     });
 

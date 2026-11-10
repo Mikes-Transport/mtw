@@ -1,6 +1,15 @@
 # MTW Dashboard
 
-The dashboard shell, navigation and tool registry are built entirely by code in this folder. A host page needs one script tag. See `index.html` for a minimal host.
+Everything in the dashboard is built from this folder. The host page needs one tag:
 
-- Startup, deployment, caching and troubleshooting: [`docs/dashboard-troubleshooting.md`](../../docs/dashboard-troubleshooting.md)
-- Tests: `cd tests && npm install && npm run check && npm test`. (Test tooling lives in `tests/` so the repository root has no `package.json`; a root lockfile broke the Cloudflare Worker build.)
+```html
+<script type="module" src="https://raw.githack.com/Mikes-Transport/mtw/main/apps/dashboard/js/dashboard.js"></script>
+```
+
+- `js/dashboard.js`: entry point (Firebase, styles, templates, navigation, tool scripts)
+- `templates/`: one HTML file per tool panel
+- `styles/`: `admin-dashboard.css` (shell, navigation) and `tools.css` (tool panels)
+- `assets/`: fonts and label sheet images
+
+Startup, deployment, caching and troubleshooting: [`docs/dashboard-troubleshooting.md`](../../docs/dashboard-troubleshooting.md).
+Tests: `cd tests && npm install && npm run check && npm test`.

@@ -1106,8 +1106,50 @@ body:has(.db-main-wrapper) {
   background: #f9f9f8;
 }
 
-.mtw-dashboard-shell .db-left-content[hidden] {
+/* The old sidebar is now an edit drawer: hidden until a tool (promotional labels)
+   adds .editing and puts its edit panel in it. */
+.mtw-dashboard-shell .db-left-content {
   display: none !important;
+}
+
+.mtw-dashboard-shell .db-left-content.editing {
+  position: fixed !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  z-index: 9000;
+  box-sizing: border-box;
+  display: flex !important;
+  flex-direction: column !important;
+  width: min(440px, 100vw) !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  padding: 20px !important;
+  background: var(--mtw-shell, #202020);
+  color: #f2f2f2;
+  box-shadow: -16px 0 48px rgba(0, 0, 0, .25);
+}
+
+.mtw-dashboard-shell .db-left-content.editing .et-edit-panel {
+  flex: 1 1 auto !important;
+  height: auto !important;
+  max-height: none !important;
+}
+
+@media screen {
+  /* Editors hid the menu when they replaced the old sidebar. The top navigation
+     stays usable beside the drawer. */
+  .mtw-dashboard-shell .mtw-shell-navigation .db-menu-list {
+    display: flex !important;
+  }
+
+  /* Neutralise the old Webflow sidebar animation script (slide-in transforms and a
+     dark background on the clicked card) if it is still on the page. */
+  .mtw-dashboard-shell .db-list-toolcard.dark {
+    opacity: 1 !important;
+    transform: none !important;
+    background-color: transparent !important;
+  }
 }
 
 .mtw-dashboard-shell .db-list-toolcard[hidden] {
