@@ -38,6 +38,18 @@ The console error `dashboard-shell.js:31 … required dashboard markup or naviga
 
 After PR #2 there was still a runtime bug: `openDBTool` called `$('.db-list-toolcard').forEach(…)`, but `$` returns a single element. Every tool click threw a `TypeError`. That is fixed here, and `npm test` covers it.
 
+## When a tool opens empty
+
+Run this in the browser console on the live dashboard, then copy the output into the issue:
+
+```js
+copy(MTW_DASHBOARD_DIAGNOSE())
+```
+
+It reports the navigation build, role, whether Firebase is connected, the dashboard script URLs, and, for every tool, whether its panel exists, sits inside the shell, and has content. A tool whose panel is `found: false` has no markup on the page: its Webflow panel was removed, or it hasn't been migrated into the repository yet. Opening such a tool also logs a `[dashboard] … no element matches …` warning.
+
+The tool scripts (`barcodes.js`, `products.js`, etc.) don't build their own panels. They expect the Webflow panel markup to exist, and Webflow's custom code loads them. Migrating each tool's markup into the repository is the next step towards a fully repository-owned dashboard.
+
 ## Reading the startup error
 
 | Message says | Meaning | Check |
