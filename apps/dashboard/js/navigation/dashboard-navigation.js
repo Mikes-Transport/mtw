@@ -1,8 +1,17 @@
 'use strict';
 
-const { $, $$ } = window.MTW;
-
 (function () {
+  // Webflow hosts the script, but the dashboard is constructed from this repository.
+  // Ignore duplicate script includes so navigation and event handlers mount only once.
+  if (window.MTW_DASHBOARD_NAVIGATION_STARTED) return;
+  window.MTW_DASHBOARD_NAVIGATION_STARTED = true;
+
+  const $ = window.MTW && typeof window.MTW.$ === 'function'
+    ? window.MTW.$
+    : selector => document.querySelector(selector);
+  const $ = window.MTW && typeof window.MTW.$ === 'function'
+    ? window.MTW.$
+    : selector => [...document.querySelectorAll(selector)];
   const navigationScript = document.currentScript;
   const DASHBOARD_THEME_URL = navigationScript && navigationScript.src
     ? new URL('../../styles/admin-dashboard.css', navigationScript.src).href
@@ -26,6 +35,119 @@ const { $, $$ } = window.MTW;
     'developer-tools': { panel: '.developer-tools-panel', name: 'Developer Tools', roles: ['Developer'] }
   };
 
+  // Create the layout and navigation when no Webflow Designer markup exists.
+  // Existing Webflow sections are reused rather than overwritten during migration.
+  function ensureDashboardMarkup() {
+    let root = document.querySelector('.db-main-wrapper');
+    if (!root) {
+      root = document.createElement('section');
+      root.className = 'db-main-wrapper';
+      root.dataset.mtwDashboardGenerated = 'true';
+      const mountPoint = document.querySelector('[data-mtw-dashboard-mount]') ||
+        document.getElementById('mtw-dashboard-root') || document.body;
+      mountPoint.appendChild(root);
+    }
+
+    let left = root.querySelector('.db-left-content');
+    if (!left) {
+      left = document.createElement('div');
+      left.className = 'db-left-content';
+      root.prepend(left);
+    }
+
+    let right = root.querySelector('.db-right-content');
+    if (!right) {
+      right = document.createElement('div');
+      right.className = 'db-right-content';
+      root.appendChild(right);
+    }
+
+    let menu = root.querySelector('.db-menu-list');
+    if (!menu) {
+      menu = document.createElement('div');
+      menu.className = 'db-menu-list';
+      left.appendChild(menu);
+    } else if (!left.contains(menu)) {
+      left.appendChild(menu);
+    }
+
+    let wrapper = right.querySelector('.db-tool-wrapper');
+    if (!wrapper) {
+      wrapper = document.createElement('section');
+      wrapper.className = 'db-tool-wrapper';
+      right.appendChild(wrapper);
+    }
+    if (!wrapper.querySelector('.tool-wrapper-h2')) {
+      const heading = document.createElement('h2');
+      heading.className = 'tool-wrapper-h2';
+      heading.textContent = 'Dashboard Tool';
+      wrapper.prepend(heading);
+    }
+    if (!wrapper.querySelector('.db-heading-list[data-type="breadcrumb"]')) {
+      const breadcrumb = document.createElement('div');
+      breadcrumb.className = 'db-tool-breadcrumb';
+      const label = document.createElement('span');
+      label.className = 'db-heading-list';
+      label.dataset.type = 'breadcrumb';
+      label.textContent = 'Dashboard Tool';
+      breadcrumb.appendChild(label);
+      wrapper.appendChild(breadcrumb);
+    }
+    if (!wrapper.querySelector('#exit-btn')) {
+      const exit = document.createElement('button');
+      exit.id = 'exit-btn';
+      exit.type = 'button';
+      exit.textContent = '×';
+      exit.setAttribute('aria-label', 'Close dashboard tool');
+      wrapper.appendChild(exit);
+    }
+    let panels = right.querySelector('.db-selected-panel-wrapper');
+    if (!panels) {
+      panels = document.createElement('div');
+      panels.className = 'db-selected-panel-wrapper';
+      wrapper.appendChild(panels);
+    } else if (!wrapper.contains(panels)) {
+      wrapper.appendChild(panels);
+    }
+
+    // Generate navigation cards from the code registry; no Designer cards needed.
+    Object.entries(TOOLS).forEach(([id, tool]) => {
+      if (menu.querySelector(`.db-list-toolcard[data-select="${id}"]`)) return;
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'db-list-toolcard dark';
+      card.dataset.select = id;
+      const icon = document.createElement('span');
+      icon.className = 'db-list-icon';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.textContent = tool.name.charAt(0);
+      const label = document.createElement('span');
+      label.className = 'db-heading-list';
+      label.textContent = tool.name;
+      card.append(icon, label);
+      menu.appendChild(card);
+    });
+
+    // Standalone overview: visible until a tool is selected.
+    if (!right.querySelector('.mtw-dashboard-overview') &&
+        !right.querySelector('.change-logs')) {
+      const overview = document.createElement('section');
+      overview.className = 'mtw-dashboard-overview';
+      const title = document.createElement('h2');
+      title.textContent = 'Operations workspace';
+      const description = document.createElement('p');
+      description.textContent = 'Choose a tool from the navigation to get started.';
+      overview.append(title, description);
+      right.prepend(overview);
+      document.addEventListener('db-tool-open', () => { overview.hidden = true; });
+      document.addEventListener('db-tool-close', () => { overview.hidden = false; });
+    }
+
+    return root;
+  }
+
+  window.MTW_ENSURE_DASHBOARD_MARKUP = ensureDashboardMarkup;
+
   const ROLE_NAMES = ['Counter', 'Stores', 'KeyAccounts', 'Admin', 'Developer'];
   let toolSettings = {};
 
@@ -45,9 +167,9 @@ const { $, $$ } = window.MTW;
 
     const tool = TOOLS[id];
 
-    if (!tool) return;
+    if (!tool || tool.enabled === false || !canShowTool(id, tool)) return;
 
-    $$('.db-list-toolcard').forEach(card => {
+    $('.db-list-toolcard').forEach(card => {
       const active = card.dataset.select === id;
       card.classList.toggle('is-active', active);
       if (active) {
@@ -65,6 +187,20 @@ const { $, $$ } = window.MTW;
       $('.db-heading-list[data-type="breadcrumb"]');
 
     const panel = $(tool.panel);
+    let missingPanel = $('.mtw-dashboard-missing-tool');
+    if (!panel && wrapper) {
+      if (!missingPanel) {
+        missingPanel = document.createElement('p');
+        missingPanel.className = 'mtw-dashboard-missing-tool';
+        const target = $('.db-selected-panel-wrapper') || wrapper;
+        target.appendChild(missingPanel);
+      }
+      missingPanel.textContent = tool.name +
+        ' has no repository-built interface yet. Its existing Webflow panel must be migrated.';
+      missingPanel.style.display = 'block';
+    } else if (missingPanel) {
+      missingPanel.style.display = 'none';
+    }
 
     if (wrapper) {
       wrapper.style.display = 'block';
@@ -174,11 +310,7 @@ const { $, $$ } = window.MTW;
 
   function canShowTool(id, tool) {
     const user = sessionStorage.getItem('mtw_admin_name');
-    if (id === 'developer-tools') return user === 'Developer';
-    if (tool.custom) {
-      return user === 'Developer' || tool.roles.includes(user);
-    }
-    return true;
+    return user === 'Developer' || (Array.isArray(tool.roles) && tool.roles.includes(user));
   }
 
   function createCustomCard(id, name) {
@@ -304,6 +436,7 @@ const { $, $$ } = window.MTW;
 
   function init() {
 
+    ensureDashboardMarkup();
     loadDashboardTheme();
     const search = $('.db-menu-search');
     if (search) search.remove();
@@ -346,6 +479,7 @@ const { $, $$ } = window.MTW;
 
     window.MTW_TOOL_REGISTRY = TOOLS;
     window.MTW_APPLY_TOOL_SETTINGS = applyToolSettings;
+    applyToolSettings({});
     createCustomCard('developer-tools', 'Developer Tools');
     loadToolSettings().catch(error => {
       console.error('[dashboard] could not load tool settings:', error);
