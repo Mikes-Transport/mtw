@@ -1073,3 +1073,43 @@ body:has(.db-main-wrapper) {
     display: block !important;
   }
 }
+
+
+/* Repository-owned dashboard: standalone overview and unimplemented tools. */
+.mtw-dashboard-overview {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 26px 0;
+}
+
+.mtw-dashboard-overview h2 {
+  margin: 0 0 10px;
+  color: var(--mtw-ink, #242424);
+  font-size: clamp(24px, 3vw, 38px);
+  letter-spacing: -.04em;
+}
+
+.mtw-dashboard-overview p,
+.mtw-dashboard-missing-tool {
+  color: var(--mtw-muted, #777774);
+  line-height: 1.5;
+}
+
+.mtw-dashboard-overview[hidden] {
+  display: none !important;
+}
+
+.mtw-dashboard-missing-tool {
+  padding: 16px;
+  border: 1px solid var(--mtw-line, #deddd9);
+  border-radius: 5px;
+  background: #f9f9f8;
+}
+
+.mtw-dashboard-shell .db-left-content[hidden] {
+  display: none !important;
+}
+
+.mtw-dashboard-shell .db-list-toolcard[hidden] {
+  display: none !important;
+}

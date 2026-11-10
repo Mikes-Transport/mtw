@@ -1,6 +1,9 @@
 'use strict';
 
 (function () {
+  if (window.MTW_DASHBOARD_SHELL_STARTED) return;
+  window.MTW_DASHBOARD_SHELL_STARTED = true;
+
   const shellSelector = '.mtw-dashboard-shell';
   let attempts = 0;
 
@@ -18,6 +21,9 @@
       return;
     }
 
+    if (typeof window.MTW_ENSURE_DASHBOARD_MARKUP === 'function') {
+      window.MTW_ENSURE_DASHBOARD_MARKUP();
+    }
     const original = document.querySelector('.db-main-wrapper');
     const left = original?.querySelector('.db-left-content');
     const right = original?.querySelector('.db-right-content');
@@ -87,7 +93,11 @@
     content.appendChild(right);
     shell.append(header, navigation, content);
 
-    left.remove();
+    // Keep existing left-side nodes available to legacy modules during migration.
+    // Only the menu is moved to the new navigation bar.
+    left.hidden = true;
+    left.style.display = 'none';
+    content.appendChild(left);
     original.replaceWith(shell);
   }
 
