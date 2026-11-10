@@ -5,7 +5,77 @@
   window.MTW_DASHBOARD_SHELL_STARTED = true;
 
   const shellSelector = '.mtw-dashboard-shell';
-  let attempts = 0;
+  const STARTUP_TIMEOUT_MS = Number(window.MTW_DASHBOARD_STARTUP_TIMEOUT_MS) || 15000;
+  const shellScript = document.currentScript;
+  const NAVIGATION_URL = shellScript && shellScript.src
+    ? new URL('./dashboard-navigation.js', shellScript.src).href
+    : 'https://raw.githack.com/Mikes-Transport/mtw/main/apps/dashboard/js/navigation/dashboard-navigation.js';
+  let built = false;
+  let timeoutId = null;
+  let navigationLoadError = null;
+
+  // Either script can be the page's entry point. If Webflow only includes the shell,
+  // load navigation (from the same base URL, so versions always match).
+  function ensureNavigationLoaded() {
+    if (window.MTW_DASHBOARD_NAVIGATION_STARTED) return;
+    if (document.querySelector('script[data-mtw-dashboard-navigation], script[src*="dashboard-navigation.js"]')) return;
+    const script = document.createElement('script');
+    script.dataset.mtwDashboardNavigation = 'true';
+    script.src = NAVIGATION_URL;
+    script.onerror = function () {
+      navigationLoadError = script.src;
+      console.error('[dashboard] failed to load dashboard navigation:', script.src);
+    };
+    document.head.appendChild(script);
+  }
+
+  function missingRequirements() {
+    const missing = [];
+    const original = document.querySelector('.db-main-wrapper');
+    if (!original) missing.push('.db-main-wrapper');
+    if (!original?.querySelector('.db-left-content')) missing.push('.db-left-content');
+    if (!original?.querySelector('.db-right-content')) missing.push('.db-right-content');
+    if (!original?.querySelector('.db-left-content .db-menu-list')) missing.push('.db-menu-list');
+    if (typeof window.openDBTool !== 'function') missing.push('window.openDBTool');
+    if (typeof window.closeDBTool !== 'function') missing.push('window.closeDBTool');
+    return missing;
+  }
+
+  function reportStartupFailure() {
+    if (built || document.querySelector(shellSelector)) return;
+    const missing = missingRequirements();
+    let cause;
+    if (navigationLoadError) {
+      cause = 'dashboard-navigation.js could not be downloaded from ' + navigationLoadError + '.';
+    } else if (!window.MTW_DASHBOARD_NAVIGATION_STARTED) {
+      cause = 'dashboard-navigation.js never ran. Check the page for an earlier script error or a 404.';
+    } else if (!window.MTW_DASHBOARD_NAVIGATION_READY) {
+      cause = 'dashboard-navigation.js started but did not finish initialising. Check for an earlier error.';
+    } else {
+      cause = 'navigation finished, but the shell requirements are still missing.';
+    }
+    console.error('[dashboard] could not build the dashboard shell: ' + cause +
+      ' Missing: ' + (missing.join(', ') || 'none') +
+      '. See docs/dashboard-troubleshooting.md.');
+  }
+
+  function tryMount() {
+    if (built) return;
+    mount();
+    if (document.querySelector(shellSelector)) {
+      built = true;
+      window.clearTimeout(timeoutId);
+      document.removeEventListener('mtw-dashboard-navigation-ready', tryMount);
+      document.dispatchEvent(new CustomEvent('mtw-dashboard-shell-ready'));
+    }
+  }
+
+  function start() {
+    ensureNavigationLoaded();
+    document.addEventListener('mtw-dashboard-navigation-ready', tryMount);
+    timeoutId = window.setTimeout(reportStartupFailure, STARTUP_TIMEOUT_MS);
+    tryMount();
+  }
 
   function element(tag, className, text) {
     const node = document.createElement(tag);
@@ -21,6 +91,9 @@
       return;
     }
 
+    // Navigation owns the markup and tool registry; wait for its ready signal.
+    if (!window.MTW_DASHBOARD_NAVIGATION_READY) return;
+
     if (typeof window.MTW_ENSURE_DASHBOARD_MARKUP === 'function') {
       window.MTW_ENSURE_DASHBOARD_MARKUP();
     }
@@ -29,13 +102,8 @@
     const right = original?.querySelector('.db-right-content');
     const menu = left?.querySelector('.db-menu-list');
 
-    if (!original || !left || !right || !menu || typeof window.openDBTool !== 'function') {
-      attempts += 1;
-      if (attempts < 60) {
-        window.setTimeout(mount, 100);
-      } else {
-        console.error('[dashboard] could not build the dashboard shell: required dashboard markup or navigation is missing.');
-      }
+    if (missingRequirements().length) {
+      reportStartupFailure();
       return;
     }
 
@@ -102,8 +170,8 @@
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', mount, { once: true });
+    document.addEventListener('DOMContentLoaded', start, { once: true });
   } else {
-    mount();
+    start();
   }
 })();
