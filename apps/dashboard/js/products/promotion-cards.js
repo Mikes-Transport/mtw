@@ -646,6 +646,10 @@ const { $, $$ } = window.MTW;
         '.et-edit-panel'
       );
 
+    // Rebuilding the panel (each edit, another card, copy) keeps its scroll position.
+    const keepScroll =
+      old ? old.scrollTop : 0;
+
     if (old) {
       old.remove();
     }
@@ -669,9 +673,20 @@ const { $, $$ } = window.MTW;
       panel
     );
 
+    // Float below the dashboard navigation, like the barcode edit panel.
+    const navigation =
+      document.querySelector('.db-menu-list');
+    const navigationBottom =
+      navigation ? navigation.getBoundingClientRect().bottom : 0;
+    panel.style.setProperty(
+      '--promo-edit-top',
+      Math.max(16, Math.ceil(navigationBottom + 12)) + 'px'
+    );
+
+    panel.scrollTop = keepScroll;
     requestAnimationFrame(
       () => {
-        panel.scrollTop = 0;
+        panel.scrollTop = keepScroll;
       }
     );
   }
