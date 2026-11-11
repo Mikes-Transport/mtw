@@ -238,7 +238,8 @@ test('first GM setup, PIN unlock, employee clock-in, break and clock-out', async
   await waitFor(window, () => /Timesheet · Sam/.test(text(document.querySelector('.timesheet-panel'))));
   assert.ok(button(document, 'Export CSV'));
   assert.equal(document.querySelectorAll('.ts-table tbody tr').length, 7, 'Wednesday to Tuesday');
-  assert.match(text(document.querySelector('.ts-table thead')), /Day \(NZ\)/);
+  assert.match(text(document.querySelector('.ts-table thead')), /Day \(Calgary\).*Calgary time.*NZ time/);
+  assert.match(text(document.querySelector('.ts-week-label')), /Calgary dates/);
   assert.match(text(document.querySelector('.ts-summaries')), /Uploaded 12 products/, 'GM sees the work summary');
 
   assert.deepEqual(errors.filter(e => !/stylesheet|Could not parse CSS|Not implemented/i.test(e)), []);
@@ -348,7 +349,8 @@ test('employee requests a day off; GM approves; it shows on the timesheet', asyn
     await openTab(window, document, 'Requests');
     const form = document.querySelector('.ts-request-form');
     form.querySelector('select').value = 'Day off';
-    const day = window.MTW_TIMESHEET_CORE.dateKey(Date.now(), 'Pacific/Auckland');
+    // Austin works in Calgary, so request dates are Calgary dates.
+    const day = window.MTW_TIMESHEET_CORE.dateKey(Date.now(), 'America/Edmonton');
     const [from, to] = form.querySelectorAll('input[type="date"]');
     from.value = day;
     to.value = day;
