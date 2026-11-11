@@ -25,9 +25,16 @@ class RepoLoader extends ResourceLoader {
 
 function memoryFirestore() {
   const store = {};
+  const listeners = {};
   let next = 0;
   const copy = value => JSON.parse(JSON.stringify(value));
   const table = name => (store[name] = store[name] || {});
+  const snapshot = name => {
+    const rows = Object.entries(table(name));
+    return { forEach(fn) { rows.forEach(([id, data]) => fn({ id, data: () => copy(data) })); } };
+  };
+  // Like Firestore: listeners get the current data at once and after every write.
+  const notify = name => (listeners[name] || []).forEach(fn => setTimeout(() => fn(snapshot(name)), 0));
   return {
     store,
     api: {
@@ -39,10 +46,15 @@ function memoryFirestore() {
         return { forEach(fn) { rows.forEach(([id, data]) => fn({ id, data: () => copy(data) })); } };
       },
       getDoc: async ref => ({ exists: () => Boolean(table(ref.name)[ref.id]), data: () => copy(table(ref.name)[ref.id]) }),
-      addDoc: async (ref, data) => { const id = `doc${++next}`; table(ref.name)[id] = copy(data); return { id }; },
-      setDoc: async (ref, data) => { table(ref.name)[ref.id] = copy(data); },
-      updateDoc: async (ref, data) => { Object.assign(table(ref.name)[ref.id], copy(data)); },
-      deleteDoc: async ref => { delete table(ref.name)[ref.id]; }
+      addDoc: async (ref, data) => { const id = `doc${++next}`; table(ref.name)[id] = copy(data); notify(ref.name); return { id }; },
+      setDoc: async (ref, data) => { table(ref.name)[ref.id] = copy(data); notify(ref.name); },
+      updateDoc: async (ref, data) => { Object.assign(table(ref.name)[ref.id], copy(data)); notify(ref.name); },
+      deleteDoc: async ref => { delete table(ref.name)[ref.id]; notify(ref.name); },
+      onSnapshot: (ref, onNext) => {
+        (listeners[ref.name] = listeners[ref.name] || []).push(onNext);
+        setTimeout(() => onNext(snapshot(ref.name)), 0);
+        return () => { listeners[ref.name] = listeners[ref.name].filter(fn => fn !== onNext); };
+      }
     }
   };
 }
@@ -150,7 +162,7 @@ test('first GM setup, PIN unlock, employee clock-in, break and clock-out', async
   await enterPin(window, document, gmPin);
   await waitFor(window, () => /Team status/.test(text(document.querySelector('.timesheet-panel .ts-tabs'))));
   assert.match(text(document.querySelector('.ts-title')), /Timesheets/);
-  assert.deepEqual([...document.querySelectorAll('.ts-tab')].map(text), ['Team status', 'Hours', 'People & PINs', 'Settings']);
+  assert.deepEqual([...document.querySelectorAll('.ts-tab')].map(text), ['Team status', 'Hours', 'Requests', 'People & PINs', 'Settings']);
   assert.equal(document.querySelector('.ts-tab.active').textContent, 'Team status');
   await openTab(window, document, 'People & PINs');
 
@@ -169,7 +181,7 @@ test('first GM setup, PIN unlock, employee clock-in, break and clock-out', async
   await enterPin(window, document, samPin);
   await waitFor(window, () => button(document, 'Clock in'));
   assert.match(text(document.querySelector('.ts-title')), /My Timesheet/);
-  assert.deepEqual([...document.querySelectorAll('.ts-tab')].map(text), ['Clock', 'My hours']);
+  assert.deepEqual([...document.querySelectorAll('.ts-tab')].map(text), ['Clock', 'My hours', 'Requests']);
   assert.ok([...document.querySelectorAll('.ts-break button')].every(b => b.disabled), 'no breaks before clocking in');
 
   const task = document.querySelector('.ts-status select');
@@ -182,8 +194,20 @@ test('first GM setup, PIN unlock, employee clock-in, break and clock-out', async
   await waitFor(window, () => button(document, 'End break'));
   assert.match(text(document.querySelector('.ts-state-label')), /first rest break/i);
   assert.ok(!button(document, 'Clock in'));
+  assert.ok(document.querySelector('.ts-timer.is-break [data-live="remaining"]'), 'break timer shows time left');
   button(document, 'End break').click();
   await waitFor(window, () => /Working/.test(text(document.querySelector('.ts-state-label'))));
+
+  // Each break once per day: the first rest break is now "Taken" and disabled.
+  const firstBreak = document.querySelector('.ts-break button');
+  assert.equal(text(firstBreak), 'Taken');
+  assert.equal(firstBreak.disabled, true);
+  assert.match(text(document.querySelector('.ts-break')), /Taken ·/);
+
+  // Work summary for today.
+  document.querySelector('.ts-card textarea').value = 'Uploaded 12 products';
+  button(document, 'Save summary').click();
+  await waitFor(window, () => /summary saved/i.test(text(document.querySelector('.ts-message'))));
 
   button(document, 'Clock out').click();
   await waitFor(window, () => button(document, 'Clock in'));
@@ -215,6 +239,7 @@ test('first GM setup, PIN unlock, employee clock-in, break and clock-out', async
   assert.ok(button(document, 'Export CSV'));
   assert.equal(document.querySelectorAll('.ts-table tbody tr').length, 7, 'Wednesday to Tuesday');
   assert.match(text(document.querySelector('.ts-table thead')), /Day \(NZ\)/);
+  assert.match(text(document.querySelector('.ts-summaries')), /Uploaded 12 products/, 'GM sees the work summary');
 
   assert.deepEqual(errors.filter(e => !/stylesheet|Could not parse CSS|Not implemented/i.test(e)), []);
   } finally {
@@ -269,6 +294,100 @@ test('GM settings change break allowances and tasks for everyone', async () => {
     const options = [...document.querySelectorAll('.ts-status select option')].map(o => o.value).filter(Boolean);
     assert.deepEqual(options, ['Website', 'Flyers']);
     assert.match(text(document.querySelector('.timesheet-panel')), /Lunch · unpaid · 45 min/);
+  } finally {
+    dom.window.close();
+  }
+});
+
+// Shared setup: first GM and one employee; returns their PINs.
+async function setUpPeople(window, document) {
+  document.querySelector('.db-list-toolcard[data-select="timesheet"]').click();
+  await waitFor(window, () => /Set up Timesheet/.test(text(document.querySelector('.timesheet-panel'))));
+  document.querySelector('.timesheet-panel input').value = 'Taran';
+  button(document, 'Create GM PIN').click();
+  await waitFor(window, () => document.querySelector('.ts-pin-reveal .ts-pin'));
+  const gmPin = text(document.querySelector('.ts-pin-reveal .ts-pin'));
+  await enterPin(window, document, gmPin);
+  await openTab(window, document, 'People & PINs');
+  document.querySelector('.ts-add input').value = 'Austin';
+  button(document, 'Add & create PIN').click();
+  await waitFor(window, () => /PIN for Austin/.test(text(document.querySelector('.ts-pin-reveal'))));
+  return { gmPin, employeePin: text(document.querySelector('.ts-pin-reveal .ts-pin')) };
+}
+
+test('GM Team status updates live when the employee clocks in elsewhere', async () => {
+  const { dom, window, document, store } = host();
+  try {
+    await waitFor(window, () => document.querySelector('.mtw-dashboard-shell'));
+    loadTimesheet(window);
+    await setUpPeople(window, document);
+    await openTab(window, document, 'Team status');
+    await waitFor(window, () => /Clocked out/.test(text(document.querySelector('.ts-member'))));
+
+    // The employee clocks in on their own computer: only Firestore changes here.
+    const austinId = Object.entries(store['timesheet-people']).find(([, p]) => p.name === 'Austin')[0];
+    await window.MTW.addDoc(window.MTW.collection(window.MTW.db, 'timesheet-sessions'), {
+      personId: austinId, startAt: Date.now() - 60000, endAt: null, task: 'Events', breaks: []
+    });
+    await waitFor(window, () => /Working/.test(text(document.querySelector('.ts-member'))));
+    assert.match(text(document.querySelector('.ts-member')), /Events/);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test('employee requests a day off; GM approves; it shows on the timesheet', async () => {
+  const { dom, window, document, store } = host();
+  try {
+    await waitFor(window, () => document.querySelector('.mtw-dashboard-shell'));
+    loadTimesheet(window);
+    const { gmPin, employeePin } = await setUpPeople(window, document);
+
+    button(document, 'Lock').click();
+    await enterPin(window, document, employeePin);
+    await openTab(window, document, 'Requests');
+    const form = document.querySelector('.ts-request-form');
+    form.querySelector('select').value = 'Day off';
+    const day = window.MTW_TIMESHEET_CORE.dateKey(Date.now(), 'Pacific/Auckland');
+    const [from, to] = form.querySelectorAll('input[type="date"]');
+    from.value = day;
+    to.value = day;
+    form.querySelector('textarea').value = 'Dentist';
+    button(document, 'Send request').click();
+    await waitFor(window, () => /Request sent/.test(text(document.querySelector('.ts-message'))));
+    assert.match(text(document.querySelector('.ts-request')), /Day off .*Pending/);
+    const [request] = Object.values(store['timesheet-requests']);
+    assert.equal(request.status, 'pending');
+    assert.equal(request.from, day);
+
+    // End date before start is refused.
+    to.value = window.MTW_TIMESHEET_CORE.addDays(day, -1);
+    document.querySelector('.ts-request-form select').value = 'Sick leave';
+    const [from2, to2] = document.querySelectorAll('.ts-request-form input[type="date"]');
+    from2.value = day;
+    to2.value = window.MTW_TIMESHEET_CORE.addDays(day, -1);
+    button(document, 'Send request').click();
+    await waitFor(window, () => /on or after/.test(text(document.querySelector('.ts-message'))));
+
+    button(document, 'Lock').click();
+    await enterPin(window, document, gmPin);
+    await waitFor(window, () => tab(document, 'Requests (1)'));
+    await openTab(window, document, 'Requests (1)');
+    assert.match(text(document.querySelector('.ts-request')), /Austin/);
+    document.querySelector('.ts-review input').value = 'Enjoy';
+    button(document, 'Approve').click();
+    await waitFor(window, () => /Request approved/.test(text(document.querySelector('.ts-message'))));
+    assert.equal(Object.values(store['timesheet-requests'])[0].status, 'approved');
+    assert.ok(tab(document, 'Requests'), 'pending count cleared');
+
+    await openTab(window, document, 'Hours');
+    await waitFor(window, () => /Day off/.test(text(document.querySelector('.ts-table tbody'))));
+
+    button(document, 'Lock').click();
+    await enterPin(window, document, employeePin);
+    await openTab(window, document, 'Requests');
+    assert.match(text(document.querySelector('.ts-request')), /Approved/);
+    assert.match(text(document.querySelector('.ts-request')), /GM note: Enjoy/);
   } finally {
     dom.window.close();
   }
