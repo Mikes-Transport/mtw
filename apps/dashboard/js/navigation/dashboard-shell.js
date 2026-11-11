@@ -123,10 +123,11 @@
     brand.append(mark, brandText);
 
     const role = sessionStorage.getItem('mtw_admin_name');
+    const share = window.MTW_DASHBOARD_SHARE;
     const account = element('div', 'mtw-shell-account');
     account.append(
-      element('span', 'mtw-shell-account-label', 'Signed in as'),
-      element('strong', 'mtw-shell-account-role', role || 'Dashboard user')
+      element('span', 'mtw-shell-account-label', share ? 'Shared link' : 'Signed in as'),
+      element('strong', 'mtw-shell-account-role', share ? share.label : (role || 'Dashboard user'))
     );
     const signOut = element('button', 'mtw-shell-signout', 'Sign out');
     signOut.type = 'button';

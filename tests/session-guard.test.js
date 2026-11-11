@@ -8,7 +8,9 @@ const vm = require('node:vm');
 
 function loadGuard() {
   const context = {};
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'apps', 'dashboard', 'js', 'access', 'session-guard.js'), 'utf8'), { self: context });
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'apps', 'dashboard', 'js', 'access', 'session-guard.js'), 'utf8'), {
+    self: context, crypto: globalThis.crypto, TextEncoder, URLSearchParams, btoa
+  });
   return context.MTW_SESSION_GUARD;
 }
 
@@ -68,8 +70,65 @@ test('the loader checks the sign-in before loading anything else', () => {
   const body = loader.slice(loader.indexOf('async function start()'));
   const guardAt = body.indexOf("session-guard.js");
   assert.ok(guardAt > 0, 'guard imported');
-  for (const later of ['stylesheet(', 'firebase.js', 'loadTemplates()', 'dashboard-navigation.js']) {
+  for (const later of ['stylesheet(', 'firebase.js', 'loadTemplates(', 'dashboard-navigation.js']) {
     assert.ok(body.indexOf(later) > guardAt, `${later} comes after the sign-in check`);
   }
-  assert.match(body, /if \(!window\.MTW_SESSION_GUARD\.guard\(window\)\) return;/);
+  assert.match(body, /else if \(!guard\.guard\(window\)\) \{\s*return;/);
+  // An invalid share link is sent to /admin before any styles, templates or tools load.
+  const invalidAt = body.indexOf('if (!share) {');
+  assert.ok(invalidAt > guardAt && invalidAt < body.indexOf('stylesheet('));
+});
+
+function fakeDb(docs) {
+  const updates = [];
+  return {
+    updates,
+    api: {
+      db: {},
+      doc: (db, collection, id) => ({ collection, id }),
+      getDoc: async ref => {
+        const data = ref.collection === 'dashboard-share-links' ? docs[ref.id] : undefined;
+        return { exists: () => Boolean(data), data: () => data };
+      },
+      updateDoc: async (ref, patch) => { updates.push({ id: ref.id, patch }); }
+    }
+  };
+}
+
+test('share tokens: random, URL-safe, and only their hash identifies the link', async () => {
+  const guard = loadGuard();
+  const a = guard.newToken();
+  const b = guard.newToken();
+  assert.notEqual(a, b);
+  assert.match(a, /^[A-Za-z0-9_-]{30,}$/);
+  const hash = await guard.hashToken(a);
+  assert.match(hash, /^[0-9a-f]{64}$/);
+  assert.notEqual(hash, a);
+  assert.equal(guard.shareToken({ search: `?share=${a}` }), a);
+  assert.equal(guard.shareToken({ search: '' }), null);
+  assert.equal(guard.shareToken({ search: '?share=short' }), null);
+  assert.equal(guard.shareToken({ search: '?share=<script>alert(1)</script>xxxxxxxxxxxxxxx' }), null);
+});
+
+test('share links: valid opens the tool; revoked, unknown tool or missing do not', async () => {
+  const guard = loadGuard();
+  const good = guard.newToken();
+  const revoked = guard.newToken();
+  const other = guard.newToken();
+  const missing = guard.newToken();
+  const { api, updates } = fakeDb({
+    [await guard.hashToken(good)]: { tool: 'timesheet', label: 'Workshop tablet', revoked: false },
+    [await guard.hashToken(revoked)]: { tool: 'timesheet', label: 'Old tablet', revoked: true },
+    [await guard.hashToken(other)]: { tool: 'developer-tools', label: 'Nope', revoked: false }
+  });
+  const share = await guard.validateShare(good, api);
+  assert.equal(share.tool, 'timesheet');
+  assert.equal(share.label, 'Workshop tablet');
+  assert.equal(share.id, await guard.hashToken(good));
+  assert.equal(updates.length, 1);
+  assert.equal(typeof updates[0].patch.lastUsedAt, 'number');
+  assert.equal(await guard.validateShare(revoked, api), null);
+  assert.equal(await guard.validateShare(other, api), null);
+  assert.equal(await guard.validateShare(missing, api), null);
+  assert.equal(await guard.validateShare(good, null), null);
 });

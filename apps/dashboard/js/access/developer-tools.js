@@ -175,6 +175,7 @@
         list.appendChild(row);
       });
     panel.appendChild(list);
+    renderShareLinks(panel);
 
     addButton.addEventListener('click', () => {
       panel.dataset.view = 'form';
@@ -217,7 +218,165 @@
     });
   }
 
+  // Share links: open one tool (e.g. the Timesheet on a tablet) without the /admin
+  // sign-in. The tool's own PIN still applies. Only a hash of each token is stored.
+  function shareUrl(token) {
+    const url = new URL(window.location.href);
+    url.search = '';
+    url.hash = '';
+    url.searchParams.set('share', token);
+    return url.href;
+  }
+
+  function formatWhen(value) {
+    if (!value) return 'never';
+    try {
+      return new Date(value).toLocaleString('en-NZ', {
+        day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true
+      });
+    } catch (error) {
+      return 'unknown';
+    }
+  }
+
+  async function copyText(text, input) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (error) {
+      if (input) { input.focus(); input.select(); }
+      return false;
+    }
+  }
+
+  function renderShareLinks(panel) {
+    const guard = window.MTW_SESSION_GUARD;
+    const api = window.MTW || {};
+    const section = node('section', 'developer-share-links');
+    section.appendChild(node('h3', '', 'Share links'));
+    section.appendChild(node('p', '', 'Open one tool on a tablet or desktop shortcut without the dashboard sign-in. The tool\'s own PIN still applies. Revoke a link to stop it working.'));
+    panel.appendChild(section);
+    if (!guard || !api.db || typeof api.setDoc !== 'function') {
+      section.appendChild(node('p', statusClass, 'Share links need the dashboard database connection.'));
+      return;
+    }
+
+    const form = node('form', 'developer-share-form');
+    const toolLabel = node('label', '', 'Tool');
+    const toolSelect = node('select');
+    toolSelect.name = 'tool';
+    Object.entries(guard.SHAREABLE_TOOLS).forEach(([id, name]) => {
+      const option = node('option', '', name);
+      option.value = id;
+      toolSelect.appendChild(option);
+    });
+    toolLabel.appendChild(toolSelect);
+    const nameLabel = node('label', '', 'Label');
+    const nameInput = node('input');
+    nameInput.name = 'label';
+    nameInput.placeholder = 'Workshop tablet';
+    nameInput.maxLength = 60;
+    nameInput.required = true;
+    nameLabel.appendChild(nameInput);
+    const create = node('button', 'developer-share-create', 'Create link');
+    create.type = 'submit';
+    form.append(toolLabel, nameLabel, create);
+    section.appendChild(form);
+
+    const created = node('div', 'developer-share-created');
+    section.appendChild(created);
+    const list = node('div', 'developer-share-list');
+    section.appendChild(list);
+
+    const loadList = async () => {
+      try {
+        const snapshot = await api.getDocs(api.collection(api.db, guard.SHARE_COLLECTION));
+        const links = [];
+        snapshot.forEach(item => links.push({ id: item.id, ...item.data() }));
+        links.sort((a, b) => (a.revoked === b.revoked ? (b.createdAt || 0) - (a.createdAt || 0) : a.revoked ? 1 : -1));
+        list.replaceChildren();
+        if (!links.length) list.appendChild(node('p', '', 'No share links yet.'));
+        links.forEach(link => {
+          const row = node('div', 'developer-share-row');
+          row.dataset.revoked = link.revoked ? 'true' : 'false';
+          const info = node('div');
+          info.appendChild(node('strong', '', `${link.label || 'Untitled'} · ${guard.SHAREABLE_TOOLS[link.tool] || link.tool}`));
+          info.appendChild(node('span', '', link.revoked
+            ? `Revoked ${formatWhen(link.revokedAt)}`
+            : `Created ${formatWhen(link.createdAt)} by ${link.createdBy || 'a manager'} · last used ${formatWhen(link.lastUsedAt)}`));
+          row.appendChild(info);
+          if (!link.revoked) {
+            const revoke = node('button', 'developer-share-revoke', 'Revoke');
+            revoke.type = 'button';
+            revoke.addEventListener('click', async () => {
+              revoke.disabled = true;
+              try {
+                await api.updateDoc(api.doc(api.db, guard.SHARE_COLLECTION, link.id), {
+                  revoked: true, revokedAt: Date.now(), revokedBy: sessionStorage.getItem('mtw_admin_name') || ''
+                });
+                showStatus(panel, `Revoked "${link.label}". That link no longer opens.`, false);
+                loadList();
+              } catch (error) {
+                revoke.disabled = false;
+                showStatus(panel, `Could not revoke the link: ${error.message || 'unknown error'}`, true);
+              }
+            });
+            row.appendChild(revoke);
+          }
+          list.appendChild(row);
+        });
+      } catch (error) {
+        list.replaceChildren(node('p', statusClass, `Could not load share links: ${error.message || 'unknown error'}`));
+      }
+    };
+
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const label = nameInput.value.trim();
+      if (!label) {
+        showStatus(panel, 'Give the link a label, e.g. "Workshop tablet".', true);
+        return;
+      }
+      create.disabled = true;
+      try {
+        const token = guard.newToken();
+        const id = await guard.hashToken(token);
+        await api.setDoc(api.doc(api.db, guard.SHARE_COLLECTION, id), {
+          tool: toolSelect.value,
+          label,
+          revoked: false,
+          createdAt: Date.now(),
+          createdBy: sessionStorage.getItem('mtw_admin_name') || '',
+          lastUsedAt: null
+        });
+        const url = shareUrl(token);
+        const box = node('div', 'developer-share-new');
+        const urlInput = node('input');
+        urlInput.readOnly = true;
+        urlInput.value = url;
+        urlInput.setAttribute('aria-label', 'Share link');
+        const copy = node('button', 'developer-share-copy', 'Copy');
+        copy.type = 'button';
+        copy.addEventListener('click', async () => {
+          copy.textContent = (await copyText(url, urlInput)) ? 'Copied' : 'Select and copy';
+        });
+        box.append(urlInput, copy, node('p', '', 'Copy it now: it is only shown once. Open it on the tablet and add it to the home screen or desktop.'));
+        created.replaceChildren(box);
+        nameInput.value = '';
+        showStatus(panel, `Share link "${label}" created.`, false);
+        loadList();
+      } catch (error) {
+        showStatus(panel, `Could not create the link: ${error.message || 'unknown error'}`, true);
+      } finally {
+        create.disabled = false;
+      }
+    });
+
+    loadList();
+  }
+
   function init() {
+    if (window.MTW_DASHBOARD_SHARE) return;
     const user = sessionStorage.getItem('mtw_admin_name');
     if (!isManager(user)) return;
 
