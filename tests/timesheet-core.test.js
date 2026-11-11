@@ -138,3 +138,21 @@ test('formatting', () => {
   assert.equal(core.formatHours(9 * H + 30 * M), '9.50');
   assert.equal(core.formatDate('2026-11-11'), 'Wed, 11 Nov 2026');
 });
+
+test('filed by the employee\'s work date: a Calgary Monday shift is Monday, not NZ Tuesday', () => {
+  // Monday 9 Nov 2026, 07:30-17:00 in Calgary (UTC-6) = Tuesday 02:30-12:00 in NZ.
+  const start = at('2026-11-09', '07:30', CALGARY);
+  const session = { startAt: start, endAt: start + 9.5 * H, breaks: [{ type: 'meal', startAt: start + 4 * H, endAt: start + 4.5 * H }] };
+  assert.equal(core.dateKey(start, NZ), '2026-11-10');
+  const [monday, tuesday] = core.summarize([session], ['2026-11-09', '2026-11-10'], { timeZone: CALGARY });
+  assert.equal(monday.weekday, 'Monday');
+  assert.equal(monday.onClock, 9.5 * H);
+  assert.equal(monday.payable, 9 * H);
+  assert.equal(tuesday.onClock, 0);
+  // Weeks still run Wednesday to Tuesday, in Calgary dates: Wed-Fri land in the week of 11 Nov.
+  const week = core.weekSummary(['2026-11-09', '2026-11-10', '2026-11-11', '2026-11-12', '2026-11-13'].map(date => {
+    const s = at(date, '07:30', CALGARY);
+    return { startAt: s, endAt: s + 9.5 * H, breaks: [] };
+  }), '2026-11-11', { timeZone: CALGARY });
+  assert.deepEqual(week.days.filter(d => d.onClock > 0).map(d => d.weekday), ['Wednesday', 'Thursday', 'Friday']);
+});
