@@ -241,6 +241,7 @@ test('first GM setup, PIN unlock, employee clock-in, break and clock-out', async
   await enterPin(window, document, gmPin);
   await openTab(window, document, 'Hours');
   await waitFor(window, () => /Timesheet · Sam/.test(text(document.querySelector('.timesheet-panel'))));
+  button(document, 'This week').click(); // GM opens on last pay week; today's work is this week
   assert.ok(button(document, 'Export CSV'));
   assert.equal(document.querySelectorAll('.ts-table tbody tr').length, 7, 'Wednesday to Tuesday');
   assert.match(text(document.querySelector('.ts-table thead')), /Day \(Calgary\).*Calgary time.*NZ time/);
@@ -388,6 +389,8 @@ test('employee requests a day off; GM approves; it shows on the timesheet', asyn
     assert.ok(tab(document, 'Requests'), 'pending count cleared');
 
     await openTab(window, document, 'Hours');
+    await waitFor(window, () => button(document, 'This week'));
+    button(document, 'This week').click();
     await waitFor(window, () => /Day off/.test(text(document.querySelector('.ts-table tbody'))));
 
     button(document, 'Lock').click();
@@ -495,6 +498,37 @@ test('the week shown follows the calendar unless paged, and rolls over on its ow
     button(document, 'This week').click();
     assert.equal(ts.weekStart, current);
     assert.equal(ts.weekPinned, false);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test('GM Hours opens on the last completed pay week; employees see the current week', async () => {
+  const { dom, window, document } = host();
+  try {
+    await waitFor(window, () => document.querySelector('.mtw-dashboard-shell'));
+    loadTimesheet(window);
+    await setUpPeople(window, document);
+    const ts = window.MTW_TIMESHEET.state;
+    const core = window.MTW_TIMESHEET_CORE;
+    const current = core.weekStart(core.dateKey(Date.now(), 'America/Edmonton'));
+    const last = core.addDays(current, -7);
+
+    await openTab(window, document, 'Hours');
+    await waitFor(window, () => /Timesheet · Austin/.test(text(document.querySelector('.timesheet-panel'))));
+    assert.equal(ts.weekStart, last);
+    assert.match(text(document.querySelector('.ts-week-label')), /last pay week/);
+
+    button(document, 'This week').click();
+    assert.equal(ts.weekStart, current);
+    assert.match(text(document.querySelector('.ts-week-label')), /in progress/);
+    await openTab(window, document, 'Team status');
+    await openTab(window, document, 'Hours');
+    assert.equal(ts.weekStart, current, 'stays where the GM put it');
+
+    button(document, 'Last pay week').click();
+    assert.equal(ts.weekStart, last);
+    assert.equal(ts.weekPinned, false, 'following again: rolls over on Wednesday');
   } finally {
     dom.window.close();
   }
