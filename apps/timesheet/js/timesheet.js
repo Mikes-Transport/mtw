@@ -34,7 +34,8 @@
     requests: 'timesheet-requests'
   };
 
-  const REQUEST_TYPES = ['Day off', 'Annual leave', 'Sick leave', 'Unpaid leave', 'Shift change', 'Other'];
+  // Requests are simply "please let me not work these days": approved or declined.
+  const REQUEST_TYPE = 'Day off';
 
   const core = () => window.MTW_TIMESHEET_CORE;
   const api = () => window.MTW || {};
@@ -260,8 +261,8 @@
     return state.requests.filter(r => r.status === 'pending');
   }
 
-  async function submitRequest(type, from, to, note) {
-    if (!REQUEST_TYPES.includes(type)) throw userError('Choose a request type.');
+  async function submitRequest(from, to, note) {
+    const type = REQUEST_TYPE;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from || '')) throw userError('Choose a start date.');
     const end = to || from;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(end) || end < from) throw userError('The end date must be on or after the start date.');
@@ -597,23 +598,22 @@
 
 
   function renderMyRequests(person) {
-    const type = h('select', { class: 'ts-input', 'aria-label': 'Request type' }, REQUEST_TYPES.map(t => h('option', { value: t, text: t })));
     const dates = `${zoneLabel(workZone(person))} date`;
     const from = h('input', { class: 'ts-input', type: 'date', value: today(person), 'aria-label': `From (${dates})` });
     const to = h('input', { class: 'ts-input', type: 'date', value: today(person), 'aria-label': `To (${dates})` });
     from.addEventListener('change', () => { if (!to.value || to.value < from.value) to.value = from.value; });
-    const note = h('textarea', { class: 'ts-input', rows: 3, maxLength: 1000, placeholder: 'Reason or details (optional)' });
+    const note = h('textarea', { class: 'ts-input', rows: 3, maxLength: 1000, placeholder: 'Reason (optional)' });
     const mine = state.requests.filter(r => r.personId === person.id).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     return [
       h('div', { class: 'ts-card ts-request-form' },
-        h('h3', { text: 'New request' }),
+        h('h3', { text: 'Request a day off' }),
+        h('p', { class: 'ts-hint', text: 'Ask not to work a day (or a run of days). Your GM approves or declines it.' }),
         h('div', { class: 'ts-request-fields' },
-          h('label', { class: 'ts-field' }, 'Type', type),
           h('label', { class: 'ts-field' }, `From (${dates})`, from),
           h('label', { class: 'ts-field' }, `To (${dates})`, to)),
         h('label', { class: 'ts-field' }, 'Note', note),
         h('div', { class: 'ts-actions ts-settings-actions' },
-          h('button', { type: 'button', class: 'ts-btn primary', text: 'Send request', onclick: () => act(() => submitRequest(type.value, from.value, to.value, note.value)) }))),
+          h('button', { type: 'button', class: 'ts-btn primary', text: 'Send request', onclick: () => act(() => submitRequest(from.value, to.value, note.value)) }))),
       h('div', { class: 'ts-card' },
         h('h3', { text: 'My requests' }),
         mine.length
