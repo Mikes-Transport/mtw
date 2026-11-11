@@ -453,15 +453,49 @@ test('notifications: GM sees new requests and summaries (with a live toast); emp
   }
 });
 
-test('times across the dashboard and timesheet are 24-hour', () => {
+test('times across the dashboard and timesheet are 12-hour', () => {
   const root = path.join(REPO_ROOT, 'apps');
   const files = ['dashboard/js/activity/activity-logs.js', 'dashboard/js/activity/change-logs.js',
-    'dashboard/js/inventory/barcodes.js', 'workplace/js/app.js', 'timesheet/js/timesheet-core.js'];
+    'dashboard/js/inventory/barcodes.js', 'workplace/js/app.js'];
   for (const file of files) {
     const source = fs.readFileSync(path.join(root, file), 'utf8');
-    assert.doesNotMatch(source, /toLocaleString\(\)/, `${file}: no default (12-hour) locale format`);
-    assert.doesNotMatch(source, /hour:\s*'numeric'/, `${file}: no 12-hour 'numeric' hours`);
+    assert.match(source, /hour12: true/, `${file}: explicit 12-hour format`);
+    assert.doesNotMatch(source, /hourCycle: 'h23'/, `${file}: no 24-hour format`);
   }
   const core = require('../apps/timesheet/js/timesheet-core.js');
-  assert.equal(core.formatTime(Date.UTC(2026, 10, 11, 4, 5), 'Pacific/Auckland'), '17:05');
+  assert.equal(core.formatTime(Date.UTC(2026, 10, 11, 4, 5), 'Pacific/Auckland'), '5:05 pm');
+});
+
+test('the week shown follows the calendar unless paged, and rolls over on its own', async () => {
+  const { dom, window, document } = host();
+  try {
+    await waitFor(window, () => document.querySelector('.mtw-dashboard-shell'));
+    loadTimesheet(window);
+    const { employeePin } = await setUpPeople(window, document);
+    button(document, 'Lock').click();
+    await enterPin(window, document, employeePin);
+    await openTab(window, document, 'My hours');
+    const ts = window.MTW_TIMESHEET.state;
+    const core = window.MTW_TIMESHEET_CORE;
+    const current = core.weekStart(core.dateKey(Date.now(), 'America/Edmonton'));
+    assert.equal(ts.weekStart, current);
+
+    // A stale week (as if the tool was left open past Tuesday) is replaced on the next redraw.
+    ts.weekStart = core.addDays(current, -7);
+    ts.renderedDates = 'yesterday';
+    await waitFor(window, () => ts.weekStart === current, 3000);
+
+    // Paging back pins the week, even across redraws...
+    document.querySelector('.ts-weeknav button[aria-label="Previous week"]').click();
+    assert.equal(ts.weekStart, core.addDays(current, -7));
+    await openTab(window, document, 'Clock');
+    await openTab(window, document, 'My hours');
+    assert.equal(ts.weekStart, core.addDays(current, -7));
+    // ...until "This week".
+    button(document, 'This week').click();
+    assert.equal(ts.weekStart, current);
+    assert.equal(ts.weekPinned, false);
+  } finally {
+    dom.window.close();
+  }
 });

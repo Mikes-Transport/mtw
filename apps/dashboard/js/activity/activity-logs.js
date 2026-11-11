@@ -1,8 +1,8 @@
 const { db, $, $$, collection, getDocs } = window.MTW;
 
 (() => {
-  // 24-hour times, NZ date order.
-  const TIME_FORMAT = { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' };
+  // 12-hour times (e.g. 9:54:49 am), NZ date order.
+  const TIME_FORMAT = { day: '2-digit', month: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true };
   const body = $('.activity-table-body');
   const tx = $('.logs-text');
   const ref = $('.activity-refresh-button');

@@ -29,7 +29,7 @@ test('a Tuesday shift in Calgary lands on Wednesday in NZ (next reporting week)'
   assert.equal(core.dateKey(start, CALGARY), '2026-11-17');
   assert.equal(core.dateKey(start, NZ), '2026-11-18');
   assert.equal(core.weekStart(core.dateKey(start, NZ)), '2026-11-18');
-  assert.equal(core.formatTime(start, NZ), '11:00');
+  assert.equal(core.formatTime(start, NZ), '11:00 am');
 });
 
 test('Calgary uses IANA rules: Alberta stopped changing clocks in November 2026', () => {
@@ -137,6 +137,9 @@ test('formatting', () => {
   assert.equal(core.formatDuration(9 * H + 30 * M), '9:30');
   assert.equal(core.formatHours(9 * H + 30 * M), '9.50');
   assert.equal(core.formatDate('2026-11-11'), 'Wed, 11 Nov 2026');
+  assert.equal(core.formatTime(Date.UTC(2026, 10, 11, 4, 5), NZ), '5:05 pm');
+  assert.equal(core.formatTime(Date.UTC(2026, 10, 10, 11, 0), NZ), '12:00 am');
+  assert.equal(core.formatTime(Date.UTC(2026, 10, 10, 23, 30), NZ), '12:30 pm');
 });
 
 test('filed by the employee\'s work date: a Calgary Monday shift is Monday, not NZ Tuesday', () => {
