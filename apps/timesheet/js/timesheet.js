@@ -632,9 +632,12 @@
   }
 
   function header(title) {
+    // Inside the dashboard the tool heading already says "Timesheet"; only a page of
+    // its own (no dashboard wrapper) gets a title here.
+    const embedded = Boolean(panel && panel.closest('.db-tool-wrapper'));
     return h('div', { class: 'ts-header' },
       h('div', null,
-        h('h2', { class: 'ts-title', text: title }),
+        embedded ? null : h('h2', { class: 'ts-title', text: title }),
         state.person ? h('p', { class: 'ts-sub' },
           `${state.person.name} · ${state.person.role === 'gm' ? 'GM' : 'Employee'} · `, clockLine(state.person)) : null),
       state.person ? h('div', { class: 'ts-header-actions' },

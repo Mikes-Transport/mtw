@@ -1509,3 +1509,9 @@ body:has(.db-main-wrapper) {
   font-size: 12px;
   opacity: 0.75;
 }
+
+/* The breadcrumb only ever repeated the tool heading ("Timesheet / Timesheet"). */
+.mtw-dashboard-shell .db-tool-breadcrumb,
+.mtw-dashboard-shell .db-heading-list[data-type="breadcrumb"] {
+  display: none !important;
+}

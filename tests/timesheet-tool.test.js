@@ -166,7 +166,8 @@ test('first GM setup, PIN unlock, employee clock-in, break and clock-out', async
   await waitFor(window, () => /does not match/.test(text(document.querySelector('.ts-message'))));
   await enterPin(window, document, gmPin);
   await waitFor(window, () => /Team status/.test(text(document.querySelector('.timesheet-panel .ts-tabs'))));
-  assert.match(text(document.querySelector('.ts-title')), /Timesheets/);
+  assert.equal(document.querySelector('.ts-title'), null, 'no second "Timesheet" title inside the dashboard');
+  assert.match(text(document.querySelector('.ts-sub')), /GM/);
   assert.deepEqual([...document.querySelectorAll('.ts-tab')].map(text), ['Team status', 'Hours', 'Requests', 'People & PINs', 'Settings']);
   assert.equal(document.querySelector('.ts-tab.active').textContent, 'Team status');
   await openTab(window, document, 'People & PINs');
@@ -185,7 +186,7 @@ test('first GM setup, PIN unlock, employee clock-in, break and clock-out', async
   button(document, 'Lock').click();
   await enterPin(window, document, samPin);
   await waitFor(window, () => button(document, 'Clock in'));
-  assert.match(text(document.querySelector('.ts-title')), /My Timesheet/);
+  assert.match(text(document.querySelector('.ts-sub')), /Sam · Employee/);
   assert.deepEqual([...document.querySelectorAll('.ts-tab')].map(text), ['Clock', 'My hours', 'Requests']);
   assert.ok([...document.querySelectorAll('.ts-break button')].every(b => b.disabled), 'no breaks before clocking in');
 
