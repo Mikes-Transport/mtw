@@ -39,6 +39,9 @@ const TOOL_SCRIPTS = [
   '../../timesheet/js/timesheet.js'
 ];
 
+// Bump with each loader change; MTW_DASHBOARD_DIAGNOSE() reports it (githack caching check).
+const LOADER_BUILD = '2026-11-11.21';
+
 // What a share link loads: only its tool (no other panels, scripts or data reads).
 const SHARE_ASSETS = {
   timesheet: {
@@ -75,6 +78,7 @@ async function start() {
   if (window.MTW_DASHBOARD_LOADER_STARTED) return;
   window.MTW_DASHBOARD_LOADER_STARTED = true;
   window.MTW_DASHBOARD_BASE_URL = BASE;
+  window.MTW_DASHBOARD_LOADER_BUILD = LOADER_BUILD;
 
   // Access, before anything else loads:
   //   ?share=<token>  a manager's share link: only that tool, no sign-in (its PIN still applies);
@@ -83,14 +87,22 @@ async function start() {
   const guard = window.MTW_SESSION_GUARD;
   const token = guard.shareToken(window.location);
   let share = null;
-  if (token) {
+  if (token !== null) {
     guard.hide(window);
-    if (!window.MTW || !window.MTW.db) await import('./firebase.js');
-    share = await guard.validateShare(token, window.MTW);
-    if (!share) {
-      window.location.replace(guard.LOGIN_URL);
+    // Always load our Firebase module here: it fills in any API (getDoc, updateDoc…)
+    // that a host page's own Firebase setup doesn't expose.
+    try {
+      await import('./firebase.js');
+    } catch (error) {
+      console.error('[dashboard] Firebase failed to load for a share link:', error);
+    }
+    const result = await guard.checkShare(token, window.MTW);
+    if (!result.share) {
+      console.warn('[dashboard] share link rejected:', result.reason);
+      guard.showMessage(window, 'This link can\'t be opened', result.reason);
       return;
     }
+    share = result.share;
     window.MTW_DASHBOARD_SHARE = share;
     guard.show(window);
   } else if (!guard.guard(window)) {
