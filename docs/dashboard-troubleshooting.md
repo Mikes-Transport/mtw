@@ -34,6 +34,22 @@ The loader is a module script, so it runs after the page is parsed. To hide even
 <script>try{if(sessionStorage.getItem('mtw_admin_logged_in')!=='true'){document.documentElement.style.display='none';location.replace('/admin');}}catch(e){location.replace('/admin');}</script>
 ```
 
+## Share links (tablets and desktop shortcuts)
+
+A manager can open one tool without the `/admin` sign-in through a share link:
+**Manager Tools → Share links**, pick the tool (only the Timesheet is shareable), give it a
+label such as "Workshop tablet", and **Create link**. The link (`…/dashboard?share=<token>`) is
+shown once with a Copy button; open it on the tablet and add it to the home screen.
+
+- The page shows only that tool: no Overview tab, no X, no Sign out, no other tools or panels
+  are loaded. The tool's own PIN (employee or GM) still applies.
+- Firestore `dashboard-share-links/<sha256(token)>` holds `{ tool, label, revoked, createdAt,
+  createdBy, lastUsedAt }`. The token itself is never stored.
+- **Revoke** in the list stops the link at its next load; a revoked or unknown link goes to `/admin`.
+- Which tools may be shared: `SHAREABLE_TOOLS` in `js/access/session-guard.js`, and what a
+  shared tool loads: `SHARE_ASSETS` in `js/dashboard.js`.
+- Like the sign-in, the check runs in the browser; Firestore rules are what really protect data.
+
 ## Changing a tool's layout
 
 - Markup: `apps/dashboard/templates/<tool>.html`. Keep the class names; the tool scripts find their elements by class. `{{BASE}}` becomes the `apps/dashboard/` URL (used for the label sheet images in `assets/labels/`).
