@@ -6,7 +6,8 @@
 // PINs are 6 digits, generated here and stored in Firestore only as salted SHA-256 hashes.
 //
 // Firestore collections:
-//   timesheet-people    { name, role: 'employee'|'gm', timeZone, pinSalt, pinHash, active, createdAt }
+//   timesheet-people    { name, role: 'employee'|'gm', timeZone, pinSalt, pinHash, active, createdAt,
+//                         notificationsSeenAt }
 //   timesheet-sessions  { personId, startAt, endAt|null, task, breaks: [{ type, paid, startAt, endAt|null }], createdAt, updatedAt }
 //   timesheet-summaries { personId, date, text, updatedAt }            (id: `${personId}_${date}`)
 //   timesheet-audit     { actorId, action, targetType, targetId, at, details }
@@ -56,6 +57,10 @@
     // A newly created PIN, shown until unlock, tab change or another PIN: kept in state so
     // live re-renders don't wipe it.
     reveal: null,
+    notificationsOpen: false,
+    // Notifications already announced in this tab (toasts only for new ones).
+    announced: null,
+    toast: null,
     pendingRender: false
   };
   let unsubscribers = [];
@@ -282,7 +287,7 @@
   async function reviewRequest(request, status, reviewNote) {
     const a = requireDb();
     const changes = status === 'cancelled'
-      ? { status }
+      ? { status, cancelledAt: Date.now() }
       : { status, reviewedBy: state.person.id, reviewedAt: Date.now(), reviewNote: String(reviewNote || '').trim().slice(0, 1000) || null };
     await a.updateDoc(a.doc(a.db, C.requests, request.id), changes);
     await audit(`request-${status}`, 'request', request.id, changes);
@@ -304,6 +309,155 @@
       h('div', { class: 'ts-request-side' },
         h('span', { class: `ts-status-pill ${r.status}`, text: r.status[0].toUpperCase() + r.status.slice(1) }),
         controls.buttons || null));
+  }
+
+  // ---------- notifications ----------
+  // Built from the data itself; "seen" is a timestamp on the person (all their devices).
+  const NOTIFY_WINDOW_DAYS = 30;
+
+  function notificationsFor(person) {
+    if (!person) return [];
+    const since = Date.now() - NOTIFY_WINDOW_DAYS * core().DAY;
+    const nameOf = id => (state.people.find(p => p.id === id) || { name: 'Someone' }).name;
+    const items = [];
+    if (person.role === 'gm') {
+      for (const r of state.requests) {
+        if (r.status === 'pending' && r.createdAt) {
+          items.push({ id: `req:${r.id}`, at: r.createdAt, kind: 'request', tab: 'requests',
+            text: `${nameOf(r.personId)} asked for a day off: ${requestRange(r)}` });
+        }
+        if (r.status === 'cancelled' && r.cancelledAt) {
+          items.push({ id: `req-cancel:${r.id}`, at: r.cancelledAt, kind: 'request', tab: 'requests',
+            text: `${nameOf(r.personId)} cancelled their day-off request (${requestRange(r)})` });
+        }
+      }
+      for (const row of state.summaries) {
+        const author = state.people.find(p => p.id === row.personId);
+        if (!author || author.role !== 'employee' || !row.updatedAt || !String(row.text || '').trim()) continue;
+        items.push({ id: `sum:${row.id}:${row.updatedAt}`, at: row.updatedAt, kind: 'summary', tab: 'hours', personId: row.personId,
+          text: `${author.name} wrote a work summary for ${core().formatDate(row.date)}` });
+      }
+      const breaks = cfg().breaks;
+      const longMs = cfg().longSessionHours * core().HOUR;
+      for (const session of state.sessions) {
+        const owner = state.people.find(p => p.id === session.personId);
+        if (!owner || owner.role !== 'employee') continue;
+        for (const b of session.breaks || []) {
+          const config = breaks.find(c => c.id === b.type);
+          if (!config || b.endAt == null || b.startAt == null) continue;
+          const over = (b.endAt - b.startAt) - config.minutes * core().MINUTE;
+          if (over > 0) {
+            items.push({ id: `over:${session.id}:${b.type}:${b.startAt}`, at: b.endAt, kind: 'alert', tab: 'hours', personId: owner.id,
+              text: `${owner.name}'s ${config.label.toLowerCase()} ran over by ${core().formatClock(over)}` });
+          }
+        }
+        if (session.endAt == null && session.startAt != null && Date.now() - session.startAt > longMs) {
+          items.push({ id: `long:${session.id}`, at: session.startAt + longMs, kind: 'alert', tab: 'hours', personId: owner.id,
+            text: `${owner.name} may have missed a clock-out (open ${core().formatDuration(Date.now() - session.startAt)})` });
+        }
+      }
+    } else {
+      for (const r of state.requests) {
+        if (r.personId !== person.id || !r.reviewedAt || (r.status !== 'approved' && r.status !== 'declined')) continue;
+        items.push({ id: `rev:${r.id}:${r.status}`, at: r.reviewedAt, kind: r.status, tab: 'requests',
+          text: `Your day off ${requestRange(r)} was ${r.status}${r.reviewNote ? `: "${r.reviewNote}"` : ''}` });
+      }
+    }
+    return items.filter(n => n.at >= since).sort((a, b) => b.at - a.at).slice(0, 40);
+  }
+
+  function unreadFor(person) {
+    const seen = Number(person && person.notificationsSeenAt) || 0;
+    return notificationsFor(person).filter(n => n.at > seen);
+  }
+
+  async function markNotificationsSeen() {
+    const person = state.person;
+    if (!person) return;
+    const now = Date.now();
+    person.notificationsSeenAt = now;
+    try {
+      const a = requireDb();
+      await a.updateDoc(a.doc(a.db, C.people, person.id), { notificationsSeenAt: now });
+    } catch (error) {
+      console.warn('[timesheet] could not save notifications as seen:', error);
+    }
+  }
+
+  // Toast for notifications that arrive while the tool is open.
+  function announceNew() {
+    if (!state.person) return;
+    const unread = unreadFor(state.person);
+    if (state.announced === null || state.announced.person !== state.person.id) {
+      state.announced = { person: state.person.id, ids: new Set(unread.map(n => n.id)) };
+      return;
+    }
+    const fresh = unread.filter(n => !state.announced.ids.has(n.id));
+    fresh.forEach(n => state.announced.ids.add(n.id));
+    if (fresh.length) {
+      state.toast = { text: fresh.length === 1 ? fresh[0].text : `${fresh.length} new notifications`, kind: fresh[0].kind, until: Date.now() + 8000 };
+    }
+  }
+
+  function bellIcon() {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '1.8');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+    svg.setAttribute('aria-hidden', 'true');
+    for (const d of ['M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9', 'M10.3 21a1.94 1.94 0 0 0 3.4 0']) {
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', d);
+      svg.appendChild(path);
+    }
+    return svg;
+  }
+
+  function notificationsControl() {
+    const person = state.person;
+    const all = notificationsFor(person);
+    const seen = state.notificationsOpen ? state.notificationsOpenedSeen : (Number(person.notificationsSeenAt) || 0);
+    const unread = all.filter(n => n.at > (Number(person.notificationsSeenAt) || 0)).length;
+    const toggle = h('button', {
+      type: 'button',
+      class: `ts-bell${unread ? ' has-unread' : ''}`,
+      'aria-label': unread ? `Notifications, ${unread} new` : 'Notifications',
+      'aria-expanded': String(state.notificationsOpen),
+      onclick: () => {
+        state.notificationsOpen = !state.notificationsOpen;
+        if (state.notificationsOpen) {
+          // Keep "new" highlights for this view, then record everything as seen.
+          state.notificationsOpenedSeen = Number(person.notificationsSeenAt) || 0;
+          markNotificationsSeen();
+        }
+        render();
+      }
+    }, bellIcon(), unread ? h('span', { class: 'ts-badge', text: unread > 9 ? '9+' : String(unread) }) : null);
+
+    const list = state.notificationsOpen
+      ? h('div', { class: 'ts-notifications', role: 'dialog', 'aria-label': 'Notifications' },
+        h('div', { class: 'ts-notifications-head' }, h('strong', { text: 'Notifications' }),
+          h('button', { type: 'button', class: 'ts-btn', text: 'Close', onclick: () => { state.notificationsOpen = false; render(); } })),
+        all.length
+          ? all.map(n => h('button', {
+            type: 'button',
+            class: `ts-notification ts-n-${n.kind}${n.at > seen ? ' is-new' : ''}`,
+            onclick: () => {
+              state.notificationsOpen = false;
+              state.tab = n.tab;
+              if (n.personId) state.viewPersonId = n.personId;
+              say(null);
+              render();
+            }
+          },
+          h('span', { class: 'ts-notification-text', text: n.text }),
+          h('span', { class: 'ts-hint', text: `${core().formatDate(core().dateKey(n.at, workZone(person)))} · ${core().formatTime(n.at, workZone(person))}` })))
+          : h('p', { class: 'ts-hint', text: 'Nothing yet.' }))
+      : null;
+    return h('div', { class: 'ts-bell-wrap' }, toggle, list);
   }
 
   function say(text, kind = 'info') {
@@ -380,6 +534,9 @@
   function lock() {
     sessionStorage.removeItem(UNLOCK_KEY);
     state.person = null;
+    state.notificationsOpen = false;
+    state.announced = null;
+    state.toast = null;
     say(null);
     render();
   }
@@ -479,7 +636,9 @@
         h('h2', { class: 'ts-title', text: title }),
         state.person ? h('p', { class: 'ts-sub' },
           `${state.person.name} · ${state.person.role === 'gm' ? 'GM' : 'Employee'} · `, clockLine(state.person)) : null),
-      state.person ? h('button', { type: 'button', class: 'ts-btn', onclick: lock, text: 'Lock' }) : null);
+      state.person ? h('div', { class: 'ts-header-actions' },
+        notificationsControl(),
+        h('button', { type: 'button', class: 'ts-btn', onclick: lock, text: 'Lock' })) : null);
   }
 
   function messageBar() {
@@ -993,7 +1152,13 @@
       body.append(tabs(list));
       body.append(...[].concat(state.person.role === 'gm' ? renderGm() : renderEmployee()).filter(Boolean));
     }
-    panel.replaceChildren(header(title), messageBar() || '', body);
+    if (state.person) announceNew();
+    const toast = state.toast && state.toast.until > Date.now()
+      ? h('div', { class: `ts-toast ts-n-${state.toast.kind}`, role: 'status' },
+        h('span', { text: state.toast.text }),
+        h('button', { type: 'button', class: 'ts-btn', text: 'View', onclick: () => { state.toast = null; state.notificationsOpen = true; state.notificationsOpenedSeen = Number(state.person.notificationsSeenAt) || 0; markNotificationsSeen(); render(); } }))
+      : null;
+    panel.replaceChildren(header(title), toast || '', messageBar() || '', body);
     panel.classList.toggle('is-busy', state.busy);
   }
 
@@ -1022,6 +1187,10 @@
     panel.querySelectorAll('[data-live="clocks"]').forEach(el => {
       el.replaceWith(clockLine(state.person));
     });
+    if (state.toast && state.toast.until <= now) {
+      state.toast = null;
+      panel.querySelector('.ts-toast')?.remove();
+    }
   }
 
   function ensurePanel() {

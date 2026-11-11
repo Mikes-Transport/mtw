@@ -1,6 +1,8 @@
 const { db, $, $$, collection, getDocs } = window.MTW;
 
 (() => {
+  // 24-hour times, NZ date order.
+  const TIME_FORMAT = { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' };
   const body = $('.activity-table-body');
   const tx = $('.logs-text');
   const ref = $('.activity-refresh-button');
@@ -166,9 +168,9 @@ const { db, $, $$, collection, getDocs } = window.MTW;
       let time = '-';
 
       if (x.time?.toDate) {
-        time = x.time.toDate().toLocaleString();
+        time = x.time.toDate().toLocaleString('en-NZ', TIME_FORMAT);
       } else if (x.time) {
-        time = new Date(x.time).toLocaleString();
+        time = new Date(x.time).toLocaleString('en-NZ', TIME_FORMAT);
       }
 
       r.innerHTML = `
