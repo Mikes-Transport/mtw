@@ -26,7 +26,7 @@ class RepoLoader extends ResourceLoader {
   }
 }
 
-function host(bodyHtml, { role = 'Managers', firebase = true, startupTimeoutMs } = {}) {
+function host(bodyHtml, { role = 'Managers', firebase = true, startupTimeoutMs, share } = {}) {
   const errors = [];
   const virtualConsole = new VirtualConsole();
   virtualConsole.on('error', (...args) => errors.push(args.join(' ')));
@@ -39,6 +39,10 @@ function host(bodyHtml, { role = 'Managers', firebase = true, startupTimeoutMs }
     beforeParse(window) {
       if (role) window.sessionStorage.setItem('mtw_admin_name', role);
       if (startupTimeoutMs) window.MTW_DASHBOARD_STARTUP_TIMEOUT_MS = startupTimeoutMs;
+      if (share) window.MTW_DASHBOARD_SHARE = share;
+      // jsdom lacks Web Crypto digest/TextEncoder; browsers have both.
+      Object.defineProperty(window, 'crypto', { value: require('node:crypto').webcrypto, configurable: true });
+      if (!window.TextEncoder) window.TextEncoder = TextEncoder;
       if (firebase) {
         // Stand-in for the Firebase API the Webflow page exposes as window.MTW.
         window.MTW = {
@@ -46,7 +50,8 @@ function host(bodyHtml, { role = 'Managers', firebase = true, startupTimeoutMs }
           collection: () => ({}),
           getDocs: async () => ({ forEach() {} }),
           doc: (db, collection, id) => ({ collection, id }),
-          setDoc: async (ref, data) => { (window.__saved = window.__saved || []).push({ ref, data }); }
+          setDoc: async (ref, data) => { (window.__saved = window.__saved || []).push({ ref, data }); },
+          updateDoc: async (ref, data) => { (window.__updated = window.__updated || []).push({ ref, data }); }
         };
       }
     }
@@ -268,5 +273,66 @@ test('Managers (or Manager) see every tool; old Developer/Admin roles in saved s
 
   window.MTW_APPLY_TOOL_SETTINGS({ 'csv-config': { roles: ['Developer', 'Admin', 'Counter'] } });
   assert.deepEqual([...window.MTW_TOOL_REGISTRY['csv-config'].roles], ['Managers', 'Counter']);
+  dom.window.close();
+});
+
+test('share link mode: only the shared tool, no overview, exit or sign-out, no role needed', async () => {
+  const { dom, window, document } = host('<script src="dashboard-navigation.js"></script>', {
+    role: null, share: { id: 'abc', tool: 'timesheet', label: 'Workshop tablet' }
+  });
+  await waitFor(window, () => document.querySelector('.mtw-dashboard-shell'));
+  assert.ok(document.documentElement.classList.contains('mtw-share-mode'));
+  const visible = [...document.querySelectorAll('.db-list-toolcard')]
+    .filter(card => card.style.display !== 'none').map(card => card.dataset.select);
+  assert.deepEqual(visible, ['timesheet']);
+  assert.equal(document.querySelector('.mtw-shell-account-label').textContent, 'Shared link');
+  assert.equal(document.querySelector('.mtw-shell-account-role').textContent, 'Workshop tablet');
+  assert.equal(document.querySelector('script[data-mtw-developer-tools]'), null, 'Manager Tools not loaded');
+  // X does nothing: there is no overview to go back to.
+  window.openDBTool('timesheet');
+  document.querySelector('#exit-btn').click();
+  assert.equal(document.querySelector('.db-tool-wrapper').style.display, 'block');
+  // Other tools can't be opened even by id.
+  window.openDBTool('barcodes');
+  assert.notEqual(document.querySelector('.barcodes-panel, .barcode-label-panels')?.style.display, 'block');
+  dom.window.close();
+});
+
+test('Manager Tools creates a share link (hash stored, token only in the URL) and revokes it', async () => {
+  const { dom, window, document } = host(
+    '<script src="../access/session-guard.js"></script><script src="dashboard-navigation.js"></script>');
+  await waitFor(window, () => document.querySelector('.developer-share-form'));
+  const form = document.querySelector('.developer-share-form');
+  form.querySelector('input[name="label"]').value = 'Workshop tablet';
+  form.querySelector('.developer-share-create').click();
+  await waitFor(window, () => document.querySelector('.developer-share-new input'));
+
+  const url = new URL(document.querySelector('.developer-share-new input').value);
+  const token = url.searchParams.get('share');
+  assert.match(token, /^[A-Za-z0-9_-]{30,}$/);
+  assert.equal(url.pathname, '/apps/dashboard/js/navigation/host.html');
+  const saved = window.__saved.find(item => item.ref.collection === 'dashboard-share-links');
+  assert.equal(saved.ref.id, await window.MTW_SESSION_GUARD.hashToken(token));
+  assert.equal(saved.data.tool, 'timesheet');
+  assert.equal(saved.data.label, 'Workshop tablet');
+  assert.equal(saved.data.revoked, false);
+  assert.equal(saved.data.createdBy, 'Managers');
+  assert.ok(!JSON.stringify(saved.data).includes(token), 'token itself is never stored');
+
+  // Revoke from the list.
+  window.MTW.getDocs = async () => ({
+    forEach(fn) { fn({ id: saved.ref.id, data: () => saved.data }); }
+  });
+  document.querySelector('.db-list-toolcard[data-select="developer-tools"]').click();
+  document.querySelector('.mtw-home-tab').click();
+  document.dispatchEvent(new window.CustomEvent('db-tools-ready'));
+  await waitFor(window, () => document.querySelector('.developer-share-revoke'));
+  document.querySelector('.developer-share-revoke').click();
+  await waitFor(window, () => (window.__updated || []).length);
+  Object.assign(saved.data, window.__updated[0].data);
+  await waitFor(window, () => document.querySelector('.developer-share-row[data-revoked="true"]'));
+  assert.equal(document.querySelector('.developer-share-revoke'), null);
+  assert.equal(window.__updated[0].ref.id, saved.ref.id);
+  assert.equal(window.__updated[0].data.revoked, true);
   dom.window.close();
 });

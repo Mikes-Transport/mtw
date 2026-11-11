@@ -16,6 +16,12 @@ A separate app in `apps/timesheet/` that the dashboard loads as the **Timesheet*
    - Everything updates live through Firestore listeners (polling every 30 s if those are unavailable). Redraws wait while someone is typing.
 3. **Lock** forgets the PIN for this browser tab.
 
+### On a tablet or desktop shortcut
+
+A manager creates a **share link** for the Timesheet in Manager Tools → Share links. The
+link opens only the Timesheet, with no dashboard sign-in; people still unlock it with their
+PIN. Revoke a link there if a tablet is lost. See `docs/dashboard-troubleshooting.md`.
+
 ## Rules it follows (from the spec)
 
 - Times are stored as UTC instants. **Each person's shifts are filed under their own work date**, in their time zone (People & PINs): a Calgary employee's Monday 07:30–17:00 shows on the **Monday** row, even though it is Tuesday 02:30–12:00 in NZ. Weeks run **Wednesday to Tuesday** in those same dates. Requests use those dates too.

@@ -23,7 +23,7 @@
   const DASHBOARD_SHELL_URL = new URL('js/navigation/dashboard-shell.js', BASE_URL).href;
 
   // Bump on each release so the live page can be checked for the version it runs.
-  const NAVIGATION_BUILD = '2026-11-11.18';
+  const NAVIGATION_BUILD = '2026-11-11.19';
 
   const TOOLS = {
     'activity-logs': { panel: '.activity-logs-panel', name: 'Activity Logs', roles: ['Managers'] },
@@ -311,6 +311,8 @@
   // (e.g. Manager Tools editing one item) cancels 'db-tool-exit-request' and
   // handles the step itself. Only when nothing cancels does the tool close.
   function exitDBTool() {
+    // A share link shows one tool only; there is no overview to return to.
+    if (shareMode()) return;
     const request = new CustomEvent('db-tool-exit-request', {
       cancelable: true,
       detail: { id: activeToolId }
@@ -402,7 +404,14 @@
     icon.replaceChildren(svg);
   }
 
+  // Opened from a manager's share link (?share=…): only that one tool, no sign-in role.
+  function shareMode() {
+    return window.MTW_DASHBOARD_SHARE || null;
+  }
+
   function canShowTool(id, tool) {
+    const share = shareMode();
+    if (share) return id === share.tool;
     const user = sessionStorage.getItem('mtw_admin_name');
     return isManager(user) || (Array.isArray(tool.roles) && tool.roles.includes(normalizeRole(user)));
   }
@@ -530,6 +539,7 @@
 
   function init() {
 
+    if (shareMode()) document.documentElement.classList.add('mtw-share-mode');
     ensureDashboardMarkup();
     loadDashboardTheme();
     const search = $('.db-menu-search');
@@ -574,7 +584,7 @@
     window.MTW_APPLY_TOOL_SETTINGS = applyToolSettings;
     applyToolSettings({});
     createCustomCard('developer-tools', 'Manager Tools');
-    loadToolSettings().catch(error => {
+    if (!shareMode()) loadToolSettings().catch(error => {
       console.error('[dashboard] could not load tool settings:', error);
       applyToolSettings({});
       document.dispatchEvent(new CustomEvent('db-tools-load-error', {
@@ -582,7 +592,8 @@
       }));
     });
 
-    if (!document.querySelector('script[data-mtw-developer-tools], script[src*="developer-tools.js"]')) {
+    if (!shareMode() &&
+        !document.querySelector('script[data-mtw-developer-tools], script[src*="developer-tools.js"]')) {
       const manager = document.createElement('script');
       manager.dataset.mtwDeveloperTools = 'true';
       manager.src = DEVELOPER_TOOLS_URL;
@@ -628,6 +639,7 @@
     const report = {
       navigationBuild: NAVIGATION_BUILD,
       role: sessionStorage.getItem('mtw_admin_name'),
+      share: shareMode() ? { tool: shareMode().tool, label: shareMode().label } : null,
       firebase: Boolean(window.MTW && window.MTW.db),
       shells: document.querySelectorAll('.mtw-dashboard-shell').length,
       toolWrappers: document.querySelectorAll('.db-tool-wrapper').length,

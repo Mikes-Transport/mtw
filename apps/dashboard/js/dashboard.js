@@ -39,6 +39,14 @@ const TOOL_SCRIPTS = [
   '../../timesheet/js/timesheet.js'
 ];
 
+// What a share link loads: only its tool (no other panels, scripts or data reads).
+const SHARE_ASSETS = {
+  timesheet: {
+    templates: [],
+    scripts: ['../../timesheet/js/timesheet-core.js', '../../timesheet/js/timesheet.js']
+  }
+};
+
 function stylesheet(href) {
   if (document.querySelector(`link[rel="stylesheet"][href="${href}"]`)) return;
   const link = document.createElement('link');
@@ -48,8 +56,8 @@ function stylesheet(href) {
   document.head.appendChild(link);
 }
 
-async function loadTemplates() {
-  const loaded = await Promise.all(TEMPLATES.map(async id => {
+async function loadTemplates(ids) {
+  const loaded = await Promise.all(ids.map(async id => {
     const url = `${BASE}templates/${id}.html`;
     try {
       const response = await fetch(url);
@@ -68,28 +76,45 @@ async function start() {
   window.MTW_DASHBOARD_LOADER_STARTED = true;
   window.MTW_DASHBOARD_BASE_URL = BASE;
 
-  // Signed out (no sign-in this browser session): hide the page and go to /admin
-  // before loading anything else.
+  // Access, before anything else loads:
+  //   ?share=<token>  a manager's share link: only that tool, no sign-in (its PIN still applies);
+  //   otherwise       signed out (no sign-in this browser session) => hidden, sent to /admin.
   await import('./access/session-guard.js');
-  if (!window.MTW_SESSION_GUARD.guard(window)) return;
+  const guard = window.MTW_SESSION_GUARD;
+  const token = guard.shareToken(window.location);
+  let share = null;
+  if (token) {
+    guard.hide(window);
+    if (!window.MTW || !window.MTW.db) await import('./firebase.js');
+    share = await guard.validateShare(token, window.MTW);
+    if (!share) {
+      window.location.replace(guard.LOGIN_URL);
+      return;
+    }
+    window.MTW_DASHBOARD_SHARE = share;
+    guard.show(window);
+  } else if (!guard.guard(window)) {
+    return;
+  }
 
   stylesheet('https://fonts.googleapis.com/css2?family=Exo:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&family=Montserrat:wght@400;500;600;700;800;900&display=swap');
   stylesheet(`${BASE}styles/tools.css`);
   stylesheet(new URL('../timesheet/css/timesheet.css', BASE).href);
 
   if (!window.MTW || !window.MTW.db) await import('./firebase.js');
-  await loadTemplates();
+  await loadTemplates(share ? SHARE_ASSETS[share.tool].templates : TEMPLATES);
 
   // Builds the markup, installs the panels, then loads the shell and theme.
   await import('./navigation/dashboard-navigation.js');
 
-  for (const path of TOOL_SCRIPTS) {
+  for (const path of (share ? SHARE_ASSETS[share.tool].scripts : TOOL_SCRIPTS)) {
     try {
       await import(`./${path}`);
     } catch (error) {
       console.error(`[dashboard] tool script failed to load: ${path}`, error);
     }
   }
+  if (share && typeof window.openDBTool === 'function') window.openDBTool(share.tool);
   document.dispatchEvent(new CustomEvent('mtw-dashboard-loaded'));
 }
 
