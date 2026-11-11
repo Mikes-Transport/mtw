@@ -254,6 +254,15 @@
     return `${Math.floor(minutes / 60)}:${pad(minutes % 60)}`;
   }
 
+  // Live timer text with seconds: 'm:ss' under an hour, 'h:mm:ss' after.
+  function formatClock(ms) {
+    const total = Math.floor(Math.max(0, ms) / 1000);
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = total % 60;
+    return hours ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
+  }
+
   function formatHours(ms) {
     return (Math.max(0, ms) / HOUR).toFixed(2);
   }
@@ -300,7 +309,7 @@
     DEFAULTS, MINUTE, HOUR, DAY, WEEKDAYS,
     zonedParts, offsetAt, dateKey, addDays, weekdayOf, startOfDay, weekStart, weekDates,
     splitByDay, toMillis, summarize, weekSummary, breakAllowances, status,
-    formatDuration, formatHours, formatTime, formatDate,
+    formatDuration, formatClock, formatHours, formatTime, formatDate,
     generatePin, generateSalt, hashPin
   };
 });
