@@ -20,7 +20,19 @@ No Webflow Designer markup is needed. If the page still has the old Webflow dash
 
 `apps/dashboard/index.html` is a working minimal host for development.
 
-Not loaded by the loader: `js/access/admin.js` (the `/admin` sign-in redirect). The previous Webflow embed didn't load it either. Add it to the loader if the dashboard should redirect signed-out visitors.
+## Sign-in
+
+The loader checks the sign-in first (`js/access/session-guard.js`). The `/admin` page sets `sessionStorage.mtw_admin_logged_in = "true"` and `mtw_admin_name` (the role: Counter, Stores, KeyAccounts or Managers). Session storage survives refreshes in the same tab and is cleared when the tab or browser closes.
+
+- **Signed in this session:** the dashboard loads.
+- **Not signed in** (new tab, or the tab was closed): the page is hidden (`display: none`) and replaced with `/admin` before anything else loads.
+- **Sign out** (header button): clears the session, including any unlocked Timesheet PIN, and goes to `/admin`.
+
+The loader is a module script, so it runs after the page is parsed. To hide even that first instant, you can also put this in the Webflow page's **head** custom code:
+
+```html
+<script>try{if(sessionStorage.getItem('mtw_admin_logged_in')!=='true'){document.documentElement.style.display='none';location.replace('/admin');}}catch(e){location.replace('/admin');}</script>
+```
 
 ## Changing a tool's layout
 

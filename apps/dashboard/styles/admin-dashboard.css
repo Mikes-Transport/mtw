@@ -1354,3 +1354,21 @@ body:has(.db-main-wrapper) {
 .mtw-dashboard-shell .change-log-date {
   flex: 0 0 auto;
 }
+
+.mtw-shell-signout {
+  margin-top: 4px;
+  padding: 4px 10px;
+  border: 1px solid #484848;
+  border-radius: 6px;
+  background: transparent;
+  color: #f7f7f5;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.mtw-shell-signout:hover {
+  border-color: #b7b7b2;
+  background: #2a2a2a;
+}
