@@ -31,8 +31,11 @@ The loader checks the sign-in first (`js/access/session-guard.js`). The `/admin`
 The loader is a module script, so it runs after the page is parsed. To hide even that first instant, you can also put this in the Webflow page's **head** custom code:
 
 ```html
-<script>try{if(sessionStorage.getItem('mtw_admin_logged_in')!=='true'){document.documentElement.style.display='none';location.replace('/admin');}}catch(e){location.replace('/admin');}</script>
+<script>try{if(!/[?&]share=/.test(location.search)&&sessionStorage.getItem('mtw_admin_logged_in')!=='true'){document.documentElement.style.display='none';location.replace('/admin');}}catch(e){location.replace('/admin');}</script>
 ```
+
+The `share=` check lets share links through; an older copy of this snippet without it
+sends every share link to `/admin`.
 
 ## Share links (tablets and desktop shortcuts)
 
@@ -45,7 +48,11 @@ shown once with a Copy button; open it on the tablet and add it to the home scre
   are loaded. The tool's own PIN (employee or GM) still applies.
 - Firestore `dashboard-share-links/<sha256(token)>` holds `{ tool, label, revoked, createdAt,
   createdBy, lastUsedAt }`. The token itself is never stored.
-- **Revoke** in the list stops the link at its next load; a revoked or unknown link goes to `/admin`.
+- **Revoke** in the list stops the link at its next load. A revoked, unknown or mangled link
+  shows a short "This link can't be opened" message with the reason (and a link to `/admin`).
+- If a share link lands on `/admin` instead, either the page's head code redirects before the
+  dashboard runs (use the snippet above), or the browser still has an old `dashboard.js`:
+  `MTW_DASHBOARD_DIAGNOSE().loaderBuild` should be the current build.
 - Which tools may be shared: `SHAREABLE_TOOLS` in `js/access/session-guard.js`, and what a
   shared tool loads: `SHARE_ASSETS` in `js/dashboard.js`.
 - Like the sign-in, the check runs in the browser; Firestore rules are what really protect data.

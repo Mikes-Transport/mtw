@@ -23,7 +23,7 @@
   const DASHBOARD_SHELL_URL = new URL('js/navigation/dashboard-shell.js', BASE_URL).href;
 
   // Bump on each release so the live page can be checked for the version it runs.
-  const NAVIGATION_BUILD = '2026-11-11.20';
+  const NAVIGATION_BUILD = '2026-11-11.21';
 
   const TOOLS = {
     'activity-logs': { panel: '.activity-logs-panel', name: 'Activity Logs', roles: ['Managers'] },
@@ -638,6 +638,7 @@
     });
     const report = {
       navigationBuild: NAVIGATION_BUILD,
+      loaderBuild: window.MTW_DASHBOARD_LOADER_BUILD || 'unknown (old loader)',
       role: sessionStorage.getItem('mtw_admin_name'),
       share: shareMode() ? { tool: shareMode().tool, label: shareMode().label } : null,
       firebase: Boolean(window.MTW && window.MTW.db),
