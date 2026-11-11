@@ -12,8 +12,10 @@
 //   timesheet-audit     { actorId, action, targetType, targetId, at, details }
 //   timesheet-settings  main: { breaks: [{ id, label, minutes, paid }], tasks: [..], longSessionHours }
 //   timesheet-requests  { personId, type, from, to, note, status: 'pending'|'approved'|'declined'|'cancelled',
-//                         createdAt, reviewedBy, reviewedAt, reviewNote }   (from/to are NZ dates)
-// Times are UTC milliseconds. Reporting dates and weeks use New Zealand time.
+//                         createdAt, reviewedBy, reviewedAt, reviewNote }   (from/to are the person's work dates)
+// Times are UTC milliseconds. Each person's days and Wed–Tue weeks use their own work
+// time zone (person.timeZone): a Calgary employee's Monday 07:30–17:00 is filed under
+// Monday, even though it is Tuesday in NZ. NZ times are shown alongside.
 (function () {
   'use strict';
 
@@ -101,16 +103,23 @@
     return { breaks, tasks, longSessionHours };
   }
 
-  function calcOptions() {
+  function calcOptions(person = state.person) {
     const c = cfg();
-    return { breaks: c.breaks, longSessionHours: c.longSessionHours };
+    return { breaks: c.breaks, longSessionHours: c.longSessionHours, timeZone: workZone(person) };
   }
 
   function personZone(person) {
     return (person && person.timeZone) || core().DEFAULTS.employeeTimeZone;
   }
 
-  function today() { return core().dateKey(Date.now(), reportingZone()); }
+  // The time zone whose calendar a person's days are filed under.
+  function workZone(person) { return personZone(person); }
+
+  function zoneLabel(zone) {
+    return { 'America/Edmonton': 'Calgary', 'Pacific/Auckland': 'NZ' }[zone] || String(zone).split('/').pop().replace(/_/g, ' ');
+  }
+
+  function today(person = state.person) { return core().dateKey(Date.now(), workZone(person)); }
 
   function sessionsFor(personId) {
     return state.sessions.filter(s => s.personId === personId);
@@ -230,12 +239,13 @@
     return row ? String(row.text || '') : '';
   }
 
-  // Break types started on the given NZ date (each may be taken once per day).
+  // Break types started on the given work date (each may be taken once per day).
   function breaksTaken(personId, date) {
+    const zone = workZone(state.people.find(p => p.id === personId));
     const taken = new Set();
     for (const session of sessionsFor(personId)) {
       for (const b of session.breaks || []) {
-        if (b.startAt != null && core().dateKey(b.startAt, reportingZone()) === date) taken.add(b.type);
+        if (b.startAt != null && core().dateKey(b.startAt, zone) === date) taken.add(b.type);
       }
     }
     return taken;
@@ -354,7 +364,8 @@
       if (person.pinSalt && person.pinHash === await core().hashPin(value, person.pinSalt)) {
         sessionStorage.setItem(UNLOCK_KEY, person.id);
         state.person = person;
-        state.weekStart = core().weekStart(today());
+        state.weekStart = core().weekStart(today(person));
+        state.weekFor = null;
         state.viewPersonId = null;
         state.tab = person.role === 'gm' ? 'status' : 'clock';
         state.reveal = null;
@@ -533,23 +544,31 @@
     return flag;
   }
 
-  function weekNav() {
+  function weekNav(person = state.person) {
     const move = n => () => { state.weekStart = core().addDays(state.weekStart, 7 * n); render(); };
     return h('div', { class: 'ts-weeknav' },
       h('button', { type: 'button', class: 'ts-btn', onclick: move(-1), 'aria-label': 'Previous week', text: '‹' }),
-      h('span', { class: 'ts-week-label', text: `${core().formatDate(state.weekStart)} – ${core().formatDate(core().addDays(state.weekStart, 6))} (NZ)` }),
+      h('span', { class: 'ts-week-label', text: `${core().formatDate(state.weekStart)} – ${core().formatDate(core().addDays(state.weekStart, 6))} (${zoneLabel(workZone(person))} dates)` }),
       h('button', { type: 'button', class: 'ts-btn', onclick: move(1), 'aria-label': 'Next week', text: '›' }),
-      h('button', { type: 'button', class: 'ts-btn', text: 'This week', onclick: () => { state.weekStart = core().weekStart(today()); render(); } }));
+      h('button', { type: 'button', class: 'ts-btn', text: 'This week', onclick: () => { state.weekStart = core().weekStart(today(person)); render(); } }));
   }
 
   function weekTable(person, week) {
-    const zone = reportingZone();
+    const zone = workZone(person);
+    const nz = reportingZone();
+    const local = zoneLabel(zone);
+    const showNz = zone !== nz;
+    const span = (s, z) => `${core().formatTime(s.startAt, z)}–${s.endAt == null ? 'now' : core().formatTime(s.endAt, z)}`;
+    // NZ times, with the NZ date when it differs from the work date.
+    const nzSpan = (s, date) => {
+      const nzDate = core().dateKey(s.startAt, nz);
+      return `${span(s, nz)}${nzDate !== date ? ` (${core().WEEKDAYS[core().weekdayOf(nzDate)].slice(0, 3)})` : ''}`;
+    };
     const rows = week.days.map(day => {
-      const spans = day.sessions.map(s =>
-        `${core().formatTime(s.startAt, zone)}–${s.endAt == null ? 'now' : core().formatTime(s.endAt, zone)}`).join(', ');
-      return h('tr', { class: day.date === today() ? 'is-today' : null },
+      return h('tr', { class: day.date === today(person) ? 'is-today' : null },
         h('td', null, h('strong', { text: day.weekday.slice(0, 3) }), ` ${day.date.slice(8)}/${day.date.slice(5, 7)}`),
-        h('td', { text: spans || '—' }),
+        h('td', { text: day.sessions.map(s => span(s, zone)).join(', ') || '—' }),
+        showNz ? h('td', { class: 'ts-nz', text: day.sessions.map(s => nzSpan(s, day.date)).join(', ') || '—' }) : null,
         h('td', { class: 'num', text: core().formatDuration(day.onClock) }),
         h('td', { class: 'num', text: core().formatDuration(day.active) }),
         h('td', { class: 'num', text: core().formatDuration(day.paidBreak) }),
@@ -560,14 +579,14 @@
           day.flags.map(f => h('span', { class: `ts-flag ${f.startsWith('open') ? 'warn' : 'alert'}`, text: flagText(f) }))));
     });
     const t = week.totals;
+    const headings = [`Day (${local})`, `${local} time`].concat(showNz ? ['NZ time'] : [])
+      .concat(['On clock', 'Active', 'Paid brk', 'Unpaid brk', 'Payable', 'Notes']);
     return h('div', { class: 'ts-table-wrap' },
       h('table', { class: 'ts-table' },
-        h('thead', null, h('tr', null,
-          ['Day (NZ)', 'Sessions (NZ time)', 'On clock', 'Active', 'Paid brk', 'Unpaid brk', 'Payable', 'Notes']
-            .map(label => h('th', { text: label })))),
+        h('thead', null, h('tr', null, headings.map(label => h('th', { text: label })))),
         h('tbody', null, rows),
         h('tfoot', null, h('tr', null,
-          h('td', { text: 'Week total' }), h('td'),
+          h('td', { text: 'Week total' }), h('td'), showNz ? h('td') : null,
           h('td', { class: 'num', text: core().formatDuration(t.onClock) }),
           h('td', { class: 'num', text: core().formatDuration(t.active) }),
           h('td', { class: 'num', text: core().formatDuration(t.paidBreak) }),
@@ -576,10 +595,12 @@
           h('td')))));
   }
 
+
   function renderMyRequests(person) {
     const type = h('select', { class: 'ts-input', 'aria-label': 'Request type' }, REQUEST_TYPES.map(t => h('option', { value: t, text: t })));
-    const from = h('input', { class: 'ts-input', type: 'date', value: today(), 'aria-label': 'From (NZ date)' });
-    const to = h('input', { class: 'ts-input', type: 'date', value: today(), 'aria-label': 'To (NZ date)' });
+    const dates = `${zoneLabel(workZone(person))} date`;
+    const from = h('input', { class: 'ts-input', type: 'date', value: today(person), 'aria-label': `From (${dates})` });
+    const to = h('input', { class: 'ts-input', type: 'date', value: today(person), 'aria-label': `To (${dates})` });
     from.addEventListener('change', () => { if (!to.value || to.value < from.value) to.value = from.value; });
     const note = h('textarea', { class: 'ts-input', rows: 3, maxLength: 1000, placeholder: 'Reason or details (optional)' });
     const mine = state.requests.filter(r => r.personId === person.id).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
@@ -588,8 +609,8 @@
         h('h3', { text: 'New request' }),
         h('div', { class: 'ts-request-fields' },
           h('label', { class: 'ts-field' }, 'Type', type),
-          h('label', { class: 'ts-field' }, 'From (NZ date)', from),
-          h('label', { class: 'ts-field' }, 'To (NZ date)', to)),
+          h('label', { class: 'ts-field' }, `From (${dates})`, from),
+          h('label', { class: 'ts-field' }, `To (${dates})`, to)),
         h('label', { class: 'ts-field' }, 'Note', note),
         h('div', { class: 'ts-actions ts-settings-actions' },
           h('button', { type: 'button', class: 'ts-btn primary', text: 'Send request', onclick: () => act(() => submitRequest(type.value, from.value, to.value, note.value)) }))),
@@ -654,7 +675,8 @@
     const person = state.person;
     const mine = sessionsFor(person.id);
     const status = core().status(mine);
-    const [todayRow] = core().summarize(mine, [today()], calcOptions());
+    if (state.weekFor !== person.id) { state.weekStart = core().weekStart(today(person)); state.weekFor = person.id; }
+    const [todayRow] = core().summarize(mine, [today(person)], calcOptions(person));
     const tasks = cfg().tasks;
 
     const taskSelect = h('select', { class: 'ts-input', 'aria-label': 'Task' },
@@ -745,16 +767,16 @@
       h('button', { type: 'button', class: 'ts-btn', text: 'Save summary', onclick: () => act(() => saveSummary(today(), summaryInput.value)) }));
     summaryInput.value = summaryText(person.id, today());
 
-    const week = core().weekSummary(mine, state.weekStart || core().weekStart(today()), calcOptions());
+    const week = core().weekSummary(mine, state.weekStart || core().weekStart(today(person)), calcOptions(person));
     if (state.tab === 'requests') return renderMyRequests(person);
     if (state.tab === 'hours') {
       return [
-        h('div', { class: 'ts-card' }, h('h3', { text: 'My hours' }), weekNav(), totalsGrid(week.totals), weekTable(person, week), taskTotals(week), summariesList(person, week))
+        h('div', { class: 'ts-card' }, h('h3', { text: 'My hours' }), weekNav(person), totalsGrid(week.totals), weekTable(person, week), taskTotals(week), summariesList(person, week))
       ];
     }
     return [
       h('div', { class: 'ts-grid' }, clockCard, h('div', { class: 'ts-card' },
-        h('h3', { text: `Today · ${core().formatDate(today())} (NZ)` }),
+        h('h3', { text: `Today · ${core().formatDate(today(person))} (${zoneLabel(workZone(person))})` }),
         totalsGrid(todayRow),
         todayRow.flags.length ? h('div', { class: 'ts-day-notes' }, todayRow.flags.map(f => h('span', { class: `ts-flag ${f.startsWith('open') ? 'warn' : 'alert'}`, text: flagText(f) }))) : null)),
       h('div', { class: 'ts-grid' }, breakCard, summaryCard)
@@ -763,20 +785,25 @@
 
   function csvFor(person, week) {
     const q = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
-    const zone = reportingZone();
-    const lines = [['Employee', 'NZ date', 'Weekday', 'Sessions (NZ)', 'On clock (h)', 'Active (h)', 'Paid breaks (h)', 'Unpaid breaks (h)', 'Payable (h)', 'Notes', 'Work summary'].map(q).join(',')];
+    const zone = workZone(person);
+    const nz = reportingZone();
+    const local = zoneLabel(zone);
+    const spans = (day, z) => day.sessions
+      .map(s => `${core().formatTime(s.startAt, z)}-${s.endAt == null ? 'open' : core().formatTime(s.endAt, z)}`).join(' ');
+    const lines = [['Employee', `Work date (${local})`, 'Weekday', `Sessions (${local})`, 'Sessions (NZ)', 'On clock (h)', 'Active (h)',
+      'Paid breaks (h)', 'Unpaid breaks (h)', 'Payable (h)', 'Notes', 'Work summary'].map(q).join(',')];
     for (const day of week.days) {
-      const spans = day.sessions.map(s => `${core().formatTime(s.startAt, zone)}-${s.endAt == null ? 'open' : core().formatTime(s.endAt, zone)}`).join(' ');
-      lines.push([person.name, day.date, day.weekday, spans, core().formatHours(day.onClock), core().formatHours(day.active),
+      lines.push([person.name, day.date, day.weekday, spans(day, zone), spans(day, nz), core().formatHours(day.onClock), core().formatHours(day.active),
         core().formatHours(day.paidBreak), core().formatHours(day.unpaidBreak), core().formatHours(day.payable),
         approvedOn(person.id, day.date).map(r => r.type).concat(day.flags.map(flagText)).join('; '),
         summaryText(person.id, day.date)].map(q).join(','));
     }
     const t = week.totals;
-    lines.push([person.name, `${week.start} to ${week.end}`, 'Week total', '', core().formatHours(t.onClock), core().formatHours(t.active),
+    lines.push([person.name, `${week.start} to ${week.end}`, 'Week total', '', '', core().formatHours(t.onClock), core().formatHours(t.active),
       core().formatHours(t.paidBreak), core().formatHours(t.unpaidBreak), core().formatHours(t.payable), '', ''].map(q).join(','));
     return lines.join('\r\n');
   }
+
 
   function download(name, text) {
     const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
@@ -798,7 +825,9 @@
     if (state.tab === 'hours') {
       const viewing = employees.find(p => p.id === state.viewPersonId);
       if (!viewing) return [h('div', { class: 'ts-card' }, h('p', { class: 'ts-hint', text: 'No employees yet. Add one under People & PINs.' }))];
-      const week = core().weekSummary(sessionsFor(viewing.id), state.weekStart || core().weekStart(today()), calcOptions());
+      // Each person's view starts on their own current week (their dates, not the GM's).
+      if (state.weekFor !== viewing.id) { state.weekStart = core().weekStart(today(viewing)); state.weekFor = viewing.id; }
+      const week = core().weekSummary(sessionsFor(viewing.id), state.weekStart || core().weekStart(today(viewing)), calcOptions(viewing));
       const picker = h('select', { class: 'ts-input ts-person-picker', 'aria-label': 'Employee' },
         employees.map(p => h('option', { value: p.id, text: p.name, selected: p.id === viewing.id })));
       picker.addEventListener('change', () => { state.viewPersonId = picker.value; render(); });
@@ -811,7 +840,7 @@
               type: 'button', class: 'ts-btn', text: 'Export CSV',
               onclick: () => download(`timesheet-${viewing.name.replace(/\W+/g, '-').toLowerCase()}-${week.start}.csv`, csvFor(viewing, week))
             }))),
-        weekNav(), totalsGrid(week.totals), weekTable(viewing, week), taskTotals(week), summariesList(viewing, week))];
+        weekNav(viewing), totalsGrid(week.totals), weekTable(viewing, week), taskTotals(week), summariesList(viewing, week))];
     }
 
     // Team status
@@ -820,7 +849,7 @@
       employees.length
         ? h('div', { class: 'ts-team' }, employees.map(p => {
           const status = currentStatus(p.id);
-          const [todayRow] = core().summarize(sessionsFor(p.id), [today()], calcOptions());
+          const [todayRow] = core().summarize(sessionsFor(p.id), [today(p)], calcOptions(p));
           const label = status.state === 'off' ? 'Clocked out' : status.state === 'break' ? 'On break' : 'Working';
           return h('button', {
             type: 'button', class: `ts-member ts-state-${status.state}`,
@@ -829,12 +858,12 @@
           },
           h('strong', { text: p.name }),
           h('span', { class: 'ts-state-label', text: label }),
-          approvedOn(p.id, today()).map(r => h('span', { class: 'ts-flag ok', text: `${r.type} today` })),
+          approvedOn(p.id, today(p)).map(r => h('span', { class: 'ts-flag ok', text: `${r.type} today` })),
           status.session ? h('span', { class: 'ts-hint', text: `since ${core().formatTime(status.break ? status.break.startAt : status.session.startAt, reportingZone())} NZ` }) : null,
           status.session && status.session.task ? h('span', { class: 'ts-hint', text: status.session.task }) : null,
           h('span', { class: 'ts-hint', text: `Today ${core().formatDuration(todayRow.payable)} payable` }),
           todayRow.flags.filter(f => f !== 'open').map(f => h('span', { class: `ts-flag ${f.startsWith('open') ? 'warn' : 'alert'}`, text: flagText(f) })),
-          summaryText(p.id, today()) ? h('span', { class: 'ts-hint ts-summary-snippet', text: `“${summaryText(p.id, today()).slice(0, 90)}${summaryText(p.id, today()).length > 90 ? '…' : ''}”` }) : null);
+          summaryText(p.id, today(p)) ? h('span', { class: 'ts-hint ts-summary-snippet', text: `“${summaryText(p.id, today(p)).slice(0, 90)}${summaryText(p.id, today(p)).length > 90 ? '…' : ''}”` }) : null);
         }))
         : h('p', { class: 'ts-hint', text: 'No employees yet. Add one under People & PINs.' }))];
   }

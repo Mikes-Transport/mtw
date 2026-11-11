@@ -13,8 +13,8 @@ A separate app in `apps/timesheet/` that the dashboard loads as the **Timesheet*
 
 ## Rules it follows (from the spec)
 
-- Times are stored as UTC instants. Reporting dates and weeks are New Zealand time (`Pacific/Auckland`): **Wednesday 00:00 to Tuesday 23:59:59**.
-- The employee sees their own time (`America/Edmonton` for Calgary) next to NZ time. Sessions that cross NZ midnight are split between the two days (and weeks).
+- Times are stored as UTC instants. **Each person's shifts are filed under their own work date**, in their time zone (People & PINs): a Calgary employee's Monday 07:30–17:00 shows on the **Monday** row, even though it is Tuesday 02:30–12:00 in NZ. Weeks run **Wednesday to Tuesday** in those same dates. Requests use those dates too.
+- Timesheets show the employee's local times and the NZ times side by side. The NZ weekday is marked when it differs. The CSV has both.
 - Time zones use IANA rules, never fixed offsets. For example, Alberta stopped changing clocks in November 2026 and is now UTC−6 all year. A browser with very old time-zone data may show Calgary times an hour off; totals are unaffected.
 - Totals are kept separate: **on clock**, **active work**, **paid breaks**, **unpaid breaks**, **payable** (= active + paid breaks).
 - Breaks (defaults, editable in Settings; confirm against the employment agreement): first rest 15 min paid, meal 30 min unpaid, second rest 15 min paid. Each can be taken once per NZ day. While a break runs, a timer shows elapsed time and time left, then time over. A break that runs over is recorded in full and flagged on that day, never truncated.
