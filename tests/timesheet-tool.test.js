@@ -348,7 +348,8 @@ test('employee requests a day off; GM approves; it shows on the timesheet', asyn
     await enterPin(window, document, employeePin);
     await openTab(window, document, 'Requests');
     const form = document.querySelector('.ts-request-form');
-    form.querySelector('select').value = 'Day off';
+    assert.equal(form.querySelector('select'), null, 'no request types to pick');
+    assert.match(text(form), /Request a day off/);
     // Austin works in Calgary, so request dates are Calgary dates.
     const day = window.MTW_TIMESHEET_CORE.dateKey(Date.now(), 'America/Edmonton');
     const [from, to] = form.querySelectorAll('input[type="date"]');
@@ -364,7 +365,6 @@ test('employee requests a day off; GM approves; it shows on the timesheet', asyn
 
     // End date before start is refused.
     to.value = window.MTW_TIMESHEET_CORE.addDays(day, -1);
-    document.querySelector('.ts-request-form select').value = 'Sick leave';
     const [from2, to2] = document.querySelectorAll('.ts-request-form input[type="date"]');
     from2.value = day;
     to2.value = window.MTW_TIMESHEET_CORE.addDays(day, -1);
