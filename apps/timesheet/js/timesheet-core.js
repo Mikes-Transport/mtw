@@ -267,10 +267,11 @@
     return (Math.max(0, ms) / HOUR).toFixed(2);
   }
 
+  // 12-hour clock time, e.g. '7:30 am', '5:00 pm'.
   function formatTime(ms, timeZone) {
     if (ms == null) return '';
     const p = zonedParts(ms, timeZone);
-    return `${pad(p.hour)}:${pad(p.minute)}`;
+    return `${p.hour % 12 || 12}:${pad(p.minute)} ${p.hour < 12 ? 'am' : 'pm'}`;
   }
 
   function formatDate(date) {

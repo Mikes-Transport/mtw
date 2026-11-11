@@ -12,13 +12,14 @@ A separate app in `apps/timesheet/` that the dashboard loads as the **Timesheet*
      - GM: new day-off requests and cancellations, new work summaries, breaks that ran over, possible missed clock-outs.
      - Employee: their day-off request was approved or declined (with the GM's note).
      - Opening the bell marks everything as seen, saved on the person (`notificationsSeenAt`), so it holds across devices. Clicking a notification opens the right tab. The last 30 days are kept.
-   - All times are 24-hour.
+   - Times are 12-hour (e.g. 5:05 pm).
    - Everything updates live through Firestore listeners (polling every 30 s if those are unavailable). Redraws wait while someone is typing.
 3. **Lock** forgets the PIN for this browser tab.
 
 ## Rules it follows (from the spec)
 
 - Times are stored as UTC instants. **Each person's shifts are filed under their own work date**, in their time zone (People & PINs): a Calgary employee's Monday 07:30–17:00 shows on the **Monday** row, even though it is Tuesday 02:30–12:00 in NZ. Weeks run **Wednesday to Tuesday** in those same dates. Requests use those dates too.
+- The week shown is always the person's current Wednesday–Tuesday week and rolls over by itself at their Wednesday midnight, even if the tool is left open. For a Calgary employee that is 7 pm Wednesday NZ time. Paging with the arrows holds a week; **This week** goes back to following.
 - Timesheets show the employee's local times and the NZ times side by side. The NZ weekday is marked when it differs. The CSV has both.
 - Time zones use IANA rules, never fixed offsets. For example, Alberta stopped changing clocks in November 2026 and is now UTC−6 all year. A browser with very old time-zone data may show Calgary times an hour off; totals are unaffected.
 - Totals are kept separate: **on clock**, **active work**, **paid breaks**, **unpaid breaks**, **payable** (= active + paid breaks).
