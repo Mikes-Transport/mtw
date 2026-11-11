@@ -23,7 +23,7 @@
   const DASHBOARD_SHELL_URL = new URL('js/navigation/dashboard-shell.js', BASE_URL).href;
 
   // Bump on each release so the live page can be checked for the version it runs.
-  const NAVIGATION_BUILD = '2026-11-11.21';
+  const NAVIGATION_BUILD = '2026-11-11.22';
 
   const TOOLS = {
     'activity-logs': { panel: '.activity-logs-panel', name: 'Activity Logs', roles: ['Managers'] },
