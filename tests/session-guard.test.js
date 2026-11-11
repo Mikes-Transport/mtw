@@ -75,7 +75,7 @@ test('the loader checks the sign-in before loading anything else', () => {
   }
   assert.match(body, /else if \(!guard\.guard\(window\)\) \{\s*return;/);
   // An invalid share link is sent to /admin before any styles, templates or tools load.
-  const invalidAt = body.indexOf('if (!share) {');
+  const invalidAt = body.indexOf('if (!result.share) {');
   assert.ok(invalidAt > guardAt && invalidAt < body.indexOf('stylesheet('));
 });
 
@@ -106,8 +106,8 @@ test('share tokens: random, URL-safe, and only their hash identifies the link', 
   assert.notEqual(hash, a);
   assert.equal(guard.shareToken({ search: `?share=${a}` }), a);
   assert.equal(guard.shareToken({ search: '' }), null);
-  assert.equal(guard.shareToken({ search: '?share=short' }), null);
-  assert.equal(guard.shareToken({ search: '?share=<script>alert(1)</script>xxxxxxxxxxxxxxx' }), null);
+  assert.equal(guard.shareToken({ search: '?share=short' }), '', 'present but malformed');
+  assert.equal(guard.shareToken({ search: '?share=<script>alert(1)</script>xxxxxxxxxxxxxxx' }), '');
 });
 
 test('share links: valid opens the tool; revoked, unknown tool or missing do not', async () => {
@@ -131,4 +131,10 @@ test('share links: valid opens the tool; revoked, unknown tool or missing do not
   assert.equal(await guard.validateShare(other, api), null);
   assert.equal(await guard.validateShare(missing, api), null);
   assert.equal(await guard.validateShare(good, null), null);
+  assert.match((await guard.checkShare(revoked, api)).reason, /revoked/);
+  assert.match((await guard.checkShare(missing, api)).reason, /not found/);
+  assert.match((await guard.checkShare('', api)).reason, /incomplete/);
+  assert.match((await guard.checkShare(good, { db: {} })).reason, /database/);
+  const failing = { ...api, getDoc: async () => { throw Object.assign(new Error('x'), { code: 'permission-denied' }); } };
+  assert.match((await guard.checkShare(good, failing)).reason, /permission-denied/);
 });
