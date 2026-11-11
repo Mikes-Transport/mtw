@@ -5741,8 +5741,9 @@ return date.toLocaleString(
 day: '2-digit',
 month: 'short',
 year: 'numeric',
-hour: 'numeric',
-minute: '2-digit'
+hour: '2-digit',
+minute: '2-digit',
+hourCycle: 'h23'
 }
 );
 

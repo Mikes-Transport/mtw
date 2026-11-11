@@ -34,9 +34,13 @@ function memoryFirestore() {
     return { forEach(fn) { rows.forEach(([id, data]) => fn({ id, data: () => copy(data) })); } };
   };
   // Like Firestore: listeners get the current data at once and after every write.
-  const notify = name => (listeners[name] || []).forEach(fn => setTimeout(() => fn(snapshot(name)), 0));
+  // Run callbacks on the page's timers (set by host) so nothing fires after it closes.
+  const later = fn => (api.scheduler ? api.scheduler(fn) : setTimeout(fn, 0));
+  const notify = name => (listeners[name] || []).forEach(fn => later(() => fn(snapshot(name))));
+  const api = {};
   return {
     store,
+    hooks: api,
     api: {
       db: {},
       collection: (db, name) => ({ name }),
@@ -52,7 +56,7 @@ function memoryFirestore() {
       deleteDoc: async ref => { delete table(ref.name)[ref.id]; notify(ref.name); },
       onSnapshot: (ref, onNext) => {
         (listeners[ref.name] = listeners[ref.name] || []).push(onNext);
-        setTimeout(() => onNext(snapshot(ref.name)), 0);
+        later(() => onNext(snapshot(ref.name)));
         return () => { listeners[ref.name] = listeners[ref.name].filter(fn => fn !== onNext); };
       }
     }
@@ -83,6 +87,7 @@ function host(role = 'Managers') {
       };
     }
   });
+  firestore.hooks.scheduler = fn => dom.window.setTimeout(fn, 0);
   return { dom, window: dom.window, document: dom.window.document, errors, store: firestore.store };
 }
 
@@ -393,4 +398,70 @@ test('employee requests a day off; GM approves; it shows on the timesheet', asyn
   } finally {
     dom.window.close();
   }
+});
+
+test('notifications: GM sees new requests and summaries (with a live toast); employee sees approved/declined', async () => {
+  const { dom, window, document, store } = host();
+  try {
+    await waitFor(window, () => document.querySelector('.mtw-dashboard-shell'));
+    loadTimesheet(window);
+    const { gmPin, employeePin } = await setUpPeople(window, document);
+    const people = () => Object.entries(store['timesheet-people']);
+    const austinId = people().find(([, p]) => p.name === 'Austin')[0];
+    const gmId = people().find(([, p]) => p.name === 'Taran')[0];
+    const badge = () => text(document.querySelector('.ts-bell .ts-badge'));
+
+    await openTab(window, document, 'Team status');
+    assert.equal(document.querySelector('.ts-bell .ts-badge'), null, 'nothing new yet');
+
+    // While the GM watches, Austin (elsewhere) asks for a day off and writes a summary.
+    const day = window.MTW_TIMESHEET_CORE.dateKey(Date.now(), 'America/Edmonton');
+    await window.MTW.addDoc(window.MTW.collection(window.MTW.db, 'timesheet-requests'), {
+      personId: austinId, type: 'Day off', from: day, to: day, note: '', status: 'pending', createdAt: Date.now()
+    });
+    await waitFor(window, () => /asked for a day off/.test(text(document.querySelector('.ts-toast'))));
+    await window.MTW.setDoc(window.MTW.doc(window.MTW.db, 'timesheet-summaries', `${austinId}_${day}`), {
+      personId: austinId, date: day, text: 'Flyers done', updatedAt: Date.now() + 1
+    });
+    await waitFor(window, () => badge() === '2');
+
+    document.querySelector('.ts-bell').click();
+    await waitFor(window, () => document.querySelectorAll('.ts-notification.is-new').length === 2);
+    assert.match(text(document.querySelector('.ts-notifications')), /Austin asked for a day off/);
+    assert.match(text(document.querySelector('.ts-notifications')), /Austin wrote a work summary/);
+    await waitFor(window, () => store['timesheet-people'][gmId].notificationsSeenAt > 0);
+    await waitFor(window, () => !document.querySelector('.ts-bell .ts-badge'));
+
+    // Clicking a notification goes to the right tab.
+    [...document.querySelectorAll('.ts-notification')].find(b => /day off/.test(text(b))).click();
+    await waitFor(window, () => /Requests/.test(text(document.querySelector('.ts-tab.active'))));
+    document.querySelector('.ts-review input').value = 'Sure';
+    button(document, 'Approve').click();
+    await waitFor(window, () => /Request approved/.test(text(document.querySelector('.ts-message'))));
+
+    // Austin sees that it was approved.
+    button(document, 'Lock').click();
+    await enterPin(window, document, employeePin);
+    await waitFor(window, () => badge() === '1');
+    document.querySelector('.ts-bell').click();
+    await waitFor(window, () => document.querySelector('.ts-notifications'));
+    assert.match(text(document.querySelector('.ts-notification')), /was approved: "Sure"/);
+    assert.ok(document.querySelector('.ts-notification.ts-n-approved'));
+    assert.ok(gmPin);
+  } finally {
+    dom.window.close();
+  }
+});
+
+test('times across the dashboard and timesheet are 24-hour', () => {
+  const root = path.join(REPO_ROOT, 'apps');
+  const files = ['dashboard/js/activity/activity-logs.js', 'dashboard/js/activity/change-logs.js',
+    'dashboard/js/inventory/barcodes.js', 'workplace/js/app.js', 'timesheet/js/timesheet-core.js'];
+  for (const file of files) {
+    const source = fs.readFileSync(path.join(root, file), 'utf8');
+    assert.doesNotMatch(source, /toLocaleString\(\)/, `${file}: no default (12-hour) locale format`);
+    assert.doesNotMatch(source, /hour:\s*'numeric'/, `${file}: no 12-hour 'numeric' hours`);
+  }
+  const core = require('../apps/timesheet/js/timesheet-core.js');
+  assert.equal(core.formatTime(Date.UTC(2026, 10, 11, 4, 5), 'Pacific/Auckland'), '17:05');
 });

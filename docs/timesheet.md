@@ -8,6 +8,11 @@ A separate app in `apps/timesheet/` that the dashboard loads as the **Timesheet*
 2. **Unlock:** enter a 6-digit PIN. The PIN decides who you are:
    - **Employee** tabs: **Clock** (clock in and out, task, breaks with a live timer, today's totals and notes, daily work summary), **My hours** (their Wednesday–Tuesday week and summaries), **Requests** (ask not to work a day or run of days; cancel while pending).
    - **GM** tabs: **Team status** (live), **Hours** (any employee's week, work summaries, CSV export), **Requests** (approve or decline, with a note; the tab shows how many are waiting), **People & PINs** (add people, reset PINs, remove people; removing keeps their records), **Settings** (breaks, tasks, missed clock-out hours).
+   - **Notifications** (bell with an unread count, plus a short pop-up when something arrives while the tool is open):
+     - GM: new day-off requests and cancellations, new work summaries, breaks that ran over, possible missed clock-outs.
+     - Employee: their day-off request was approved or declined (with the GM's note).
+     - Opening the bell marks everything as seen, saved on the person (`notificationsSeenAt`), so it holds across devices. Clicking a notification opens the right tab. The last 30 days are kept.
+   - All times are 24-hour.
    - Everything updates live through Firestore listeners (polling every 30 s if those are unavailable). Redraws wait while someone is typing.
 3. **Lock** forgets the PIN for this browser tab.
 
@@ -26,7 +31,7 @@ A separate app in `apps/timesheet/` that the dashboard loads as the **Timesheet*
 
 | Collection | Fields |
 |---|---|
-| `timesheet-people` | `name`, `role` (`employee`/`gm`), `timeZone`, `pinSalt`, `pinHash`, `active`, `createdAt` |
+| `timesheet-people` | `name`, `role` (`employee`/`gm`), `timeZone`, `pinSalt`, `pinHash`, `active`, `createdAt`, `notificationsSeenAt` |
 | `timesheet-sessions` | `personId`, `startAt`, `endAt` (null while open), `task`, `breaks[]` (`type`, `paid`, `startAt`, `endAt`), `createdAt`, `updatedAt` |
 | `timesheet-summaries` | id `<personId>_<NZ date>`: `personId`, `date`, `text`, `updatedAt` |
 | `timesheet-audit` | `actorId`, `action`, `targetType`, `targetId`, `at`, `details` |
