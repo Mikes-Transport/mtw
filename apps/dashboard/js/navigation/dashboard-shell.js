@@ -128,6 +128,19 @@
       element('span', 'mtw-shell-account-label', 'Signed in as'),
       element('strong', 'mtw-shell-account-role', role || 'Dashboard user')
     );
+    const signOut = element('button', 'mtw-shell-signout', 'Sign out');
+    signOut.type = 'button';
+    signOut.addEventListener('click', () => {
+      if (window.MTW_SESSION_GUARD) {
+        window.MTW_SESSION_GUARD.signOut(window);
+      } else {
+        sessionStorage.removeItem('mtw_admin_logged_in');
+        sessionStorage.removeItem('mtw_admin_name');
+        sessionStorage.removeItem('mtw_timesheet_person');
+        window.location.replace('/admin');
+      }
+    });
+    account.append(signOut);
     header.append(brand, account);
 
     const navigation = element('nav', 'mtw-shell-navigation');

@@ -2,7 +2,8 @@
 //
 //   <script type="module" src="https://…/apps/dashboard/js/dashboard.js"></script>
 //
-// Everything else (Firebase, styles, panel markup, navigation, shell and every tool
+// It first checks the sign-in (access/session-guard.js): signed-out visitors are sent to
+// /admin and see nothing. Everything else (Firebase, styles, panel markup, navigation, shell and every tool
 // script) loads from the same base URL as this file, so all of it comes from the same
 // commit. See docs/dashboard-troubleshooting.md.
 
@@ -66,6 +67,11 @@ async function start() {
   if (window.MTW_DASHBOARD_LOADER_STARTED) return;
   window.MTW_DASHBOARD_LOADER_STARTED = true;
   window.MTW_DASHBOARD_BASE_URL = BASE;
+
+  // Signed out (no sign-in this browser session): hide the page and go to /admin
+  // before loading anything else.
+  await import('./access/session-guard.js');
+  if (!window.MTW_SESSION_GUARD.guard(window)) return;
 
   stylesheet('https://fonts.googleapis.com/css2?family=Exo:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&family=Montserrat:wght@400;500;600;700;800;900&display=swap');
   stylesheet(`${BASE}styles/tools.css`);
