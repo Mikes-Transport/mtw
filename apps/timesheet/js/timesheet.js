@@ -521,6 +521,7 @@
         state.person = person;
         state.weekStart = core().weekStart(today(person));
         state.weekFor = null;
+        state.weekPinned = false;
         state.viewPersonId = null;
         state.tab = person.role === 'gm' ? 'status' : 'clock';
         state.reveal = null;
@@ -704,13 +705,28 @@
     return flag;
   }
 
+  // The week shown follows the calendar: it is always the person's current Wed–Tue week
+  // (so it rolls over at their Wednesday midnight), unless someone has paged to another
+  // week with the arrows. "This week" goes back to following.
+  function followWeek(person) {
+    if (state.weekFor !== person.id) {
+      state.weekFor = person.id;
+      state.weekPinned = false;
+    }
+    if (!state.weekPinned) state.weekStart = core().weekStart(today(person));
+  }
+
   function weekNav(person = state.person) {
-    const move = n => () => { state.weekStart = core().addDays(state.weekStart, 7 * n); render(); };
+    const move = n => () => {
+      state.weekStart = core().addDays(state.weekStart, 7 * n);
+      state.weekPinned = state.weekStart !== core().weekStart(today(person));
+      render();
+    };
     return h('div', { class: 'ts-weeknav' },
       h('button', { type: 'button', class: 'ts-btn', onclick: move(-1), 'aria-label': 'Previous week', text: '‹' }),
       h('span', { class: 'ts-week-label', text: `${core().formatDate(state.weekStart)} – ${core().formatDate(core().addDays(state.weekStart, 6))} (${zoneLabel(workZone(person))} dates)` }),
       h('button', { type: 'button', class: 'ts-btn', onclick: move(1), 'aria-label': 'Next week', text: '›' }),
-      h('button', { type: 'button', class: 'ts-btn', text: 'This week', onclick: () => { state.weekStart = core().weekStart(today(person)); render(); } }));
+      h('button', { type: 'button', class: 'ts-btn', text: 'This week', onclick: () => { state.weekPinned = false; state.weekStart = core().weekStart(today(person)); render(); } }));
   }
 
   function weekTable(person, week) {
@@ -834,7 +850,7 @@
     const person = state.person;
     const mine = sessionsFor(person.id);
     const status = core().status(mine);
-    if (state.weekFor !== person.id) { state.weekStart = core().weekStart(today(person)); state.weekFor = person.id; }
+    followWeek(person);
     const [todayRow] = core().summarize(mine, [today(person)], calcOptions(person));
     const tasks = cfg().tasks;
 
@@ -985,7 +1001,7 @@
       const viewing = employees.find(p => p.id === state.viewPersonId);
       if (!viewing) return [h('div', { class: 'ts-card' }, h('p', { class: 'ts-hint', text: 'No employees yet. Add one under People & PINs.' }))];
       // Each person's view starts on their own current week (their dates, not the GM's).
-      if (state.weekFor !== viewing.id) { state.weekStart = core().weekStart(today(viewing)); state.weekFor = viewing.id; }
+      followWeek(viewing);
       const week = core().weekSummary(sessionsFor(viewing.id), state.weekStart || core().weekStart(today(viewing)), calcOptions(viewing));
       const picker = h('select', { class: 'ts-input ts-person-picker', 'aria-label': 'Employee' },
         employees.map(p => h('option', { value: p.id, text: p.name, selected: p.id === viewing.id })));
@@ -1153,6 +1169,7 @@
       body.append(...[].concat(state.person.role === 'gm' ? renderGm() : renderEmployee()).filter(Boolean));
     }
     if (state.person) announceNew();
+    if (state.loaded && core()) state.renderedDates = datesNow();
     const toast = state.toast && state.toast.until > Date.now()
       ? h('div', { class: `ts-toast ts-n-${state.toast.kind}`, role: 'status' },
         h('span', { text: state.toast.text }),
@@ -1163,9 +1180,19 @@
   }
 
   // Live clocks, elapsed time and break countdowns, without re-rendering.
+  // Today's date for everyone in the tool, in their own zones.
+  function datesNow() {
+    const zones = new Set([reportingZone(), ...state.people.map(p => workZone(p))]);
+    return [...zones].map(z => core().dateKey(Date.now(), z)).join('|');
+  }
+
   function tick() {
     if (!panel || !panel.isConnected) return;
     const now = Date.now();
+    if (state.loaded && state.renderedDates && state.renderedDates !== datesNow()) {
+      scheduleRender();
+      return;
+    }
     panel.querySelectorAll('[data-live="elapsed"]').forEach(el => {
       el.textContent = core().formatClock(now - Number(el.dataset.from));
     });

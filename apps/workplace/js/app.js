@@ -18,7 +18,7 @@ const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(3
 const nowISO = () => new Date().toISOString();
 const fmtDate = (iso) => {
   try {
-    return new Date(iso).toLocaleString('en-NZ', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    return new Date(iso).toLocaleString('en-NZ', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
   } catch { return iso; }
 };
 const fakeHash = () => Math.random().toString(16).slice(2, 9);
