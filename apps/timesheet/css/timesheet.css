@@ -477,3 +477,143 @@
   justify-content: flex-end;
   margin-top: 16px;
 }
+
+/* Live timer */
+.ts-timer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #f7f7f6;
+}
+
+.ts-timer.is-break {
+  background: #fff7e8;
+}
+
+.ts-timer.is-over {
+  background: #fdecee;
+}
+
+.ts-timer > div {
+  display: grid;
+  gap: 2px;
+}
+
+.ts-timer-value {
+  font-size: 30px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.02em;
+}
+
+.ts-timer-value.over {
+  color: #9e2424;
+}
+
+.ts-timer-label {
+  color: var(--mtw-muted, #777774);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.ts-break.taken strong {
+  color: var(--mtw-muted, #777774);
+}
+
+.ts-day-notes {
+  margin-top: 10px;
+}
+
+.ts-flag.ok {
+  background: #e7f6ec;
+  color: #137a3a;
+}
+
+.ts-summary-snippet {
+  font-style: italic;
+}
+
+/* Work summaries */
+.ts-summaries {
+  margin-top: 6px;
+}
+
+.ts-summary {
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f0f0;
+  font-size: 13px;
+}
+
+.ts-summary p {
+  margin: 4px 0 0;
+  white-space: pre-line;
+}
+
+/* Requests */
+.ts-request-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ts-request {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid #eee;
+  font-size: 13px;
+}
+
+.ts-request:last-child {
+  border-bottom: 0;
+}
+
+.ts-request-main p {
+  margin: 4px 0 0;
+  white-space: pre-line;
+}
+
+.ts-request-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ts-review {
+  display: grid;
+  gap: 8px;
+  min-width: min(100%, 320px);
+}
+
+.ts-review .ts-actions {
+  justify-content: flex-end;
+}
+
+.ts-status-pill {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #f2f1ef;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ts-status-pill.pending { background: #fff4dc; color: #8a5300; }
+.ts-status-pill.approved { background: #e7f6ec; color: #137a3a; }
+.ts-status-pill.declined { background: #fdecee; color: #9e2424; }
+.ts-status-pill.cancelled { color: var(--mtw-muted, #777774); }
+
+@media (max-width: 900px) {
+  .ts-request-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

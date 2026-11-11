@@ -11,6 +11,8 @@
 //   timesheet-summaries { personId, date, text, updatedAt }            (id: `${personId}_${date}`)
 //   timesheet-audit     { actorId, action, targetType, targetId, at, details }
 //   timesheet-settings  main: { breaks: [{ id, label, minutes, paid }], tasks: [..], longSessionHours }
+//   timesheet-requests  { personId, type, from, to, note, status: 'pending'|'approved'|'declined'|'cancelled',
+//                         createdAt, reviewedBy, reviewedAt, reviewNote }   (from/to are NZ dates)
 // Times are UTC milliseconds. Reporting dates and weeks use New Zealand time.
 (function () {
   'use strict';
@@ -26,8 +28,11 @@
     sessions: 'timesheet-sessions',
     summaries: 'timesheet-summaries',
     audit: 'timesheet-audit',
-    settings: 'timesheet-settings'
+    settings: 'timesheet-settings',
+    requests: 'timesheet-requests'
   };
+
+  const REQUEST_TYPES = ['Day off', 'Annual leave', 'Sick leave', 'Unpaid leave', 'Shift change', 'Other'];
 
   const core = () => window.MTW_TIMESHEET_CORE;
   const api = () => window.MTW || {};
@@ -42,8 +47,15 @@
     busy: false,
     loaded: false,
     settings: null,
-    tab: null
+    summaries: [],
+    requests: [],
+    tab: null,
+    // A newly created PIN, shown until unlock, tab change or another PIN: kept in state so
+    // live re-renders don't wipe it.
+    reveal: null,
+    pendingRender: false
   };
+  let unsubscribers = [];
   let panel = null;
   let ticker = null;
   let refresher = null;
@@ -141,20 +153,146 @@
     }
   }
 
+  const apply = {
+    [C.people](rows) {
+      state.people = rows.filter(p => p.active !== false);
+      const unlockedId = sessionStorage.getItem(UNLOCK_KEY);
+      state.person = state.people.find(p => p.id === unlockedId) || null;
+      if (!state.person) sessionStorage.removeItem(UNLOCK_KEY);
+    },
+    [C.sessions](rows) {
+      state.sessions = rows.map(s => ({
+        ...s,
+        startAt: core().toMillis(s.startAt),
+        endAt: core().toMillis(s.endAt),
+        breaks: (s.breaks || []).map(b => ({ ...b, startAt: core().toMillis(b.startAt), endAt: core().toMillis(b.endAt) }))
+      }));
+    },
+    [C.summaries](rows) { state.summaries = rows; },
+    [C.requests](rows) { state.requests = rows; },
+    [C.settings](rows) { state.settings = rows.find(row => row.id === 'main') || null; }
+  };
+
   async function load() {
-    const [people, sessions, settings] = await Promise.all([readAll(C.people), readAll(C.sessions), readAll(C.settings)]);
-    state.settings = settings.find(row => row.id === 'main') || null;
-    state.people = people.filter(p => p.active !== false);
-    state.sessions = sessions.map(s => ({
-      ...s,
-      startAt: core().toMillis(s.startAt),
-      endAt: core().toMillis(s.endAt),
-      breaks: (s.breaks || []).map(b => ({ ...b, startAt: core().toMillis(b.startAt), endAt: core().toMillis(b.endAt) }))
-    }));
-    const unlockedId = sessionStorage.getItem(UNLOCK_KEY);
-    state.person = state.people.find(p => p.id === unlockedId) || null;
-    if (!state.person) sessionStorage.removeItem(UNLOCK_KEY);
+    const names = [C.people, C.sessions, C.summaries, C.settings, C.requests];
+    const results = await Promise.all(names.map(readAll));
+    names.forEach((name, i) => apply[name](results[i]));
     state.loaded = true;
+  }
+
+  // Live updates: Firestore listeners when the page provides onSnapshot, so GMs see
+  // clock-ins, breaks and summaries as they happen. Otherwise poll every 30 seconds.
+  function subscribe() {
+    unsubscribe();
+    const a = api();
+    if (typeof a.onSnapshot !== 'function' || !a.db) return false;
+    try {
+      unsubscribers = [C.people, C.sessions, C.summaries, C.settings, C.requests].map(name =>
+        a.onSnapshot(a.collection(a.db, name), snapshot => {
+          const rows = [];
+          snapshot.forEach(item => rows.push({ id: item.id, ...(item.data() || {}) }));
+          apply[name](rows);
+          state.loaded = true;
+          scheduleRender();
+        }, error => console.warn(`[timesheet] live updates stopped for ${name}:`, error)));
+      return true;
+    } catch (error) {
+      console.warn('[timesheet] live updates unavailable, polling instead:', error);
+      unsubscribe();
+      return false;
+    }
+  }
+
+  function unsubscribe() {
+    unsubscribers.forEach(stop => { try { stop(); } catch (error) { /* already stopped */ } });
+    unsubscribers = [];
+  }
+
+  // Don't redraw under someone typing; catch up when they leave the field.
+  function typingInPanel() {
+    const active = document.activeElement;
+    return Boolean(panel && active && panel.contains(active) &&
+      (active.matches('input, textarea') || (active.matches('select') && !active.closest('.ts-status'))));
+  }
+
+  function scheduleRender() {
+    if (state.busy) return;
+    if (typingInPanel()) {
+      state.pendingRender = true;
+      return;
+    }
+    state.pendingRender = false;
+    render();
+  }
+
+  function summaryText(personId, date) {
+    const row = state.summaries.find(r => r.personId === personId && r.date === date);
+    return row ? String(row.text || '') : '';
+  }
+
+  // Break types started on the given NZ date (each may be taken once per day).
+  function breaksTaken(personId, date) {
+    const taken = new Set();
+    for (const session of sessionsFor(personId)) {
+      for (const b of session.breaks || []) {
+        if (b.startAt != null && core().dateKey(b.startAt, reportingZone()) === date) taken.add(b.type);
+      }
+    }
+    return taken;
+  }
+
+  // Approved requests covering a date, for a person.
+  function approvedOn(personId, date) {
+    return state.requests.filter(r => r.personId === personId && r.status === 'approved' && r.from <= date && date <= r.to);
+  }
+
+  function pendingRequests() {
+    return state.requests.filter(r => r.status === 'pending');
+  }
+
+  async function submitRequest(type, from, to, note) {
+    if (!REQUEST_TYPES.includes(type)) throw userError('Choose a request type.');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from || '')) throw userError('Choose a start date.');
+    const end = to || from;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(end) || end < from) throw userError('The end date must be on or after the start date.');
+    const a = requireDb();
+    const ref = await a.addDoc(a.collection(a.db, C.requests), {
+      personId: state.person.id,
+      type, from, to: end,
+      note: String(note || '').trim().slice(0, 1000),
+      status: 'pending',
+      createdAt: Date.now(),
+      reviewedBy: null, reviewedAt: null, reviewNote: null
+    });
+    await audit('request-submitted', 'request', ref && ref.id, { type, from, to: end });
+    say('Request sent to your GM.');
+  }
+
+  async function reviewRequest(request, status, reviewNote) {
+    const a = requireDb();
+    const changes = status === 'cancelled'
+      ? { status }
+      : { status, reviewedBy: state.person.id, reviewedAt: Date.now(), reviewNote: String(reviewNote || '').trim().slice(0, 1000) || null };
+    await a.updateDoc(a.doc(a.db, C.requests, request.id), changes);
+    await audit(`request-${status}`, 'request', request.id, changes);
+    say(status === 'cancelled' ? 'Request cancelled.' : `Request ${status}.`);
+  }
+
+  function requestRange(r) {
+    return r.from === r.to ? core().formatDate(r.from) : `${core().formatDate(r.from)} – ${core().formatDate(r.to)}`;
+  }
+
+  function requestCard(r, controls) {
+    const person = state.people.find(p => p.id === r.personId);
+    return h('div', { class: `ts-request ts-request-${r.status}` },
+      h('div', { class: 'ts-request-main' },
+        h('strong', { text: `${r.type} · ${requestRange(r)}` }),
+        controls.showName && person ? h('span', { class: 'ts-hint', text: ` · ${person.name}` }) : null,
+        r.note ? h('p', { text: r.note }) : null,
+        r.reviewNote ? h('p', { class: 'ts-hint', text: `GM note: ${r.reviewNote}` }) : null),
+      h('div', { class: 'ts-request-side' },
+        h('span', { class: `ts-status-pill ${r.status}`, text: r.status[0].toUpperCase() + r.status.slice(1) }),
+        controls.buttons || null));
   }
 
   function say(text, kind = 'info') {
@@ -219,6 +357,7 @@
         state.weekStart = core().weekStart(today());
         state.viewPersonId = null;
         state.tab = person.role === 'gm' ? 'status' : 'clock';
+        state.reveal = null;
         say(null);
         return;
       }
@@ -285,6 +424,9 @@
     if (status.state === 'off') throw userError('Clock in before starting a break.');
     if (status.state === 'break') throw userError('A break is already running.');
     const config = cfg().breaks.find(b => b.id === type);
+    if (breaksTaken(state.person.id, today()).has(type)) {
+      throw userError(`${config ? config.label : 'That break'} has already been taken today.`);
+    }
     const breaks = [...(status.session.breaks || []), { type, paid: Boolean(config && config.paid), startAt: Date.now(), endAt: null }];
     await updateSession(status.session, { breaks }, 'break-start');
     say(`${config ? config.label : 'Break'} started.`);
@@ -341,7 +483,6 @@
   }
 
   function renderSetup() {
-    let revealed = null;
     const name = h('input', { class: 'ts-input', type: 'text', placeholder: 'Your name', maxLength: 60 });
     const box = h('div', { class: 'ts-card' },
       h('h3', { text: 'Set up Timesheet' }),
@@ -351,9 +492,9 @@
         type: 'button', class: 'ts-btn primary', text: 'Create GM PIN',
         onclick: () => act(async () => {
           const pin = await createPerson(name.value, 'gm', reportingZone());
-          revealed = pinReveal(name.value.trim(), pin);
+          state.reveal = { name: name.value.trim(), pin };
           say('GM created. Use the PIN below to unlock.');
-        }).then(() => { if (revealed) panel.querySelector('.ts-body').prepend(revealed); })
+        })
       }));
     return box;
   }
@@ -414,7 +555,9 @@
         h('td', { class: 'num', text: core().formatDuration(day.paidBreak) }),
         h('td', { class: 'num', text: core().formatDuration(day.unpaidBreak) }),
         h('td', { class: 'num strong', text: core().formatDuration(day.payable) }),
-        h('td', null, day.flags.map(f => h('span', { class: `ts-flag ${f.startsWith('open') ? 'warn' : 'alert'}`, text: flagText(f) }))));
+        h('td', null,
+          approvedOn(person.id, day.date).map(r => h('span', { class: 'ts-flag ok', text: r.type })),
+          day.flags.map(f => h('span', { class: `ts-flag ${f.startsWith('open') ? 'warn' : 'alert'}`, text: flagText(f) }))));
     });
     const t = week.totals;
     return h('div', { class: 'ts-table-wrap' },
@@ -431,6 +574,72 @@
           h('td', { class: 'num', text: core().formatDuration(t.unpaidBreak) }),
           h('td', { class: 'num strong', text: `${core().formatDuration(t.payable)} (${core().formatHours(t.payable)} h)` }),
           h('td')))));
+  }
+
+  function renderMyRequests(person) {
+    const type = h('select', { class: 'ts-input', 'aria-label': 'Request type' }, REQUEST_TYPES.map(t => h('option', { value: t, text: t })));
+    const from = h('input', { class: 'ts-input', type: 'date', value: today(), 'aria-label': 'From (NZ date)' });
+    const to = h('input', { class: 'ts-input', type: 'date', value: today(), 'aria-label': 'To (NZ date)' });
+    from.addEventListener('change', () => { if (!to.value || to.value < from.value) to.value = from.value; });
+    const note = h('textarea', { class: 'ts-input', rows: 3, maxLength: 1000, placeholder: 'Reason or details (optional)' });
+    const mine = state.requests.filter(r => r.personId === person.id).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    return [
+      h('div', { class: 'ts-card ts-request-form' },
+        h('h3', { text: 'New request' }),
+        h('div', { class: 'ts-request-fields' },
+          h('label', { class: 'ts-field' }, 'Type', type),
+          h('label', { class: 'ts-field' }, 'From (NZ date)', from),
+          h('label', { class: 'ts-field' }, 'To (NZ date)', to)),
+        h('label', { class: 'ts-field' }, 'Note', note),
+        h('div', { class: 'ts-actions ts-settings-actions' },
+          h('button', { type: 'button', class: 'ts-btn primary', text: 'Send request', onclick: () => act(() => submitRequest(type.value, from.value, to.value, note.value)) }))),
+      h('div', { class: 'ts-card' },
+        h('h3', { text: 'My requests' }),
+        mine.length
+          ? mine.map(r => requestCard(r, {
+            buttons: r.status === 'pending'
+              ? h('button', { type: 'button', class: 'ts-btn', text: 'Cancel request', onclick: () => act(() => reviewRequest(r, 'cancelled')) })
+              : null
+          }))
+          : h('p', { class: 'ts-hint', text: 'No requests yet.' }))
+    ];
+  }
+
+  function renderGmRequests() {
+    const sorted = [...state.requests].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    const pending = sorted.filter(r => r.status === 'pending');
+    const done = sorted.filter(r => r.status !== 'pending').slice(0, 50);
+    return [
+      h('div', { class: 'ts-card' },
+        h('h3', { text: `Waiting for review (${pending.length})` }),
+        pending.length
+          ? pending.map(r => {
+            const reply = h('input', { class: 'ts-input', type: 'text', maxLength: 1000, placeholder: 'Note to employee (optional)', 'aria-label': 'Note to employee' });
+            return requestCard(r, {
+              showName: true,
+              buttons: h('div', { class: 'ts-review' }, reply,
+                h('div', { class: 'ts-actions' },
+                  h('button', { type: 'button', class: 'ts-btn danger', text: 'Decline', onclick: () => act(() => reviewRequest(r, 'declined', reply.value)) }),
+                  h('button', { type: 'button', class: 'ts-btn primary', text: 'Approve', onclick: () => act(() => reviewRequest(r, 'approved', reply.value)) })))
+            });
+          })
+          : h('p', { class: 'ts-hint', text: 'Nothing waiting.' })),
+      h('div', { class: 'ts-card' },
+        h('h3', { text: 'History' }),
+        done.length ? done.map(r => requestCard(r, { showName: true })) : h('p', { class: 'ts-hint', text: 'No reviewed requests yet.' }))
+    ];
+  }
+
+  // Daily work summaries written by the employee, for the week shown.
+  function summariesList(person, week) {
+    const rows = week.days.map(day => ({ day, text: summaryText(person.id, day.date) })).filter(r => r.text.trim());
+    return h('div', { class: 'ts-summaries' },
+      h('h4', { text: 'Work summaries' }),
+      rows.length
+        ? rows.map(({ day, text }) => h('div', { class: 'ts-summary' },
+          h('strong', { text: core().formatDate(day.date) }),
+          h('p', { text })))
+        : h('p', { class: 'ts-hint', text: 'No work summaries written this week.' }));
   }
 
   function taskTotals(week) {
@@ -453,45 +662,80 @@
       tasks.map(t => h('option', { value: t, text: t, selected: status.session && status.session.task === t })));
     if (status.session) taskSelect.addEventListener('change', () => act(() => changeTask(taskSelect.value || null)));
 
+    const runningBreak = status.state === 'break'
+      ? cfg().breaks.find(b => b.id === status.break.type) || { id: status.break.type, label: 'Break', minutes: 0 }
+      : null;
     const stateText = status.state === 'off'
       ? 'Clocked out'
-      : status.state === 'break'
-        ? `On ${(cfg().breaks.find(b => b.id === status.break.type) || { label: 'break' }).label.toLowerCase()}`
-        : 'Working';
-    const since = status.session
-      ? h('span', { class: 'ts-live', 'data-live': 'since', 'data-from': String(status.break ? status.break.startAt : status.session.startAt) })
-      : null;
+      : runningBreak ? `On ${runningBreak.label.toLowerCase()}` : 'Working';
+
+    // Big live timer: the break while on one, otherwise the session.
+    const timer = runningBreak
+      ? h('div', { class: 'ts-timer is-break' },
+        h('div', null,
+          h('span', { class: 'ts-timer-value', 'data-live': 'elapsed', 'data-from': String(status.break.startAt), text: core().formatClock(Date.now() - status.break.startAt) }),
+          h('span', { class: 'ts-timer-label', text: 'on break' })),
+        h('div', null,
+          h('span', {
+            class: 'ts-timer-value', 'data-live': 'remaining', 'data-from': String(status.break.startAt),
+            'data-allowed': String(runningBreak.minutes * core().MINUTE),
+            text: core().formatClock(Math.abs(runningBreak.minutes * core().MINUTE - (Date.now() - status.break.startAt)))
+          }),
+          h('span', {
+            class: 'ts-timer-label', 'data-live-label': 'remaining',
+            text: Date.now() - status.break.startAt > runningBreak.minutes * core().MINUTE ? 'over the allowance' : 'left'
+          })))
+      : status.session
+        ? h('div', { class: 'ts-timer' },
+          h('div', null,
+            h('span', { class: 'ts-timer-value', 'data-live': 'elapsed', 'data-from': String(status.session.startAt), text: core().formatClock(Date.now() - status.session.startAt) }),
+            h('span', { class: 'ts-timer-label', text: 'since clock-in' })))
+        : null;
 
     const clockCard = h('div', { class: `ts-card ts-status ts-state-${status.state}` },
       h('div', { class: 'ts-status-row' },
         h('div', null,
           h('span', { class: 'ts-state-label', text: stateText }),
           status.session ? h('p', { class: 'ts-hint' },
-            `Since ${core().formatTime(status.session.startAt, personZone(person))} your time (${core().formatTime(status.session.startAt, reportingZone())} NZ) · `, since) : null),
+            `Clocked in ${core().formatTime(status.session.startAt, personZone(person))} your time (${core().formatTime(status.session.startAt, reportingZone())} NZ)`) : null),
         status.state === 'off'
           ? h('button', { type: 'button', class: 'ts-btn primary big', text: 'Clock in', disabled: state.busy, onclick: () => act(() => clockIn(taskSelect.value || null)) })
           : h('button', { type: 'button', class: 'ts-btn danger big', text: 'Clock out', disabled: state.busy, onclick: () => act(clockOut) })),
+      timer,
       h('label', { class: 'ts-field' }, 'Task', taskSelect));
 
     const allowances = core().breakAllowances(todayRow, cfg().breaks);
+    const taken = breaksTaken(person.id, today());
     const breakCard = h('div', { class: 'ts-card' },
       h('h3', { text: 'Breaks today' }),
-      h('p', { class: 'ts-hint', text: 'Webcam checks will pause during registered breaks (coming later).' }),
+      h('p', { class: 'ts-hint', text: 'Each break can be taken once per day. Going over the allowance is recorded on that day.' }),
       allowances.map(b => {
-        const running = status.state === 'break' && status.break.type === b.id;
-        return h('div', { class: `ts-break${b.over ? ' over' : ''}${running ? ' running' : ''}` },
+        const running = Boolean(runningBreak) && runningBreak.id === b.id;
+        const used = taken.has(b.id);
+        let detail;
+        if (running) {
+          detail = h('span', { 'data-live': 'break-row', 'data-from': String(status.break.startAt), 'data-allowed': String(b.allowedMs) },
+            `Running · ${core().formatClock(Date.now() - status.break.startAt)}`);
+        } else if (used) {
+          detail = b.over
+            ? `Taken · ${core().formatClock(b.usedMs)} · over by ${core().formatClock(b.usedMs - b.allowedMs)}`
+            : `Taken · ${core().formatClock(b.usedMs)}`;
+        } else {
+          detail = 'Not taken yet';
+        }
+        return h('div', { class: `ts-break${b.over ? ' over' : ''}${running ? ' running' : ''}${used && !running ? ' taken' : ''}` },
           h('div', null,
             h('strong', { text: b.label }), ` · ${b.paid ? 'paid' : 'unpaid'} · ${Math.round(b.allowedMs / 60000)} min`,
-            h('p', { class: 'ts-hint' },
-              running ? h('span', { 'data-live': 'countdown', 'data-from': String(status.break.startAt), 'data-allowed': String(b.allowedMs), 'data-used': String(b.usedMs - (Date.now() - status.break.startAt)) })
-                : `${core().formatDuration(b.usedMs)} used · ${core().formatDuration(b.remainingMs)} left${b.over ? ' · over allowance' : ''}`)),
+            h('p', { class: 'ts-hint' }, detail)),
           running
             ? h('button', { type: 'button', class: 'ts-btn primary', text: 'End break', disabled: state.busy, onclick: () => act(endBreak) })
-            : h('button', {
-              type: 'button', class: 'ts-btn', text: 'Start',
-              disabled: state.busy || status.state !== 'working' || b.remainingMs === 0,
-              onclick: () => act(() => startBreak(b.id))
-            }));
+            : used
+              ? h('button', { type: 'button', class: 'ts-btn', text: 'Taken', disabled: true })
+              : h('button', {
+                type: 'button', class: 'ts-btn', text: 'Start',
+                disabled: state.busy || status.state !== 'working',
+                onclick: () => act(() => startBreak(b.id))
+              }));
       }));
 
     const summaryInput = h('textarea', { class: 'ts-input', rows: 4, maxLength: 4000, placeholder: 'Products uploaded, pages updated, flyers finished, meetings…' });
@@ -499,43 +743,38 @@
       h('h3', { text: `Work summary · ${core().formatDate(today())}` }),
       summaryInput,
       h('button', { type: 'button', class: 'ts-btn', text: 'Save summary', onclick: () => act(() => saveSummary(today(), summaryInput.value)) }));
-    loadSummary(person.id, today()).then(text => { if (!summaryInput.value) summaryInput.value = text; });
+    summaryInput.value = summaryText(person.id, today());
 
     const week = core().weekSummary(mine, state.weekStart || core().weekStart(today()), calcOptions());
+    if (state.tab === 'requests') return renderMyRequests(person);
     if (state.tab === 'hours') {
       return [
-        h('div', { class: 'ts-card' }, h('h3', { text: 'My hours' }), weekNav(), totalsGrid(week.totals), weekTable(person, week), taskTotals(week))
+        h('div', { class: 'ts-card' }, h('h3', { text: 'My hours' }), weekNav(), totalsGrid(week.totals), weekTable(person, week), taskTotals(week), summariesList(person, week))
       ];
     }
     return [
-      h('div', { class: 'ts-grid' }, clockCard, h('div', { class: 'ts-card' }, h('h3', { text: `Today · ${core().formatDate(today())} (NZ)` }), totalsGrid(todayRow))),
+      h('div', { class: 'ts-grid' }, clockCard, h('div', { class: 'ts-card' },
+        h('h3', { text: `Today · ${core().formatDate(today())} (NZ)` }),
+        totalsGrid(todayRow),
+        todayRow.flags.length ? h('div', { class: 'ts-day-notes' }, todayRow.flags.map(f => h('span', { class: `ts-flag ${f.startsWith('open') ? 'warn' : 'alert'}`, text: flagText(f) }))) : null)),
       h('div', { class: 'ts-grid' }, breakCard, summaryCard)
     ];
-  }
-
-  async function loadSummary(personId, date) {
-    try {
-      const a = requireDb();
-      if (typeof a.getDoc !== 'function') return '';
-      const snap = await a.getDoc(a.doc(a.db, C.summaries, `${personId}_${date}`));
-      return snap && snap.exists() ? (snap.data().text || '') : '';
-    } catch (error) {
-      return '';
-    }
   }
 
   function csvFor(person, week) {
     const q = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
     const zone = reportingZone();
-    const lines = [['Employee', 'NZ date', 'Weekday', 'Sessions (NZ)', 'On clock (h)', 'Active (h)', 'Paid breaks (h)', 'Unpaid breaks (h)', 'Payable (h)', 'Notes'].map(q).join(',')];
+    const lines = [['Employee', 'NZ date', 'Weekday', 'Sessions (NZ)', 'On clock (h)', 'Active (h)', 'Paid breaks (h)', 'Unpaid breaks (h)', 'Payable (h)', 'Notes', 'Work summary'].map(q).join(',')];
     for (const day of week.days) {
       const spans = day.sessions.map(s => `${core().formatTime(s.startAt, zone)}-${s.endAt == null ? 'open' : core().formatTime(s.endAt, zone)}`).join(' ');
       lines.push([person.name, day.date, day.weekday, spans, core().formatHours(day.onClock), core().formatHours(day.active),
-        core().formatHours(day.paidBreak), core().formatHours(day.unpaidBreak), core().formatHours(day.payable), day.flags.map(flagText).join('; ')].map(q).join(','));
+        core().formatHours(day.paidBreak), core().formatHours(day.unpaidBreak), core().formatHours(day.payable),
+        approvedOn(person.id, day.date).map(r => r.type).concat(day.flags.map(flagText)).join('; '),
+        summaryText(person.id, day.date)].map(q).join(','));
     }
     const t = week.totals;
     lines.push([person.name, `${week.start} to ${week.end}`, 'Week total', '', core().formatHours(t.onClock), core().formatHours(t.active),
-      core().formatHours(t.paidBreak), core().formatHours(t.unpaidBreak), core().formatHours(t.payable), ''].map(q).join(','));
+      core().formatHours(t.paidBreak), core().formatHours(t.unpaidBreak), core().formatHours(t.payable), '', ''].map(q).join(','));
     return lines.join('\r\n');
   }
 
@@ -553,6 +792,7 @@
     if (!employees.find(p => p.id === state.viewPersonId)) state.viewPersonId = employees.length ? employees[0].id : null;
 
     if (state.tab === 'people') return [renderPeople()];
+    if (state.tab === 'requests') return renderGmRequests();
     if (state.tab === 'settings') return [renderSettings()];
 
     if (state.tab === 'hours') {
@@ -571,7 +811,7 @@
               type: 'button', class: 'ts-btn', text: 'Export CSV',
               onclick: () => download(`timesheet-${viewing.name.replace(/\W+/g, '-').toLowerCase()}-${week.start}.csv`, csvFor(viewing, week))
             }))),
-        weekNav(), totalsGrid(week.totals), weekTable(viewing, week), taskTotals(week))];
+        weekNav(), totalsGrid(week.totals), weekTable(viewing, week), taskTotals(week), summariesList(viewing, week))];
     }
 
     // Team status
@@ -589,9 +829,12 @@
           },
           h('strong', { text: p.name }),
           h('span', { class: 'ts-state-label', text: label }),
+          approvedOn(p.id, today()).map(r => h('span', { class: 'ts-flag ok', text: `${r.type} today` })),
           status.session ? h('span', { class: 'ts-hint', text: `since ${core().formatTime(status.break ? status.break.startAt : status.session.startAt, reportingZone())} NZ` }) : null,
           status.session && status.session.task ? h('span', { class: 'ts-hint', text: status.session.task }) : null,
-          h('span', { class: 'ts-hint', text: `Today ${core().formatDuration(todayRow.payable)} payable` }));
+          h('span', { class: 'ts-hint', text: `Today ${core().formatDuration(todayRow.payable)} payable` }),
+          todayRow.flags.filter(f => f !== 'open').map(f => h('span', { class: `ts-flag ${f.startsWith('open') ? 'warn' : 'alert'}`, text: flagText(f) })),
+          summaryText(p.id, today()) ? h('span', { class: 'ts-hint ts-summary-snippet', text: `“${summaryText(p.id, today()).slice(0, 90)}${summaryText(p.id, today()).length > 90 ? '…' : ''}”` }) : null);
         }))
         : h('p', { class: 'ts-hint', text: 'No employees yet. Add one under People & PINs.' }))];
   }
@@ -645,15 +888,13 @@
   }
 
   function renderPeople() {
-    let revealed = null;
     const list = h('div', { class: 'ts-people' }, state.people.map(p =>
       h('div', { class: 'ts-person' },
         h('div', null, h('strong', { text: p.name }), ` · ${p.role === 'gm' ? 'GM' : 'Employee'} · ${p.timeZone || ''}`),
         h('div', { class: 'ts-actions' },
           h('button', {
             type: 'button', class: 'ts-btn', text: 'Reset PIN',
-            onclick: () => act(async () => { revealed = pinReveal(p.name, await resetPin(p)); say(`New PIN created for ${p.name}.`); })
-              .then(() => { if (revealed) panel.querySelector('.ts-people-card').prepend(revealed); })
+            onclick: () => act(async () => { state.reveal = { name: p.name, pin: await resetPin(p) }; say(`New PIN created for ${p.name}.`); })
           }),
           p.id === state.person.id ? null : h('button', {
             type: 'button', class: 'ts-btn danger', text: 'Remove',
@@ -673,6 +914,7 @@
     role.addEventListener('change', () => { zone.value = role.value === 'gm' ? 'Pacific/Auckland' : 'America/Edmonton'; });
 
     return h('div', { class: 'ts-card ts-people-card' },
+      state.reveal ? pinReveal(state.reveal.name, state.reveal.pin) : null,
       h('h3', { text: 'People & PINs' }),
       list,
       h('div', { class: 'ts-add' },
@@ -680,9 +922,9 @@
         h('button', {
           type: 'button', class: 'ts-btn primary', text: 'Add & create PIN',
           onclick: () => act(async () => {
-            revealed = pinReveal(name.value.trim(), await createPerson(name.value, role.value, zone.value));
+            state.reveal = { name: name.value.trim(), pin: await createPerson(name.value, role.value, zone.value) };
             say('Person added.');
-          }).then(() => { if (revealed) panel.querySelector('.ts-people-card').prepend(revealed); })
+          })
         })));
   }
 
@@ -693,7 +935,7 @@
       class: `ts-tab${state.tab === id ? ' active' : ''}`,
       'aria-selected': String(state.tab === id),
       'data-tab': id,
-      onclick: () => { state.tab = id; say(null); render(); }
+      onclick: () => { state.tab = id; state.reveal = null; say(null); render(); }
     }, label)));
   }
 
@@ -708,13 +950,16 @@
     } else if (!state.people.length) {
       body.append(renderSetup());
     } else if (!state.person) {
+      if (state.reveal) body.append(pinReveal(state.reveal.name, state.reveal.pin));
       body.append(renderUnlock());
     } else {
       if (!state.weekStart) state.weekStart = core().weekStart(today());
       title = state.person.role === 'gm' ? 'Timesheets' : 'My Timesheet';
       const list = state.person.role === 'gm'
-        ? [['status', 'Team status'], ['hours', 'Hours'], ['people', 'People & PINs'], ['settings', 'Settings']]
-        : [['clock', 'Clock'], ['hours', 'My hours']];
+        ? [['status', 'Team status'], ['hours', 'Hours'],
+          ['requests', pendingRequests().length ? `Requests (${pendingRequests().length})` : 'Requests'],
+          ['people', 'People & PINs'], ['settings', 'Settings']]
+        : [['clock', 'Clock'], ['hours', 'My hours'], ['requests', 'Requests']];
       if (!list.some(([id]) => id === state.tab)) state.tab = list[0][0];
       body.append(tabs(list));
       body.append(...[].concat(state.person.role === 'gm' ? renderGm() : renderEmployee()).filter(Boolean));
@@ -727,16 +972,23 @@
   function tick() {
     if (!panel || !panel.isConnected) return;
     const now = Date.now();
-    panel.querySelectorAll('[data-live="since"]').forEach(el => {
-      el.textContent = core().formatDuration(now - Number(el.dataset.from));
+    panel.querySelectorAll('[data-live="elapsed"]').forEach(el => {
+      el.textContent = core().formatClock(now - Number(el.dataset.from));
     });
-    panel.querySelectorAll('[data-live="countdown"]').forEach(el => {
-      const used = Number(el.dataset.used) + (now - Number(el.dataset.from));
-      const left = Number(el.dataset.allowed) - used;
-      el.textContent = left >= 0
-        ? `${core().formatDuration(left)} left`
-        : `${core().formatDuration(-left)} over allowance`;
+    panel.querySelectorAll('[data-live="remaining"]').forEach(el => {
+      const left = Number(el.dataset.allowed) - (now - Number(el.dataset.from));
+      el.textContent = core().formatClock(Math.abs(left));
       el.classList.toggle('over', left < 0);
+      const label = el.parentElement && el.parentElement.querySelector('[data-live-label="remaining"]');
+      if (label) label.textContent = left < 0 ? 'over the allowance' : 'left';
+      el.closest('.ts-timer')?.classList.toggle('is-over', left < 0);
+    });
+    panel.querySelectorAll('[data-live="break-row"]').forEach(el => {
+      const elapsed = now - Number(el.dataset.from);
+      const over = elapsed - Number(el.dataset.allowed);
+      el.textContent = over > 0
+        ? `Running · ${core().formatClock(elapsed)} · over by ${core().formatClock(over)}`
+        : `Running · ${core().formatClock(elapsed)} · ${core().formatClock(-over)} left`;
     });
     panel.querySelectorAll('[data-live="clocks"]').forEach(el => {
       el.replaceWith(clockLine(state.person));
@@ -749,6 +1001,9 @@
     const host = document.querySelector('.db-selected-panel-wrapper');
     if (!host) return null;
     panel = h('section', { class: PANEL_CLASS, 'data-panel': TOOL_ID, style: 'display: none' });
+    panel.addEventListener('focusout', () => {
+      setTimeout(() => { if (state.pendingRender && !typingInPanel()) scheduleRender(); }, 0);
+    });
     host.appendChild(panel);
     return panel;
   }
@@ -767,15 +1022,17 @@
     clearInterval(ticker);
     ticker = setInterval(tick, 1000);
     clearInterval(refresher);
-    // GMs see live status: refresh data every 30 seconds while open.
-    refresher = setInterval(() => {
-      if (state.person && state.person.role === 'gm' && !state.busy) load().then(render).catch(() => {});
-    }, 30000);
+    if (!subscribe()) {
+      refresher = setInterval(() => {
+        if (!state.busy) load().then(scheduleRender).catch(() => {});
+      }, 30000);
+    }
   }
 
   function close() {
     clearInterval(ticker);
     clearInterval(refresher);
+    unsubscribe();
   }
 
   document.addEventListener('db-tool-open', event => {
