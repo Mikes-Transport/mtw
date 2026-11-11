@@ -705,28 +705,46 @@
     return flag;
   }
 
-  // The week shown follows the calendar: it is always the person's current Wed–Tue week
-  // (so it rolls over at their Wednesday midnight), unless someone has paged to another
-  // week with the arrows. "This week" goes back to following.
+  // The week shown follows the calendar, in the viewed person's dates:
+  //   - employees see their current Wed–Tue week;
+  //   - GMs see the last completed pay week (what payroll needs).
+  // Both roll over at the person's Wednesday midnight, even while open, unless someone
+  // has paged to another week with the arrows.
+  function currentWeek(person) { return core().weekStart(today(person)); }
+
+  function defaultWeek(person) {
+    return state.person && state.person.role === 'gm' ? core().addDays(currentWeek(person), -7) : currentWeek(person);
+  }
+
   function followWeek(person) {
     if (state.weekFor !== person.id) {
       state.weekFor = person.id;
       state.weekPinned = false;
     }
-    if (!state.weekPinned) state.weekStart = core().weekStart(today(person));
+    if (!state.weekPinned) state.weekStart = defaultWeek(person);
   }
 
   function weekNav(person = state.person) {
     const move = n => () => {
       state.weekStart = core().addDays(state.weekStart, 7 * n);
-      state.weekPinned = state.weekStart !== core().weekStart(today(person));
+      state.weekPinned = state.weekStart !== defaultWeek(person);
       render();
     };
+    const gm = state.person && state.person.role === 'gm';
+    const which = state.weekStart === currentWeek(person) ? 'in progress'
+      : state.weekStart === core().addDays(currentWeek(person), -7) ? 'last pay week' : null;
+    const jump = (label, week) => h('button', {
+      type: 'button', class: `ts-btn${state.weekStart === week ? ' is-current' : ''}`, text: label,
+      onclick: () => { state.weekStart = week; state.weekPinned = week !== defaultWeek(person); render(); }
+    });
     return h('div', { class: 'ts-weeknav' },
       h('button', { type: 'button', class: 'ts-btn', onclick: move(-1), 'aria-label': 'Previous week', text: '‹' }),
-      h('span', { class: 'ts-week-label', text: `${core().formatDate(state.weekStart)} – ${core().formatDate(core().addDays(state.weekStart, 6))} (${zoneLabel(workZone(person))} dates)` }),
+      h('span', { class: 'ts-week-label' },
+        `${core().formatDate(state.weekStart)} – ${core().formatDate(core().addDays(state.weekStart, 6))} (${zoneLabel(workZone(person))} dates)`,
+        which ? h('span', { class: 'ts-week-tag', text: which }) : null),
       h('button', { type: 'button', class: 'ts-btn', onclick: move(1), 'aria-label': 'Next week', text: '›' }),
-      h('button', { type: 'button', class: 'ts-btn', text: 'This week', onclick: () => { state.weekPinned = false; state.weekStart = core().weekStart(today(person)); render(); } }));
+      gm ? jump('Last pay week', core().addDays(currentWeek(person), -7)) : null,
+      jump('This week', currentWeek(person)));
   }
 
   function weekTable(person, week) {
