@@ -93,13 +93,13 @@ subtext: '',
 
 showDate: false,
 date: '',
-dateHeadingSize: 40,
-dateSubtextSize: 18,
+dateHeadingSize: 80,
+dateSubtextSize: 36,
 
 showQty: false,
 manualQty: 0,
-qtyHeadingSize: 40,
-qtySubtextSize: 18,
+qtyHeadingSize: 80,
+qtySubtextSize: 36,
 
 ...TEMPLATE_DEFAULTS.standard
 };
