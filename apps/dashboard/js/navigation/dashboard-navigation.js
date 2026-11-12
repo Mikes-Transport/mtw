@@ -27,12 +27,12 @@
 
   const TOOLS = {
     'activity-logs': { panel: '.activity-logs-panel', name: 'Activity Logs', roles: ['Managers'] },
-    'secondhand-tool': { panel: '.second-hand-panel', name: 'Secondhand Stock', roles: ['Counter'] },
-    'product-info': { panel: '.product-tool-panel', name: 'Product Information', roles: ['Managers'] },
+    'secondhand-tool': { panel: '.second-hand-panel', name: 'Secondhand Stock', roles: ['Counter', 'HTAB'] },
+    'product-info': { panel: '.product-tool-panel', name: 'Product Information', roles: ['Managers', 'HTAB'] },
     'csv-config': { panel: '.csv-tool-panel', name: 'CSV Config', roles: ['Managers'] },
     'mte-config': { panel: '.master-list-config', name: 'MTE Config', roles: ['Managers'] },
     'promotion-label': { panel: '.et-body-wrapper', name: 'Promotional Labels', roles: ['Counter'] },
-    'barcodes': { panel: '.barcode-label-panels', name: 'Barcode Labels', roles: ['Counter', 'Stores', 'KeyAccounts'] },
+    'barcodes': { panel: '.barcode-label-panels', name: 'Barcode Labels', roles: ['Counter', 'Stores', 'KeyAccounts', 'HTAB'] },
     'model-tool-access': { panel: '.model-access-panel', name: 'Assign Model Tool Access', roles: ['Managers'] },
     'timesheet': { panel: '.timesheet-panel', name: 'Timesheet', roles: ['Managers'] },
     'developer-tools': { panel: '.developer-tools-panel', name: 'Manager Tools', roles: ['Managers'] }
