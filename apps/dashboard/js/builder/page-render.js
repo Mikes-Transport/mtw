@@ -222,10 +222,53 @@
     }
   }
 
+  // Cards typed in the builder. Clicking one runs the steps with the card as the record
+  // ({record.title}, {record.text}, {record.note}).
+  function renderManualCards(doc, block, options, node) {
+    const rt = options.runtime;
+    const p = block.props;
+    let search = null;
+    if (p.search === 'yes') {
+      search = el(doc, 'input', 'mtw-pb-control mtw-pb-records-search');
+      search.type = 'search';
+      search.placeholder = 'Search...';
+      search.setAttribute('aria-label', 'Search cards');
+      if (options.editing) search.readOnly = true;
+      node.appendChild(search);
+    }
+    const grid = el(doc, 'div', 'mtw-pb-card-grid');
+    grid.style.gridTemplateColumns = `repeat(${p.perRow}, minmax(0, 1fr))`;
+    node.appendChild(grid);
+    const status = el(doc, 'p', 'mtw-pb-records-status');
+    node.appendChild(status);
+    const clickable = !options.editing && rt && p.actions && p.actions.length;
+    const draw = () => {
+      grid.replaceChildren();
+      const term = search ? search.value.trim().toLowerCase() : '';
+      const items = p.items.filter(item => !term || [item.title, item.text, item.note].some(v => v.toLowerCase().includes(term)));
+      items.forEach(item => {
+        const card = el(doc, clickable ? 'button' : 'div', 'mtw-pb-record-card');
+        if (clickable) {
+          card.type = 'button';
+          card.addEventListener('click', () => rt.run(p.actions, { record: { _id: item.id, title: item.title, text: item.text, note: item.note } }));
+        }
+        if (item.title) card.appendChild(el(doc, 'strong', 'mtw-pb-record-card-title', item.title));
+        if (item.text) card.appendChild(el(doc, 'p', 'mtw-pb-record-card-text', item.text));
+        if (item.note) card.appendChild(el(doc, 'span', 'mtw-pb-records-when', item.note));
+        grid.appendChild(card);
+      });
+      status.textContent = !p.items.length ? p.emptyText : !items.length ? 'No cards match.' : '';
+    };
+    if (search) search.addEventListener('input', draw);
+    draw();
+    return node;
+  }
+
   function renderCards(doc, block, options) {
     const rt = options.runtime;
     const p = block.props;
     const node = el(doc, 'div', 'mtw-pb-cards');
+    if (p.source === 'manual') return renderManualCards(doc, block, options, node);
     const def = rt && rt.tables[p.table];
     if (!def) {
       node.appendChild(el(doc, 'div', 'mtw-pb-placeholder', 'Pick a data table for these cards'));
@@ -358,7 +401,8 @@
           if (options.editing || !rt) return event.preventDefault();
           button.disabled = true;
           try {
-            await rt.run(p.actions);
+            // Steps first; the button's popup opens after them (not if a step stopped).
+            await rt.run(p.popup ? (p.actions || []).concat({ id: 'a-popup', type: 'openPopup', target: p.popup }) : p.actions);
           } finally {
             button.disabled = false;
           }
@@ -733,7 +777,7 @@
       if (section.popup && !opts.editing) node.appendChild(popupShell(doc, section, sectionNode, ui));
       else {
         if (section.popup) {
-          const tag = el(doc, 'div', 'mtw-pb-popup-tag', `Popup "${section.title || section.name}" (${section.name}): opens with an Open a popup step`);
+          const tag = el(doc, 'div', 'mtw-pb-popup-tag', `Popup "${section.title || section.name}" (${section.name}): opens from a button`);
           sectionNode.prepend(tag);
         }
         node.appendChild(sectionNode);

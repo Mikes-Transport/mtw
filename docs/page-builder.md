@@ -60,15 +60,26 @@ description; the list on the right). **Done** or Esc goes back to the page.
 
 ## Popups
 
-Select a section and tick **Show as a popup**: give it a title (and a name). On the live
+**Popups** tab -> **+ New popup** (or **+ Create a new popup** in any popup dropdown), or
+select a section and tick **Show as a popup**. Every button has an **Opens a popup**
+dropdown (runs after its steps). Popups: give it a title (and a name). On the live
 page it's hidden until an **Open a popup** step shows it over the page; it closes with
 its X, Esc, clicking outside, or a **Close a popup** step. In the builder popups show
 inline with a dashed purple border so you can edit them.
 
 ## Card lists, row and card clicks
 
-**Card list** shows a data table's records as cards (title field, text field, extra
-fields, 1-4 per row, search, delete permissions), live. Card lists and Records lists have
+**Card list** "Cards come from":
+- **Cards I type in here**: add, edit, reorder and delete cards (title, text, small note)
+  in the right panel. No data table needed.
+- **Cards people add (saved to Firebase)**: the builder makes the list its own table, an
+  Add card popup (an input per field + Save card) and a **+ Add card** button. Edit
+  **Card fields** in the list's settings; the popup keeps in step. Pick a different
+  **Add card popup** to move the form there. Each card list has its own table and popup.
+- **An existing data table**: show any table's records.
+
+Lists from Firebase show live (title field, text field, extra fields, 1-4 per row,
+search, delete permissions). Card lists and Records lists have
 **When a card/row is clicked, do** steps: those steps can use the clicked record as
 `{record.field}` in text and `record.field` in If, and add **Delete this record**.
 

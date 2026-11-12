@@ -227,7 +227,7 @@
     function buildPalette() {
       palette.replaceChildren();
       const tabs = el('div', 'mtw-pb-tabs', null, { role: 'tablist' });
-      [['blocks', 'Blocks'], ['data', 'Data']].forEach(([id, label]) => {
+      [['blocks', 'Blocks'], ['popups', 'Popups'], ['data', 'Data']].forEach(([id, label]) => {
         const tab = button('mtw-pb-tab', label, null, () => {
           state.paletteTab = id;
           buildPalette();
@@ -240,6 +240,10 @@
       palette.appendChild(tabs);
       if (state.paletteTab === 'data') {
         buildDataTab();
+        return;
+      }
+      if (state.paletteTab === 'popups') {
+        buildPopupsTab();
         return;
       }
       palette.appendChild(el('p', 'mtw-pb-palette-hint', 'Drag onto the page, or click to add.'));
@@ -290,6 +294,44 @@
         });
         palette.appendChild(tiles);
       });
+    }
+
+    // Makes a new popup section at the end of the page: { page, id, name }.
+    function newPopup(page, title) {
+      const added = c.addSection(page, '1', page.sections.length);
+      const next = c.updateSection(added.page, added.id, { popup: true, title: title || 'New popup' });
+      return { page: next, id: added.id, name: c.findSection(next, added.id).section.name };
+    }
+
+    function showSection(sectionId) {
+      select({ kind: 'section', id: sectionId });
+      const node = frame.querySelector(`[data-section-id="${sectionId}"]`);
+      if (node && node.scrollIntoView) node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+
+    function buildPopupsTab() {
+      palette.appendChild(el('p', 'mtw-pb-palette-hint', 'Popups open over the page. Build one like a section, then pick it in a button\'s "Opens a popup" or a card list\'s "Add card popup".'));
+      const list = el('div', 'mtw-pb-table-list');
+      c.pagePopups(history.page).forEach(item => {
+        const row = button('mtw-pb-table-item mtw-pb-popup-item', null, `Edit popup ${item.title}`, () => showSection(item.section.id));
+        row.dataset.popup = item.name;
+        const glyph = el('span', 'mtw-pb-tile-icon');
+        glyph.appendChild(icon('card'));
+        const text = el('span');
+        const count = item.section.columns.reduce((sum, col) => sum + col.blocks.length, 0);
+        text.append(el('strong', '', item.title || item.name), el('span', '', `${item.name} \u00b7 ${count} block${count === 1 ? '' : 's'}`));
+        row.append(glyph, text);
+        if (state.selected && state.selected.kind === 'section' && state.selected.id === item.section.id) row.classList.add('is-selected');
+        list.appendChild(row);
+      });
+      if (!c.pagePopups(history.page).length) list.appendChild(el('p', 'mtw-pb-muted', 'No popups yet.'));
+      palette.appendChild(list);
+      palette.appendChild(button('mtw-pb-btn mtw-pb-btn-light mtw-pb-new-popup', '+ New popup', 'Add a popup', () => {
+        const made = attempt(() => newPopup(history.page));
+        if (!made) return;
+        commit(made.page, { kind: 'section', id: made.id });
+        showSection(made.id);
+      }));
     }
 
     function buildDataTab() {
@@ -509,7 +551,12 @@
     }
 
     // ---------- inspector ----------
+    // Fields of the clicked row/card that steps can use: a data table's fields, or a
+    // typed card's title / text / note.
     function recordFields(tableId) {
+      if (tableId === 'manual-cards') {
+        return [['record.title', 'Title (this card)'], ['record.text', 'Text (this card)'], ['record.note', 'Small note (this card)']];
+      }
       const table = c.findTable(history.page, tableId);
       return table ? table.fields.map(f => [`record.${f.key}`, `${f.label} (this record)`])
         .concat([['record._createdBy', 'Added by (this record)']]) : [];
@@ -599,8 +646,21 @@
         input = selectOf(id, [['', field.any || 'Any record (count all)']].concat(table ? table.fields.map(f => [f.key, f.label]) : []), value);
       } else if (field.type === 'popup') {
         const popups = c.pagePopups(page);
-        input = selectOf(id, [['', field.any || (popups.length ? 'Choose a popup' : 'No popups yet (set a section to Show as a popup)')]]
-          .concat(popups.map(item => [item.name, `${item.title} (${item.name})`])), value);
+        input = selectOf(id, [['', field.any || (popups.length ? 'Choose a popup' : 'No popups yet')]]
+          .concat(popups.map(item => [item.name, `${item.title} (${item.name})`]))
+          .concat([['__new__', '+ Create a new popup']]), value);
+        // "+ Create a new popup": make it, then pick it here.
+        input.addEventListener('change', event => {
+          if (input.value !== '__new__') return;
+          event.stopImmediatePropagation();
+          const made = attempt(() => newPopup(history.page));
+          if (!made) {
+            input.value = value || '';
+            return;
+          }
+          commit(made.page);
+          onChange(made.name);
+        });
       } else if (field.type === 'element' || field.type === 'input') {
         const items = c.pageElements(page).filter(item => field.type === 'element' || item.type === 'input');
         const options = [['', items.length ? 'Choose an element' : 'Nothing on the page yet']]
@@ -757,11 +817,26 @@
 
       const props = block.props;
       const contentFields = def.fields.filter(field => visible(field, props));
-      const plain = contentFields.filter(field => !['grid', 'actions'].includes(field.type));
+      const plain = contentFields.filter(field => !['grid', 'actions', 'cardlist', 'cardfields'].includes(field.type));
       if (plain.length) {
         inspector.appendChild(sectionTitle('Content'));
         plain.forEach(field => {
           inspector.appendChild(fieldControl(field, props[field.key], value => {
+            if (block.type === 'cards' && field.key === 'formPopup' && props.source === 'added') {
+              const before = c.findBlock(history.page, blockId).block.props.formPopup;
+              let page = c.updateBlock(history.page, blockId, { props: { formPopup: value } });
+              // Buttons that opened the old form popup now open the new one.
+              c.pageElements(page).filter(item => item.type === 'button' && before && item.block.props.popup === before)
+                .forEach(item => { page = c.updateBlock(page, item.block.id, { props: { popup: value } }); });
+              if (value) page = syncForm(page, props.table, value);
+              commit(page);
+              return;
+            }
+            if (block.type === 'cards' && field.key === 'source' && value === 'added' &&
+                !c.findTable(history.page, c.findBlock(history.page, blockId).block.props.table)) {
+              setupAddedCards(blockId);
+              return;
+            }
             const next = c.updateBlock(history.page, blockId, { props: { [field.key]: value } });
             if (RESHAPES.includes(field.type) || field.type === 'fieldpick') commit(next);
             else commit(next, undefined, `${blockId}:p:${field.key}`);
@@ -769,6 +844,8 @@
         });
       }
       if (contentFields.some(field => field.type === 'grid')) renderGridEditor(blockId);
+      if (contentFields.some(field => field.type === 'cardlist')) renderCardItemsEditor(blockId);
+      if (contentFields.some(field => field.type === 'cardfields')) renderCardFieldsEditor(blockId);
       const actionsField = contentFields.find(field => field.type === 'actions');
       if (actionsField) inspector.appendChild(stepsSummary(actionsField.label, `block:${blockId}`, props.actions || []));
 
@@ -886,6 +963,154 @@
         apply(p => c.grid.addRow(p))));
     }
 
+    // ---------- card list block: one card per card ----------
+    function renderCardItemsEditor(blockId) {
+      const props = () => c.findBlock(history.page, blockId).block.props;
+      const apply = (fn, coalesce) => {
+        const next = attempt(() => fn(props()));
+        if (next) commit(c.updateBlock(history.page, blockId, { props: next }), undefined, coalesce);
+      };
+      inspector.appendChild(sectionTitle('Cards'));
+      const list = el('div', 'mtw-pb-cards', null, { 'data-drop-group': `items:${blockId}` });
+      props().items.forEach((item, i) => {
+        const card = el('div', 'mtw-pb-card-item', null, { 'data-drag-item': item.id });
+        card.appendChild(cardHeader(item.title || `Card ${i + 1}`,
+          () => ({ group: `items:${blockId}`, id: item.id, label: item.title || `Card ${i + 1}`, onDrop: (container, index) => apply(p => c.cardItems.move(p, item.id, index)) }),
+          () => apply(p => c.cardItems.remove(p, item.id)), `Delete card ${item.title || i + 1}`));
+        [['title', 'Title', 'text'], ['text', 'Text', 'textarea'], ['note', 'Small note', 'text']].forEach(([key, label, type]) => {
+          card.appendChild(fieldControl({ key: `${key}-${item.id}`, label, type }, item[key],
+            value => apply(p => c.cardItems.update(p, item.id, { [key]: value }), `${blockId}:item:${item.id}:${key}`)));
+        });
+        list.appendChild(card);
+      });
+      inspector.appendChild(list);
+      inspector.appendChild(button('mtw-pb-btn mtw-pb-btn-light mtw-pb-add-card', '+ Add card', 'Add a card', () =>
+        apply(p => c.cardItems.add(p))));
+    }
+
+    // ---------- "Cards people add": the card list's own table + Add card popup ----------
+    function stepsOf(types) {
+      return types.reduce((list, [type, values]) => {
+        const added = c.steps.add(list, [], type);
+        return values ? c.steps.update(added.list, added.id, values) : added.list;
+      }, []);
+    }
+
+    // Keeps the Add card popup's inputs matching the table's fields: one input per field,
+    // in field order, labelled like the field; removed fields lose their input.
+    function syncForm(page, tableId, popupName) {
+      const table = c.findTable(page, tableId);
+      const popup = c.pagePopups(page).find(item => item.name === popupName);
+      if (!table || !popup) return page;
+      let next = page;
+      const sectionId = popup.section.id;
+      const blocksIn = () => c.findSection(next, sectionId).section.columns.flatMap(col => col.blocks);
+      const bound = block => block.type === 'input' && block.props.bind.startsWith(`${tableId}.`);
+      blocksIn().filter(block => bound(block) && !table.fields.some(f => `${tableId}.${f.key}` === block.props.bind))
+        .forEach(block => { next = c.removeBlock(next, block.id); });
+      table.fields.forEach(field => {
+        if (!blocksIn().some(block => block.type === 'input' && block.props.bind === `${tableId}.${field.key}`)) {
+          next = c.insertBlock(next, 'input', c.findSection(next, sectionId).section.columns[0].id, 0,
+            { label: field.label, bind: `${tableId}.${field.key}` }).page;
+        }
+      });
+      next = c.clone(next);
+      const section = c.findSection(next, sectionId).section;
+      const first = section.columns[0];
+      const all = section.columns.flatMap(col => col.blocks);
+      const inputs = table.fields.map(f => all.find(block => bound(block) && block.props.bind === `${tableId}.${f.key}`)).filter(Boolean);
+      inputs.forEach(input => { input.props.label = table.fields.find(f => `${tableId}.${f.key}` === input.props.bind).label; });
+      section.columns.forEach(col => { col.blocks = col.blocks.filter(block => !inputs.includes(block)); });
+      first.blocks = inputs.concat(first.blocks);
+      // A popup chosen for this card list gets a Save button if it has none for the table.
+      const hasSave = all.some(block => block.type === 'button' &&
+        JSON.stringify(block.props.actions || []).includes(`"table":"${tableId}"`));
+      if (!hasSave) {
+        const save = c.insertBlock(next, 'button', first.id, first.blocks.length, { label: 'Save card' });
+        next = c.updateBlock(save.page, save.id, { props: { actions: stepsOf([
+          ['save', { table: tableId }], ['message', { text: 'Card added.' }], ['clear'], ['closePopup', { target: popupName }]
+        ]) } });
+      }
+      return next;
+    }
+
+    // Turns a card list into "Cards people add": a data table, an Add card popup with an
+    // input per field and a Save button, and a + Add card button above the list.
+    function setupAddedCards(blockId) {
+      const result = attempt(() => {
+        let page = history.page;
+        const found = c.findBlock(page, blockId);
+        const number = (found.block.name.match(/(\d+)$/) || [])[1];
+        const tableAdded = c.addTable(page, number ? `Card list ${number}` : found.block.name.replace(/_/g, ' '));
+        page = tableAdded.page;
+        const tableId = tableAdded.id;
+        page = c.updateField(page, tableId, 'name', { label: 'Title' });
+        page = c.updateField(page, tableId, 'notes', { label: 'Details' });
+        const popupAdded = c.addSection(page, '1', page.sections.length);
+        page = c.updateSection(popupAdded.page, popupAdded.id, { popup: true, title: 'Add a card' });
+        const popupName = c.findSection(page, popupAdded.id).section.name;
+        const save = c.insertBlock(page, 'button', c.findSection(page, popupAdded.id).section.columns[0].id, 0, { label: 'Save card' });
+        page = c.updateBlock(save.page, save.id, { props: { actions: stepsOf([
+          ['save', { table: tableId }], ['message', { text: 'Card added.' }], ['clear'], ['closePopup', { target: popupName }]
+        ]) } });
+        page = syncForm(page, tableId, popupName);
+        const where = c.findBlock(page, blockId);
+        page = c.insertBlock(page, 'button', where.column.id, where.index, { label: '+ Add card', popup: popupName }).page;
+        page = c.updateBlock(page, blockId, { props: {
+          source: 'added', table: tableId, formPopup: popupName, titleField: 'name', textField: 'notes', search: 'yes'
+        } });
+        return page;
+      });
+      if (result) commit(result, { kind: 'block', id: blockId });
+    }
+
+    function renderCardFieldsEditor(blockId) {
+      const props = c.findBlock(history.page, blockId).block.props;
+      const table = c.findTable(history.page, props.table);
+      inspector.appendChild(sectionTitle('Card fields'));
+      if (!table) {
+        inspector.appendChild(el('p', 'mtw-pb-muted', 'This card list has no storage yet.'));
+        inspector.appendChild(button('mtw-pb-btn mtw-pb-btn-light', 'Set it up', 'Create the table, Add card popup and button',
+          () => setupAddedCards(blockId)));
+        return;
+      }
+      inspector.appendChild(el('p', 'mtw-pb-field-help', 'What people fill in when they add a card. The Add card popup updates to match.'));
+      const tableId = table.id;
+      const withSync = page => syncForm(page, tableId, c.findBlock(page, blockId).block.props.formPopup);
+      const list = el('div', 'mtw-pb-cards', null, { 'data-drop-group': `cardfields:${blockId}` });
+      table.fields.forEach(field => {
+        const card = el('div', 'mtw-pb-card-item', null, { 'data-drag-item': field.key });
+        card.appendChild(cardHeader(field.label || field.key,
+          () => ({ group: `cardfields:${blockId}`, id: field.key, label: field.label, onDrop: (container, index) => commit(withSync(c.moveField(history.page, tableId, field.key, index))) }),
+          () => commit(withSync(c.removeField(history.page, tableId, field.key))), `Delete field ${field.label}`));
+        card.appendChild(fieldControl({ key: `label-${field.key}`, label: 'Name', type: 'text' }, field.label,
+          value => commit(withSync(c.updateField(history.page, tableId, field.key, { label: value })), undefined, `${tableId}:f:${field.key}:label`)));
+        card.appendChild(fieldControl({ key: `type-${field.key}`, label: 'Type', type: 'select', options: Object.entries(c.FIELD_TYPES) }, field.type,
+          value => commit(withSync(c.updateField(history.page, tableId, field.key, { type: value })))));
+        if (field.type === 'choice') {
+          card.appendChild(fieldControl({ key: `options-${field.key}`, label: 'Choices (one per line)', type: 'textarea' }, field.options,
+            value => commit(c.updateField(history.page, tableId, field.key, { options: value }), undefined, `${tableId}:f:${field.key}:options`)));
+        }
+        const req = el('label', 'mtw-pb-check');
+        const check = el('input', '', null, { type: 'checkbox' });
+        check.checked = field.required;
+        check.addEventListener('change', () => commit(c.updateField(history.page, tableId, field.key, { required: check.checked })));
+        req.append(check, document.createTextNode(' Required'));
+        card.appendChild(req);
+        list.appendChild(card);
+      });
+      inspector.appendChild(list);
+      inspector.appendChild(button('mtw-pb-btn mtw-pb-btn-light mtw-pb-add-card-field', '+ Add field', 'Add a card field', () => {
+        const result = attempt(() => c.addField(history.page, tableId, `Field ${table.fields.length + 1}`, 'text'));
+        if (result && result.key) commit(withSync(result.page));
+      }));
+      const popup = c.pagePopups(history.page).find(item => item.name === props.formPopup);
+      if (popup) {
+        inspector.appendChild(button('mtw-pb-btn mtw-pb-btn-light mtw-pb-edit-popup', 'Edit the Add card popup', 'Select the popup on the page',
+          () => select({ kind: 'section', id: popup.section.id })));
+      }
+    }
+
     // ---------- data table editor ----------
     function renderTableInspector(page, tableId) {
       const table = c.findTable(page, tableId);
@@ -995,8 +1220,8 @@
         page = c.updateSection(board.page, board.id, { style: { valign: 'center' } });
         const [left, right] = c.findSection(page, board.id).section.columns.map(col => col.id);
         page = c.insertBlock(page, 'heading', left, 0, { text: table.name, level: 'h2' }).page;
-        const add = c.insertBlock(page, 'button', right, 0, { label: `+ Add` });
-        page = c.updateBlock(add.page, add.id, { props: { actions: stepList([['openPopup', { target: popupName }]]) }, style: { align: 'right' } });
+        const add = c.insertBlock(page, 'button', right, 0, { label: `+ Add`, popup: popupName });
+        page = c.updateBlock(add.page, add.id, { style: { align: 'right' } });
         const exp = c.insertBlock(page, 'button', right, 1, { label: 'Export', variant: 'secondary' });
         page = c.updateBlock(exp.page, exp.id, { props: { actions: stepList([['exportCsv', { table: tableId }]]) }, style: { align: 'right' } });
         const imp = c.insertBlock(page, 'button', right, 2, { label: 'Import', variant: 'secondary' });
@@ -1004,7 +1229,7 @@
         const list = c.addSection(page, '1', page.sections.length - 1);
         page = list.page;
         const cards = c.insertBlock(page, 'cards', c.findSection(page, list.id).section.columns[0].id, 0, {
-          table: tableId, titleField: table.fields[0] ? table.fields[0].key : '', textField: table.fields[1] ? table.fields[1].key : '', allowDelete: 'managers'
+          source: 'table', search: 'yes', table: tableId, titleField: table.fields[0] ? table.fields[0].key : '', textField: table.fields[1] ? table.fields[1].key : '', allowDelete: 'managers'
         });
         return { page: cards.page, id: cards.id };
       });
@@ -1023,7 +1248,10 @@
       }
       const blockId = key.slice('block:'.length);
       const owner = c.findBlock(history.page, blockId);
-      const recordTable = owner && ['records', 'cards'].includes(owner.block.type) ? owner.block.props.table : '';
+      const block = owner && owner.block;
+      const recordTable = !block ? ''
+        : block.type === 'records' || (block.type === 'cards' && block.props.source === 'table') ? block.props.table
+          : block.type === 'cards' ? 'manual-cards' : '';
       return {
         key,
         recordTable,
@@ -1141,7 +1369,7 @@
       Object.entries(groups).forEach(([group, items]) => {
         tiles.appendChild(sectionTitle(group));
         const wrap = el('div', 'mtw-pb-step-tiles');
-        items.filter(([, def]) => !def.needsRecord || scope.recordTable)
+        items.filter(([, def]) => !def.needsRecord || (scope.recordTable && scope.recordTable !== 'manual-cards'))
           .forEach(([type, def]) => wrap.appendChild(stepTile(scopeKey, type, def)));
         tiles.appendChild(wrap);
       });
@@ -1344,7 +1572,7 @@
       renderCanvas();
       if (!keepInspector) renderInspector();
       if (!keepInspector) renderLogic();
-      if (state.paletteTab === 'data') buildPalette();
+      if (state.paletteTab === 'data' || state.paletteTab === 'popups') buildPalette();
     }
 
     function flash(message, isError) {

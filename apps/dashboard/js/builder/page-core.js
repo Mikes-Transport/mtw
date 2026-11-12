@@ -73,10 +73,11 @@
     },
     button: {
       label: 'Button', group: 'Interactive',
-      defaults: { label: 'Open', variant: 'primary', actions: [] },
+      defaults: { label: 'Open', variant: 'primary', popup: '', actions: [] },
       fields: [
         { key: 'label', label: 'Label', type: 'text' },
         { key: 'variant', label: 'Style', type: 'select', options: [['primary', 'Solid'], ['secondary', 'Outline']] },
+        { key: 'popup', label: 'Opens a popup', type: 'popup', any: 'No popup' },
         { key: 'actions', label: 'When clicked, do', type: 'actions' }
       ]
     },
@@ -110,17 +111,29 @@
     },
     cards: {
       label: 'Card list', group: 'Data',
-      defaults: { table: '', titleField: '', textField: '', fields: [], perRow: 3, order: 'newest', limit: 60, search: 'yes', allowDelete: 'no', emptyText: 'No cards yet.', actions: [] },
+      defaults: {
+        source: 'manual',
+        items: [
+          { id: 'i-1', title: 'First card', text: 'Something about it.', note: '' },
+          { id: 'i-2', title: 'Second card', text: 'Something else.', note: '' },
+          { id: 'i-3', title: 'Third card', text: 'One more.', note: '' }
+        ],
+        table: '', formPopup: '', titleField: '', textField: '', fields: [], perRow: 3, order: 'newest', limit: 60, search: 'no', allowDelete: 'no', emptyText: 'No cards yet.', actions: []
+      },
       fields: [
-        { key: 'table', label: 'Data table', type: 'table' },
-        { key: 'titleField', label: 'Card title', type: 'field', any: 'First field' },
-        { key: 'textField', label: 'Card text', type: 'field', any: 'None' },
-        { key: 'fields', label: 'Also show', type: 'fieldpick' },
+        { key: 'source', label: 'Cards come from', type: 'select', options: [['manual', 'Cards I type in here'], ['added', 'Cards people add (saved to Firebase)'], ['table', 'An existing data table']] },
+        { key: 'items', label: 'Cards', type: 'cardlist', when: { source: 'manual' } },
+        { key: 'table', label: 'Data table', type: 'table', when: { source: 'table' } },
+        { key: 'formPopup', label: 'Add card popup', type: 'popup', when: { source: 'added' } },
+        { key: 'cardFields', label: 'Card fields', type: 'cardfields', when: { source: 'added' } },
+        { key: 'titleField', label: 'Card title', type: 'field', any: 'First field', when: { source: ['added', 'table'] } },
+        { key: 'textField', label: 'Card text', type: 'field', any: 'None', when: { source: ['added', 'table'] } },
+        { key: 'fields', label: 'Also show', type: 'fieldpick', when: { source: ['added', 'table'] } },
         { key: 'perRow', label: 'Cards per row', type: 'select', options: [[1, '1'], [2, '2'], [3, '3'], [4, '4']] },
-        { key: 'order', label: 'Order', type: 'select', options: [['newest', 'Newest first'], ['oldest', 'Oldest first']] },
-        { key: 'limit', label: 'Show at most', type: 'number', min: 1, max: 500 },
         { key: 'search', label: 'Search box', type: 'select', options: [['yes', 'Show'], ['no', 'Hide']] },
-        { key: 'allowDelete', label: 'Delete button on cards', type: 'select', options: [['no', 'Nobody'], ['managers', 'Managers only'], ['everyone', 'Everyone who can see the tool']] },
+        { key: 'order', label: 'Order', type: 'select', options: [['newest', 'Newest first'], ['oldest', 'Oldest first']], when: { source: ['added', 'table'] } },
+        { key: 'limit', label: 'Show at most', type: 'number', min: 1, max: 500, when: { source: ['added', 'table'] } },
+        { key: 'allowDelete', label: 'Delete button on cards', type: 'select', options: [['no', 'Nobody'], ['managers', 'Managers only'], ['everyone', 'Everyone who can see the tool']], when: { source: ['added', 'table'] } },
         { key: 'emptyText', label: 'Text when empty', type: 'text' },
         { key: 'actions', label: 'When a card is clicked, do', type: 'actions' }
       ]
@@ -547,6 +560,15 @@
           .filter((key, i, all) => all.indexOf(key) === i).slice(0, LIMITS.fields);
       case 'actions':
         return sanitizeActions(value);
+      case 'cardlist': {
+        const seen = new Set();
+        return (Array.isArray(value) ? value : []).filter(item => item && typeof item === 'object').slice(0, 100).map(item => {
+          let id = typeof item.id === 'string' && ID_RE.test(item.id) && !seen.has(item.id) ? item.id : newId('i');
+          while (seen.has(id)) id = newId('i');
+          seen.add(id);
+          return { id, title: str(item.title, LIMITS.short), text: str(item.text, LIMITS.text), note: str(item.note, LIMITS.short) };
+        });
+      }
       case 'textarea':
         return value === undefined ? fallback : str(value, LIMITS.text);
       default:
@@ -557,6 +579,8 @@
   function sanitizeProps(type, raw) {
     const def = BLOCKS[type];
     const p = raw && typeof raw === 'object' ? { ...raw } : {};
+    // Card lists made before "Cards I add here" existed were always table-based.
+    if (type === 'cards' && p.source === undefined && p.table) p.source = 'table';
     // Older buttons had one action (link or tool) instead of a step list.
     if (type === 'button' && !Array.isArray(p.actions) && (p.action || p.url || p.tool)) {
       p.actions = p.action === 'tool'
@@ -565,6 +589,7 @@
     }
     const out = {};
     def.fields.forEach(field => {
+      if (field.type === 'cardfields') return; // edits the linked data table, stores nothing here
       if (field.type === 'grid') {
         Object.assign(out, sanitizeGrid(p, def.defaults));
         return;
@@ -737,6 +762,30 @@
 
   // Step lists by path: [] is the top list; [stepId, 'then'] is that If's Then list, and
   // so on. Every helper returns a new top list.
+  // Cards typed into a Card list block.
+  const cardItems = {
+    add(props) {
+      if (props.items.length >= 100) throw new Error('A card list can have at most 100 cards.');
+      return { ...props, items: props.items.concat({ id: newId('i'), title: `Card ${props.items.length + 1}`, text: '', note: '' }) };
+    },
+    remove(props, id) {
+      return { ...props, items: props.items.filter(item => item.id !== id) };
+    },
+    move(props, id, index) {
+      return { ...props, items: moveInList(props.items, item => item.id === id, index) };
+    },
+    update(props, id, changes) {
+      return {
+        ...props,
+        items: props.items.map(item => (item.id === id ? {
+          ...item,
+          ...Object.fromEntries(Object.entries(changes).filter(([key]) => ['title', 'text', 'note'].includes(key))
+            .map(([key, value]) => [key, str(value, key === 'text' ? LIMITS.text : LIMITS.short)]))
+        } : item))
+      };
+    }
+  };
+
   const steps = {
     get(root, path) {
       let list = root;
@@ -877,6 +926,7 @@
     fixList(page.onOpen);
     page.sections.forEach(section => section.columns.forEach(column => column.blocks.forEach(block => {
       if (Array.isArray(block.props.actions)) fixList(block.props.actions);
+      ['popup', 'formPopup'].forEach(key => { if (block.props[key] === from) block.props[key] = to; });
       ['defaultValue', 'text', 'filterValue'].forEach(key => {
         if (typeof block.props[key] === 'string') block.props[key] = fixText(block.props[key]);
       });
@@ -1312,7 +1362,7 @@
     OPS, KEY_RE, RECORD_RE, pagePopups, allNames, parseCsv, toCsv, matchColumns, slug, uniqueKey, inputKey, dataCollection, pageInputs, pageElements, freeName, renameBlock,
     updatePageActions, sanitizeActions, sanitizeTables,
     findTable, addTable, updateTable, removeTable, addField, updateField, removeField, moveField,
-    moveInList, grid, steps,
+    moveInList, grid, steps, cardItems,
     newId, createPage, createBlock, createSection, sanitizePage, sanitizeStyle, sanitizeProps,
     safeUrl, safeEmbedUrl, color, classNames,
     clone, findBlock, findColumn, findSection, countBlocks,

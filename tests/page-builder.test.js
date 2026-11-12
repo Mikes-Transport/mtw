@@ -722,7 +722,7 @@ test('builder: section as popup, card board shortcut, record fields in the steps
   assert.equal(editor.page.sections[editor.page.sections.length - 1].popup, true, 'popup section goes last');
   const blocks = editor.page.sections.flatMap(s => s.columns.flatMap(col => col.blocks));
   const byLabel = label => blocks.find(b => b.props.label === label);
-  assert.deepEqual([...byLabel('+ Add').props.actions.map(a => [a.type, a.target])], [['openPopup', popups[0].name]]);
+  assert.equal(byLabel('+ Add').props.popup, popups[0].name, '+ Add opens the popup');
   assert.deepEqual([...byLabel('Save').props.actions.map(a => a.type)], ['save', 'message', 'clear', 'closePopup']);
   assert.equal(byLabel('Export').props.actions[0].table, tableId);
   assert.equal(byLabel('Import').props.actions[0].type, 'importCsv');
@@ -748,6 +748,7 @@ test('builder: section as popup, card board shortcut, record fields in the steps
   editor.select({ kind: 'block', id: byLabel('+ Add').id });
   inspector.querySelector('.mtw-pb-edit-steps').click();
   assert.equal(logic.querySelector('.mtw-pb-step-tile[data-step-type="deleteRecord"]'), null);
+  editor.dropStep({ kind: 'newStep', type: 'openPopup', scope: `block:${byLabel('+ Add').id}` }, [], 0);
   assert.ok([...logic.querySelector('.mtw-pb-step-openPopup [data-field="target"] select').options].some(o => o.value === popups[0].name));
   editor.closeSteps();
 
@@ -779,5 +780,169 @@ test('builder preview runs steps without writing to Firestore', async () => {
   await waitFor(window, () => frame.querySelector('.mtw-pb-popup[data-popup="add_job"]').hidden);
   assert.equal(db.data['dashboard-data-jobs-t-jobs'], undefined, 'nothing written');
   editor.close(true);
+  dom.window.close();
+});
+
+test('card list without a data table: typed cards, click steps use the card', async () => {
+  const page = { sections: [{ layout: '1', columns: [{ blocks: [
+    { type: 'heading', name: 'picked', props: { text: 'Pick one' } },
+    { type: 'cards', name: 'menu', props: {
+      source: 'manual', perRow: 2, search: 'yes',
+      items: [{ id: 'i-a', title: 'Brakes', text: 'Pads and discs', note: '2 hours' }, { id: 'i-b', title: 'Tyres', text: 'Fit and balance' }],
+      actions: [{ type: 'setText', target: 'picked', value: 'You picked {record.title} ({record.note})' }]
+    } }
+  ] }] }] };
+  const db = store({ ...TOOLS, 'dashboard-tool-pages': { jobs: { published: page } } });
+  const { dom, window, document } = host({ db });
+  await waitFor(window, () => document.querySelectorAll('.custom-dashboard-tool-jobs-panel .mtw-pb-record-card').length === 2);
+  const panel = document.querySelector('.custom-dashboard-tool-jobs-panel');
+  const cards = [...panel.querySelectorAll('.mtw-pb-record-card')];
+  assert.deepEqual(cards.map(card => card.querySelector('strong').textContent), ['Brakes', 'Tyres']);
+  assert.equal(panel.querySelector('.mtw-pb-card-grid').style.gridTemplateColumns, 'repeat(2, minmax(0, 1fr))');
+  cards[0].click();
+  await waitFor(window, () => panel.querySelector('[data-name="picked"]').textContent === 'You picked Brakes (2 hours)');
+  const search = panel.querySelector('.mtw-pb-records-search');
+  search.value = 'tyre';
+  search.dispatchEvent(new window.Event('input'));
+  assert.deepEqual([...panel.querySelectorAll('.mtw-pb-record-card strong')].map(n => n.textContent), ['Tyres']);
+  dom.window.close();
+});
+
+test('builder: card list cards are added and edited as cards; no table needed', async () => {
+  const db = store(TOOLS);
+  const { dom, window, document } = host({ db });
+  await waitFor(window, () => typeof window.MTW_OPEN_PAGE_BUILDER === 'function');
+  const editor = await window.MTW_OPEN_PAGE_BUILDER('jobs');
+  await editor.loaded;
+  const ui = editor.element;
+  const inspector = ui.querySelector('.mtw-pb-inspector');
+  pointer(window, ui.querySelector('.mtw-pb-tile[data-block-type="cards"]'), 'pointerdown');
+  pointer(window, document, 'pointerup');
+  await tick(window);
+  const id = editor.selected.id;
+  const props = () => editor.page.sections[0].columns[0].blocks.find(b => b.id === id).props;
+  assert.equal(props().source, 'manual');
+  assert.equal(inspector.querySelector('[data-field="table"]'), null, 'no data table picker for typed cards');
+  assert.equal(ui.querySelectorAll('.mtw-pb-frame .mtw-pb-record-card').length, 3);
+  inspector.querySelector('.mtw-pb-add-card').click();
+  assert.equal(props().items.length, 4);
+  const cards = inspector.querySelectorAll('.mtw-pb-cards')[0].children;
+  const title = cards[3].querySelector('[data-field^="title-"] input');
+  title.value = 'Wipers';
+  title.dispatchEvent(new window.Event('input', { bubbles: true }));
+  assert.equal(props().items[3].title, 'Wipers');
+  assert.ok([...ui.querySelectorAll('.mtw-pb-frame .mtw-pb-record-card strong')].some(n => n.textContent === 'Wipers'));
+  cards[0].querySelector('.mtw-pb-card-delete').click();
+  assert.deepEqual([...props().items.map(i => i.title)], ['Second card', 'Third card', 'Wipers']);
+  // Steps for typed cards offer the card's fields, and no "Delete this record".
+  inspector.querySelector('.mtw-pb-edit-steps').click();
+  const logic = ui.querySelector('.mtw-pb-logic');
+  assert.equal(logic.querySelector('.mtw-pb-step-tile[data-step-type="deleteRecord"]'), null);
+  editor.dropStep({ kind: 'newStep', type: 'if', scope: `block:${id}` }, [], 0);
+  assert.ok([...logic.querySelector('.mtw-pb-step-if [data-field="left"] select').options].some(o => o.value === 'record.title'));
+  editor.closeSteps();
+  // Switching to a data table shows the table settings instead.
+  const source = inspector.querySelector('[data-field="source"] select');
+  source.value = 'table';
+  source.dispatchEvent(new window.Event('change', { bubbles: true }));
+  assert.ok(inspector.querySelector('[data-field="table"]'));
+  assert.equal(inspector.querySelector('.mtw-pb-add-card'), null);
+  editor.close(true);
+  dom.window.close();
+});
+
+test('cards people add: each card list gets its own popup + table; fields stay in sync; works live', async () => {
+  const db = store(TOOLS);
+  const { dom, window, document, errors } = host({ db });
+  await waitFor(window, () => typeof window.MTW_OPEN_PAGE_BUILDER === 'function');
+  const editor = await window.MTW_OPEN_PAGE_BUILDER('jobs');
+  await editor.loaded;
+  const ui = editor.element;
+  const inspector = ui.querySelector('.mtw-pb-inspector');
+  const all = () => editor.page.sections.flatMap(s => s.columns.flatMap(col => col.blocks));
+  const addCardList = async () => {
+    editor.select(null);
+    pointer(window, ui.querySelector('.mtw-pb-tile[data-block-type="cards"]'), 'pointerdown');
+    pointer(window, document, 'pointerup');
+    await tick(window);
+    const id = editor.selected.id;
+    const source = inspector.querySelector('[data-field="source"] select');
+    source.value = 'added';
+    source.dispatchEvent(new window.Event('change', { bubbles: true }));
+    return id;
+  };
+
+  const first = await addCardList();
+  const p1 = all().find(b => b.id === first).props;
+  assert.equal(p1.source, 'added');
+  const t1 = editor.page.tables.find(t => t.id === p1.table);
+  assert.deepEqual([...t1.fields.map(f => f.label)], ['Title', 'Details']);
+  const popup1 = editor.page.sections.find(s => s.popup && s.name === p1.formPopup);
+  assert.ok(popup1, 'its own popup');
+  assert.deepEqual([...popup1.columns[0].blocks.map(b => [b.type, b.props.bind || b.props.label])],
+    [['input', `${t1.id}.name`], ['input', `${t1.id}.notes`], ['button', 'Save card']]);
+  assert.ok(all().some(b => b.type === 'button' && b.props.label === '+ Add card' && b.props.popup === p1.formPopup));
+
+  // Card fields: add one -> the popup gets an input; rename -> label follows; delete -> input goes.
+  inspector.querySelector('.mtw-pb-add-card-field').click();
+  const t1b = () => editor.page.tables.find(t => t.id === p1.table);
+  const newKey = t1b().fields[2].key;
+  const popupBlocks = () => editor.page.sections.find(s => s.name === p1.formPopup).columns[0].blocks;
+  assert.deepEqual([...popupBlocks().map(b => b.props.bind || b.props.label)], [`${t1.id}.name`, `${t1.id}.notes`, `${t1.id}.${newKey}`, 'Save card']);
+  const fieldCards = inspector.querySelectorAll('[data-drop-group^="cardfields:"] .mtw-pb-card-item');
+  const label = fieldCards[2].querySelector('[data-field^="label-"] input');
+  label.value = 'Order number';
+  label.dispatchEvent(new window.Event('input', { bubbles: true }));
+  assert.equal(popupBlocks()[2].props.label, 'Order number');
+  inspector.querySelectorAll('[data-drop-group^="cardfields:"] .mtw-pb-card-item')[1].querySelector('.mtw-pb-card-delete').click();
+  assert.deepEqual([...popupBlocks().map(b => b.props.bind || b.props.label)], [`${t1.id}.name`, `${t1.id}.${newKey}`, 'Save card']);
+
+  // A second card list: a different table and a different popup.
+  const second = await addCardList();
+  const p2 = all().find(b => b.id === second).props;
+  assert.notEqual(p2.table, p1.table);
+  assert.notEqual(p2.formPopup, p1.formPopup);
+
+  // Popups tab lists both; a button's "Opens a popup" can create a new one.
+  ui.querySelector('.mtw-pb-tab[data-tab="popups"]').click();
+  assert.equal(ui.querySelectorAll('.mtw-pb-popup-item').length, 2);
+  ui.querySelector('.mtw-pb-new-popup').click();
+  assert.equal(editor.page.sections.filter(s => s.popup).length, 3);
+  ui.querySelector('.mtw-pb-tab[data-tab="blocks"]').click();
+  editor.select(null);
+  pointer(window, ui.querySelector('.mtw-pb-tile[data-block-type="button"]'), 'pointerdown');
+  pointer(window, document, 'pointerup');
+  await tick(window);
+  const btnId = editor.selected.id;
+  const pick = inspector.querySelector('[data-field="popup"] select');
+  pick.value = '__new__';
+  pick.dispatchEvent(new window.Event('change', { bubbles: true }));
+  const btnPopup = all().find(b => b.id === btnId).props.popup;
+  assert.ok(btnPopup && editor.page.sections.some(s => s.popup && s.name === btnPopup), 'new popup made and attached');
+  assert.equal(editor.page.sections.filter(s => s.popup).length, 4);
+
+  // Publish and use it: + Add card -> popup -> Save -> card saved to Firestore and shown.
+  editor.save(true);
+  await waitFor(window, () => db.data['dashboard-tool-pages'] && db.data['dashboard-tool-pages'].jobs);
+  editor.close(true);
+  const panel = document.querySelector('.custom-dashboard-tool-jobs-panel');
+  await waitFor(window, () => panel.querySelector(`.mtw-pb-popup[data-popup="${p1.formPopup}"]`));
+  const addButtons = [...panel.querySelectorAll('.mtw-pb-button')].filter(b => b.textContent === '+ Add card');
+  assert.equal(addButtons.length, 2);
+  addButtons[0].click();
+  const shell = panel.querySelector(`.mtw-pb-popup[data-popup="${p1.formPopup}"]`);
+  await waitFor(window, () => !shell.hidden);
+  const controls = shell.querySelectorAll('.mtw-pb-control');
+  controls[0].value = 'Smith Ltd';
+  controls[0].dispatchEvent(new window.Event('input', { bubbles: true }));
+  controls[1].value = '1001';
+  controls[1].dispatchEvent(new window.Event('input', { bubbles: true }));
+  [...shell.querySelectorAll('.mtw-pb-button')].find(b => b.textContent === 'Save card').click();
+  await waitFor(window, () => shell.hidden);
+  const saved = Object.values(db.data[`dashboard-data-jobs-${p1.table}`]);
+  assert.deepEqual([saved[0].name, saved[0][newKey]], ['Smith Ltd', '1001']);
+  await waitFor(window, () => [...panel.querySelectorAll('.mtw-pb-record-card-title')].some(n => n.textContent === 'Smith Ltd'));
+  assert.equal(db.data[`dashboard-data-jobs-${p2.table}`], undefined, 'the other list is untouched');
+  assert.deepEqual(errors.filter(e => !/stylesheet|Could not parse CSS/i.test(e)), []);
   dom.window.close();
 });
