@@ -248,6 +248,17 @@
       state.editing = null;
     }
 
+    // Builder preview: changes show in lists straight away but only in memory (marked
+    // _preview), never in Firestore. The builder drops them when preview ends.
+    let previewCount = 0;
+    function previewChange(tableId, fn) {
+      const entry = table(tableId);
+      if (!entry) return;
+      entry.rows = fn(entry.rows.slice());
+      entry.loaded = true;
+      entry.listeners.forEach(listener => listener(entry));
+    }
+
     async function save(tableId, mode) {
       const def = tables[tableId];
       if (!def) throw new Error('Pick a data table for the Save step.');
@@ -257,6 +268,9 @@
         const input = Object.values(elements).find(block => block.type === 'input' && block.props.bind === `${tableId}.${field.key}`);
         let v = input ? String(value(input.name)).trim() : '';
         if (field.required && !v) missing.push(input ? (input.props.label || field.label) : field.label);
+        if (field.type === 'image' && v !== '' && !c.safeUrl(v)) {
+          throw new Error(`${field.label} must be a web address starting with https://`);
+        }
         if (field.type === 'number' && v !== '') {
           const n = Number(v);
           if (!Number.isFinite(n)) throw new Error(`${field.label} must be a number.`);
@@ -268,6 +282,7 @@
       const editing = mode !== 'add' && state.editing && state.editing.table === tableId ? state.editing : null;
       if (editing) {
         if (opts.dryRun) {
+          previewChange(tableId, rows => rows.map(row => (row._id === editing.id ? { ...row, ...record, _preview: true } : row)));
           state.editing = null;
           return record;
         }
@@ -278,14 +293,21 @@
       }
       record._createdAt = Date.now();
       record._createdBy = user;
-      if (opts.dryRun) return record; // builder preview: everything runs, nothing is written
+      if (opts.dryRun) { // builder preview: shows in lists, nothing is written
+        previewCount += 1;
+        previewChange(tableId, rows => rows.concat({ ...record, _id: `preview-${previewCount}`, _preview: true }));
+        return record;
+      }
       if (typeof api.addDoc !== 'function') throw new Error('The dashboard database is unavailable.');
       await api.addDoc(collectionRef(tableId), record);
       return record;
     }
 
     async function remove(tableId, id) {
-      if (opts.dryRun) return;
+      if (opts.dryRun) {
+        previewChange(tableId, rows => rows.filter(row => row._id !== id));
+        return;
+      }
       if (typeof api.deleteDoc !== 'function' || typeof api.doc !== 'function') throw new Error('The dashboard database is unavailable.');
       await api.deleteDoc(api.doc(api.db, c.dataCollection(opts.toolId, tableId), id));
     }
@@ -354,7 +376,11 @@
         total: parsed.length - 1
       }) : true;
       if (!ok) return null;
-      if (opts.dryRun) return { added: rows.length, skipped: skipped.length };
+      if (opts.dryRun) {
+        const now = Date.now();
+        previewChange(tableId, list => list.concat(rows.map((row, i) => ({ ...row, _createdAt: now + i, _createdBy: user, _id: `preview-import-${now}-${i}`, _preview: true }))));
+        return { added: rows.length, skipped: skipped.length };
+      }
       if (typeof api.addDoc !== 'function') throw new Error('The dashboard database is unavailable.');
       const now = Date.now();
       for (let i = 0; i < rows.length; i += 1) {
@@ -511,6 +537,15 @@
     };
   }
 
+  // Removes preview-only rows (see previewChange) from a shared cache.
+  function clearPreview(shared) {
+    Object.values((shared && shared.data) || {}).forEach(entry => {
+      const before = entry.rows.length;
+      entry.rows = entry.rows.filter(row => !row._preview);
+      if (entry.rows.length !== before) entry.listeners.forEach(listener => listener(entry));
+    });
+  }
+
   function disposeShared(shared) {
     Object.values((shared && shared.data) || {}).forEach(entry => {
       if (typeof entry.unsubscribe === 'function') {
@@ -521,5 +556,5 @@
     if (shared) shared.data = {};
   }
 
-  root.MTW_PAGE_RUNTIME = { create, compare, disposeShared, createShared: () => ({ data: {} }) };
+  root.MTW_PAGE_RUNTIME = { create, compare, disposeShared, clearPreview, createShared: () => ({ data: {} }) };
 })(typeof self !== 'undefined' ? self : this);

@@ -92,7 +92,8 @@
       });
     } else {
       control = el(doc, 'input');
-      control.type = spec.kind === 'number' ? 'number' : spec.kind === 'date' ? 'date' : 'text';
+      control.type = spec.kind === 'number' ? 'number' : spec.kind === 'date' ? 'date' : spec.kind === 'image' ? 'url' : 'text';
+      if (spec.kind === 'image' && !block.props.placeholder) control.placeholder = 'https:// image address';
     }
     control.id = id;
     control.className = 'mtw-pb-control';
@@ -406,7 +407,7 @@
     const field = key => def.fields.find(f => f.key === key);
     const titleField = field(p.titleField) || def.fields[0] || null;
     const textField = field(p.textField);
-    const extras = p.fields.map(field).filter(Boolean).filter(f => f !== titleField && f !== textField);
+    const extras = p.fields.map(field).filter(Boolean).filter(f => f !== titleField && f !== textField && f.type !== 'image');
     let search = null;
     if (p.search === 'yes') {
       search = el(doc, 'input', 'mtw-pb-control mtw-pb-records-search');
@@ -470,6 +471,16 @@
           }
           grid.appendChild(card);
           return;
+        }
+        const imageField = def.fields.find(f => f.type === 'image');
+        const imageSrc = imageField ? core().safeUrl(row[imageField.key]) : '';
+        if (imageSrc) {
+          const img = el(doc, 'img', 'mtw-pb-card-image');
+          img.src = imageSrc;
+          img.alt = '';
+          img.loading = 'lazy';
+          img.style.height = '140px';
+          card.appendChild(img);
         }
         if (titleField) card.appendChild(el(doc, 'strong', 'mtw-pb-record-card-title', fmt(row[titleField.key], titleField.type) || '(untitled)'));
         if (textField && row[textField.key] !== undefined && row[textField.key] !== '') {
@@ -657,10 +668,7 @@
   function renderSection(doc, section, options) {
     const node = el(doc, 'section', 'mtw-pb-section');
     node.dataset.sectionId = section.id;
-    if (section.popup) {
-      node.classList.add('is-popup');
-      node.dataset.name = section.name;
-    }
+
     node.dataset.layout = section.layout;
     applyStyle(node, section.style);
     const row = el(doc, 'div', 'mtw-pb-row');
@@ -703,25 +711,35 @@
     return node;
   }
 
-  function popupShell(doc, section, sectionNode, ui) {
-    const shell = el(doc, 'div', 'mtw-pb-popup');
-    shell.dataset.popup = section.name;
-    shell.hidden = true;
-    const dialog = el(doc, 'div', 'mtw-pb-popup-dialog');
+  // A popup's dialog (title + close) holding its sections. In the builder it is drawn
+  // in place (open) as the canvas; on the page it is hidden until opened.
+  function popupDialog(doc, popup, options, ui) {
+    const dialog = el(doc, 'div', `mtw-pb-popup-dialog mtw-pb-popup-${popup.width || 'medium'}`);
     dialog.setAttribute('role', 'dialog');
     dialog.setAttribute('aria-modal', 'true');
-    dialog.setAttribute('aria-label', section.title || section.name);
+    dialog.setAttribute('aria-label', popup.title || popup.name);
+    dialog.dataset.popupId = popup.id;
     const head = el(doc, 'div', 'mtw-pb-popup-head');
-    head.appendChild(el(doc, 'strong', '', section.title || ''));
+    head.appendChild(el(doc, 'strong', '', popup.title || ''));
     const close = el(doc, 'button', 'mtw-pb-popup-close', '\u00d7');
     close.type = 'button';
     close.setAttribute('aria-label', 'Close');
-    close.addEventListener('click', () => ui.closePopup(section.name));
+    close.addEventListener('click', () => { if (!options.editing) ui.closePopup(popup.name); });
     head.appendChild(close);
-    dialog.append(head, sectionNode);
-    shell.appendChild(dialog);
+    dialog.appendChild(head);
+    const body = el(doc, 'div', 'mtw-pb-popup-body');
+    popup.sections.forEach(section => body.appendChild(renderSection(doc, section, options)));
+    dialog.appendChild(body);
+    return dialog;
+  }
+
+  function popupShell(doc, popup, options, ui) {
+    const shell = el(doc, 'div', 'mtw-pb-popup');
+    shell.dataset.popup = popup.name;
+    shell.hidden = true;
+    shell.appendChild(popupDialog(doc, popup, options, ui));
     shell.addEventListener('mousedown', event => {
-      if (event.target === shell) ui.closePopup(section.name);
+      if (event.target === shell) ui.closePopup(popup.name);
     });
     return shell;
   }
@@ -924,17 +942,17 @@
     const ui = pageUi(doc, node, safe, opts);
     opts.ui = ui;
     if (opts.runtime) opts.runtime.setUi(ui);
-    safe.sections.forEach(section => {
-      const sectionNode = renderSection(doc, section, opts);
-      if (section.popup && !opts.editing) node.appendChild(popupShell(doc, section, sectionNode, ui));
-      else {
-        if (section.popup) {
-          const tag = el(doc, 'div', 'mtw-pb-popup-tag', `Popup "${section.title || section.name}" (${section.name}): opens from a button`);
-          sectionNode.prepend(tag);
-        }
-        node.appendChild(sectionNode);
-      }
-    });
+    // opts.canvas (builder): draw that popup open, by itself, instead of the page.
+    const canvasPopup = opts.canvas ? (safe.popups || []).find(popup => popup.id === opts.canvas) : null;
+    if (canvasPopup) {
+      node.classList.add('is-popup-canvas');
+      const dialog = popupDialog(doc, canvasPopup, opts, ui);
+      // Sections sit directly in the body so dragging finds them like page sections.
+      node.appendChild(dialog);
+    } else {
+      safe.sections.forEach(section => node.appendChild(renderSection(doc, section, opts)));
+      if (!opts.editing) (safe.popups || []).forEach(popup => node.appendChild(popupShell(doc, popup, opts, ui)));
+    }
     node.mtwRuntime = opts.runtime || null;
     return node;
   }

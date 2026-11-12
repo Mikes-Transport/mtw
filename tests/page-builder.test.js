@@ -710,7 +710,7 @@ test('card board: popup form adds a card, card click fills a popup with the reco
   dom.window.close();
 });
 
-test('builder: section as popup, card board shortcut, record fields in the steps panel', async () => {
+test('builder: popups are built like pages, card board shortcut, record fields in the steps panel', async () => {
   const db = store(TOOLS);
   const { dom, window, document } = host({ db });
   await waitFor(window, () => typeof window.MTW_OPEN_PAGE_BUILDER === 'function');
@@ -722,10 +722,9 @@ test('builder: section as popup, card board shortcut, record fields in the steps
   ui.querySelector('.mtw-pb-add-table').click();
   const tableId = editor.page.tables[0].id;
   inspector.querySelector('.mtw-pb-make-board').click();
-  const popups = editor.page.sections.filter(s => s.popup);
+  const popups = editor.page.popups;
   assert.equal(popups.length, 1);
-  assert.equal(editor.page.sections[editor.page.sections.length - 1].popup, true, 'popup section goes last');
-  const blocks = editor.page.sections.flatMap(s => s.columns.flatMap(col => col.blocks));
+  const blocks = editor.page.sections.concat(...editor.page.popups.map(p => p.sections)).flatMap(s => s.columns.flatMap(col => col.blocks));
   const byLabel = label => blocks.find(b => b.props.label === label);
   assert.equal(byLabel('+ Add').props.popup, popups[0].name, '+ Add opens the popup');
   assert.deepEqual([...byLabel('Save').props.actions.map(a => a.type)], ['save', 'message', 'clear', 'closePopup']);
@@ -734,8 +733,8 @@ test('builder: section as popup, card board shortcut, record fields in the steps
   const cards = blocks.find(b => b.type === 'cards');
   assert.equal(cards.props.table, tableId);
   assert.equal(cards.props.titleField, 'name');
-  // In the editor the popup shows inline with a tag.
-  assert.ok(ui.querySelector('.mtw-pb-frame .mtw-pb-section.is-popup .mtw-pb-popup-tag'));
+  // Popups aren't drawn on the page canvas; the Popups tab opens one to build it.
+  assert.equal(ui.querySelector('.mtw-pb-frame .mtw-pb-popup-dialog'), null);
 
   // The cards' steps: record fields are offered; "Delete this record" is available.
   editor.select({ kind: 'block', id: cards.id });
@@ -757,14 +756,32 @@ test('builder: section as popup, card board shortcut, record fields in the steps
   assert.ok([...logic.querySelector('.mtw-pb-step-openPopup [data-field="target"] select').options].some(o => o.value === popups[0].name));
   editor.closeSteps();
 
-  // Section inspector: turn a section into a popup and back.
-  const first = editor.page.sections[0];
-  editor.select({ kind: 'section', id: first.id });
-  inspector.querySelector('.mtw-pb-popup-toggle input').click();
-  assert.equal(editor.page.sections[0].popup, true);
-  assert.ok(inspector.querySelector('[data-field="title"] input'));
-  inspector.querySelector('.mtw-pb-popup-toggle input').click();
-  assert.equal(editor.page.sections[0].popup, undefined);
+  // Popups tab -> open the popup on the canvas; add a two-column section; drop blocks in it.
+  editor.select(null);
+  ui.querySelector('.mtw-pb-tab[data-tab="popups"]').click();
+  ui.querySelector('.mtw-pb-popup-item').click();
+  assert.ok(ui.querySelector('.mtw-pb-frame .mtw-pb-page.is-popup-canvas .mtw-pb-popup-dialog'));
+  assert.equal(ui.querySelector('.mtw-pb-canvas-bar').hidden, false);
+  assert.match(inspector.textContent, /Popup name/);
+  const popupId = popups[0].id;
+  ui.querySelector('.mtw-pb-tab[data-tab="blocks"]').click();
+  pointer(window, ui.querySelector('.mtw-pb-tile-layout[data-layout="1-1"]'), 'pointerdown');
+  pointer(window, document, 'pointerup');
+  const popupNow = () => editor.page.popups.find(p => p.id === popupId);
+  assert.equal(popupNow().sections.length, 2, 'section added inside the popup');
+  assert.equal(editor.page.sections.length, 2, 'page sections untouched');
+  const [l, r] = popupNow().sections[1].columns.map(col => col.id);
+  editor.drop({ kind: 'new', type: 'button' }, { type: 'block', columnId: l, index: 0 });
+  editor.drop({ kind: 'new', type: 'button' }, { type: 'block', columnId: r, index: 0 });
+  assert.equal(popupNow().sections[1].columns.map(col => col.blocks.length).join(), '1,1');
+  // Popup settings: width and title.
+  editor.select(null);
+  const width = inspector.querySelector('[data-field="width"] select');
+  width.value = 'large';
+  width.dispatchEvent(new window.Event('change', { bubbles: true }));
+  assert.equal(popupNow().width, 'large');
+  ui.querySelector('.mtw-pb-canvas-back').click();
+  assert.equal(ui.querySelector('.mtw-pb-frame .mtw-pb-popup-dialog'), null, 'back on the page');
   editor.close(true);
   dom.window.close();
 });
@@ -784,6 +801,10 @@ test('builder preview runs steps without writing to Firestore', async () => {
   frame.querySelector('[data-name="save"] button').click();
   await waitFor(window, () => frame.querySelector('.mtw-pb-popup[data-popup="add_job"]').hidden);
   assert.equal(db.data['dashboard-data-jobs-t-jobs'], undefined, 'nothing written');
+  // ...but the card shows in the preview, until going back to editing.
+  await waitFor(window, () => [...frame.querySelectorAll('.mtw-pb-record-card-title')].some(n => n.textContent === 'Test Co'));
+  [...ui.querySelectorAll('.mtw-pb-top-actions button')].find(b => b.textContent === 'Edit').click();
+  assert.ok(![...ui.querySelectorAll('.mtw-pb-frame .mtw-pb-record-card-title')].some(n => n.textContent === 'Test Co'), 'preview-only card gone');
   editor.close(true);
   dom.window.close();
 });
@@ -864,7 +885,7 @@ test('cards people add: each card list gets its own popup + table; fields stay i
   await editor.loaded;
   const ui = editor.element;
   const inspector = ui.querySelector('.mtw-pb-inspector');
-  const all = () => editor.page.sections.flatMap(s => s.columns.flatMap(col => col.blocks));
+  const all = () => editor.page.sections.concat(...editor.page.popups.map(p => p.sections)).flatMap(s => s.columns.flatMap(col => col.blocks));
   const addCardList = async () => {
     editor.select(null);
     pointer(window, ui.querySelector('.mtw-pb-tile[data-block-type="cards"]'), 'pointerdown');
@@ -882,9 +903,9 @@ test('cards people add: each card list gets its own popup + table; fields stay i
   assert.equal(p1.source, 'added');
   const t1 = editor.page.tables.find(t => t.id === p1.table);
   assert.deepEqual([...t1.fields.map(f => f.label)], ['Title', 'Details']);
-  const popup1 = editor.page.sections.find(s => s.popup && s.name === p1.formPopup);
+  const popup1 = editor.page.popups.find(p => p.name === p1.formPopup);
   assert.ok(popup1, 'its own popup');
-  assert.deepEqual([...popup1.columns[0].blocks.map(b => [b.type, b.props.bind || b.props.label])],
+  assert.deepEqual([...popup1.sections[0].columns[0].blocks.map(b => [b.type, b.props.bind || b.props.label])],
     [['input', `${t1.id}.name`], ['input', `${t1.id}.notes`], ['button', 'Save card']]);
   assert.ok(all().some(b => b.type === 'button' && b.props.label === '+ Add card' && b.props.popup === p1.formPopup));
 
@@ -892,7 +913,7 @@ test('cards people add: each card list gets its own popup + table; fields stay i
   inspector.querySelector('.mtw-pb-add-card-field').click();
   const t1b = () => editor.page.tables.find(t => t.id === p1.table);
   const newKey = t1b().fields[2].key;
-  const popupBlocks = () => editor.page.sections.find(s => s.name === p1.formPopup).columns[0].blocks;
+  const popupBlocks = () => editor.page.popups.find(p => p.name === p1.formPopup).sections[0].columns[0].blocks;
   assert.deepEqual([...popupBlocks().map(b => b.props.bind || b.props.label)], [`${t1.id}.name`, `${t1.id}.notes`, `${t1.id}.${newKey}`, 'Save card']);
   const fieldCards = inspector.querySelectorAll('[data-drop-group^="cardfields:"] .mtw-pb-card-item');
   const label = fieldCards[2].querySelector('[data-field^="label-"] input');
@@ -912,7 +933,7 @@ test('cards people add: each card list gets its own popup + table; fields stay i
   ui.querySelector('.mtw-pb-tab[data-tab="popups"]').click();
   assert.equal(ui.querySelectorAll('.mtw-pb-popup-item').length, 2);
   ui.querySelector('.mtw-pb-new-popup').click();
-  assert.equal(editor.page.sections.filter(s => s.popup).length, 3);
+  assert.equal(editor.page.popups.length, 3);
   ui.querySelector('.mtw-pb-tab[data-tab="blocks"]').click();
   editor.select(null);
   pointer(window, ui.querySelector('.mtw-pb-tile[data-block-type="button"]'), 'pointerdown');
@@ -923,8 +944,8 @@ test('cards people add: each card list gets its own popup + table; fields stay i
   pick.value = '__new__';
   pick.dispatchEvent(new window.Event('change', { bubbles: true }));
   const btnPopup = all().find(b => b.id === btnId).props.popup;
-  assert.ok(btnPopup && editor.page.sections.some(s => s.popup && s.name === btnPopup), 'new popup made and attached');
-  assert.equal(editor.page.sections.filter(s => s.popup).length, 4);
+  assert.ok(btnPopup && editor.page.popups.some(p => p.name === btnPopup), 'new popup made and attached');
+  assert.equal(editor.page.popups.length, 4);
 
   // Publish and use it: + Add card -> popup -> Save -> card saved to Firestore and shown.
   editor.save(true);
@@ -1144,7 +1165,16 @@ test('builder: card designer buttons, images and button steps', async () => {
   tap('image');
   tap('button');
   const parts = design().parts;
-  assert.deepEqual([...parts.slice(-2).map(p => p.type)], ['image', 'button']);
+  assert.equal(parts[0].type, 'image', 'an image goes at the top');
+  assert.equal(parts[parts.length - 1].type, 'button');
+  // "Cards people add": the image comes from a new Image field, so the popup gets a web address box.
+  const listProps = editor.page.sections.flatMap(s => s.columns.flatMap(col => col.blocks)).find(b => b.id === id).props;
+  const imageField = editor.page.tables.find(t => t.id === listProps.table).fields.find(f => f.type === 'image');
+  assert.ok(imageField, 'Image field added');
+  assert.equal(parts[0].source, 'field');
+  assert.equal(parts[0].field, imageField.key);
+  const formInputs = editor.page.popups.find(p => p.name === listProps.formPopup).sections[0].columns[0].blocks;
+  assert.ok(formInputs.some(b => b.type === 'input' && b.props.bind === `${listProps.table}.${imageField.key}`), 'popup has an image address input');
   assert.ok(logic.querySelector('.mtw-pb-design-preview .mtw-pb-card-image'), 'image placeholder in the preview');
   assert.ok([...logic.querySelectorAll('.mtw-pb-design-preview .mtw-pb-card-button')].some(b => b.textContent === 'Edit'));
   // Button set to "Run my steps": Edit steps opens the steps panel; Done comes back here.
@@ -1160,12 +1190,43 @@ test('builder: card designer buttons, images and button steps', async () => {
   assert.equal(design().parts.find(p => p.id === partId).actions[0].type, 'message');
   logic.querySelector('.mtw-pb-logic-done').click();
   assert.match(logic.querySelector('.mtw-pb-logic-head strong').textContent, /cards_1/, 'back in the card designer');
-  // Image from a typed address
-  const imageCard = [...logic.querySelectorAll('.mtw-pb-part')].find(card => card.classList.contains('mtw-pb-part-image'));
-  const url = imageCard.querySelector('[data-field="url"] input');
+  // Image from a typed address instead
+  const imageCard = () => [...logic.querySelectorAll('.mtw-pb-part')].find(card => card.classList.contains('mtw-pb-part-image'));
+  const src = imageCard().querySelector('[data-field="source"] select');
+  src.value = 'url';
+  src.dispatchEvent(new window.Event('change', { bubbles: true }));
+  const url = imageCard().querySelector('[data-field="url"] input');
   url.value = 'https://example.com/x.png';
   url.dispatchEvent(new window.Event('input', { bubbles: true }));
   assert.equal(logic.querySelector('.mtw-pb-design-preview img.mtw-pb-card-image').getAttribute('src'), 'https://example.com/x.png');
   editor.close(true);
+  dom.window.close();
+});
+
+
+test('image fields: web address input, checked on save, shown on cards', async () => {
+  const page = {
+    tables: [{ id: 't-st', name: 'Stock', fields: [{ key: 'name', label: 'Name', type: 'text' }, { key: 'photo', label: 'Photo', type: 'image' }] }],
+    sections: [{ layout: '1', columns: [{ blocks: [
+      { type: 'input', name: 'name', props: { label: 'Name', bind: 't-st.name' } },
+      { type: 'input', name: 'photo', props: { label: 'Photo', bind: 't-st.photo' } },
+      { type: 'button', name: 'save', props: { label: 'Save', actions: [{ type: 'save', table: 't-st' }] } },
+      { type: 'cards', name: 'stock', props: { source: 'table', table: 't-st', titleField: 'name' } }
+    ] }] }]
+  };
+  const db = store({ ...TOOLS, 'dashboard-tool-pages': { jobs: { published: page } } });
+  const { dom, window, document } = host({ db });
+  await waitFor(window, () => document.querySelector('.custom-dashboard-tool-jobs-panel [data-name="photo"]'));
+  const panel = document.querySelector('.custom-dashboard-tool-jobs-panel');
+  assert.equal(panel.querySelector('[data-name="photo"] input').type, 'url');
+  setControl(window, panel, 'name', 'Tyre');
+  setControl(window, panel, 'photo', 'not a link');
+  panel.querySelector('[data-name="save"] button').click();
+  await waitFor(window, () => /Photo must be a web address/.test(panel.querySelector('.mtw-pb-toasts').textContent));
+  assert.equal(db.data['dashboard-data-jobs-t-st'], undefined);
+  setControl(window, panel, 'photo', 'https://example.com/tyre.jpg');
+  panel.querySelector('[data-name="save"] button').click();
+  await waitFor(window, () => panel.querySelector('.mtw-pb-record-card img'));
+  assert.equal(panel.querySelector('.mtw-pb-record-card img').getAttribute('src'), 'https://example.com/tyre.jpg');
   dom.window.close();
 });

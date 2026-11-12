@@ -13,7 +13,7 @@
   'use strict';
 
   const VERSION = 1;
-  const LIMITS = Object.freeze({ sections: 60, blocks: 400, text: 4000, short: 200, tables: 20, fields: 40, columns: 20, rows: 200, cell: 500, steps: 60 });
+  const LIMITS = Object.freeze({ sections: 60, blocks: 400, text: 4000, short: 200, tables: 20, fields: 40, columns: 20, rows: 200, cell: 500, steps: 60, popups: 30 });
 
   // Column layouts a section can use (fractions of the row).
   const LAYOUTS = Object.freeze({
@@ -207,7 +207,8 @@
     number: 'Number',
     date: 'Date',
     choice: 'Dropdown',
-    yesno: 'Yes / no'
+    yesno: 'Yes / no',
+    image: 'Image (web address)'
   });
 
   // Comparisons for If steps.
@@ -1032,7 +1033,7 @@
   // Every named element on a page: [{ name, type, label, block }].
   function pageElements(page) {
     const list = [];
-    page.sections.forEach(section => section.columns.forEach(column => column.blocks.forEach(block => {
+    allSections(page).forEach(section => section.columns.forEach(column => column.blocks.forEach(block => {
       if (block.name) list.push({ name: block.name, type: block.type, label: BLOCKS[block.type].label, block });
     })));
     return list;
@@ -1040,8 +1041,9 @@
 
   // Sections shown as popups: [{ name, title, section }].
   function pagePopups(page) {
-    return page.sections.filter(section => section.popup && section.name)
-      .map(section => ({ name: section.name, title: section.title || section.name, section }));
+    return (page.popups || []).map(popup => ({
+      id: popup.id, name: popup.name, title: popup.title || popup.name, popup, section: popup.sections[0] || null
+    }));
   }
 
   function allNames(page) {
@@ -1065,8 +1067,7 @@
   function renameBlock(page, id, name) {
     const next = clone(page);
     const found = findBlock(next, id);
-    const section = found ? null : (findSection(next, id) || {}).section;
-    const owner = found ? found.block : section;
+    const owner = found ? found.block : findPopup(next, id);
     if (!owner) return { page, name: null, error: 'Element not found.' };
     const wanted = String(name || '').trim().toLowerCase();
     if (!KEY_RE.test(wanted) || wanted === 'record') return { page, name: null, error: 'Start with a letter; use lowercase letters, numbers and _.' };
@@ -1090,20 +1091,13 @@
       fixList(step.else);
     });
     fixList(page.onOpen);
-    page.sections.forEach(section => section.columns.forEach(column => column.blocks.forEach(block => {
+    allSections(page).forEach(section => section.columns.forEach(column => column.blocks.forEach(block => {
       if (Array.isArray(block.props.actions)) fixList(block.props.actions);
       ['popup', 'formPopup'].forEach(key => { if (block.props[key] === from) block.props[key] = to; });
       ['defaultValue', 'text', 'filterValue'].forEach(key => {
         if (typeof block.props[key] === 'string') block.props[key] = fixText(block.props[key]);
       });
     })));
-  }
-
-  function popupFields(raw, page, names) {
-    let name = typeof raw.name === 'string' && KEY_RE.test(raw.name) ? raw.name : '';
-    if (!name || names.has(name)) name = freeName(page, 'popup', names);
-    names.add(name);
-    return { popup: true, name, title: str(raw.title, 120) };
   }
 
   // ---------- CSV ----------
@@ -1197,7 +1191,7 @@
   }
 
   function createPage() {
-    return { version: VERSION, sections: [], tables: [], onOpen: [] };
+    return { version: VERSION, sections: [], tables: [], onOpen: [], popups: [] };
   }
 
   // ---------- sanitize (everything read from storage) ----------
@@ -1216,15 +1210,13 @@
       return id;
     };
     let blockCount = 0;
-    sections.slice(0, LIMITS.sections).forEach(rawSection => {
-      if (!rawSection || typeof rawSection !== 'object') return;
+    const cleanSection = rawSection => {
       const layout = LAYOUTS[rawSection.layout] ? rawSection.layout : '1';
       const rawColumns = Array.isArray(rawSection.columns) ? rawSection.columns : [];
-      const section = {
+      return {
         id: uniqueId(rawSection.id, 's'),
         layout,
         style: sanitizeSectionStyle(rawSection.style),
-        ...(rawSection.popup === true ? popupFields(rawSection, page, names) : {}),
         columns: LAYOUTS[layout].map((_, index) => {
           const rawColumn = rawColumns[index] && typeof rawColumns[index] === 'object' ? rawColumns[index] : {};
           const blocks = [];
@@ -1249,7 +1241,44 @@
           return { id: uniqueId(rawColumn.id, 'c'), blocks };
         })
       };
-      page.sections.push(section);
+    };
+    const popupName = raw => {
+      let name = typeof raw.name === 'string' && KEY_RE.test(raw.name) && raw.name !== 'record' ? raw.name : '';
+      if (!name || names.has(name)) name = freeName(page, 'popup', names);
+      names.add(name);
+      return name;
+    };
+    const rawPopups = raw && Array.isArray(raw.popups) ? raw.popups : [];
+    // Popup names first, so page blocks can't take them.
+    const popupNames = rawPopups.slice(0, LIMITS.popups).map(rp => (rp && typeof rp === 'object' ? popupName(rp) : null));
+    let sectionCount = 0;
+    sections.forEach(rawSection => {
+      if (!rawSection || typeof rawSection !== 'object' || sectionCount >= LIMITS.sections) return;
+      sectionCount += 1;
+      if (rawSection.popup === true) {
+        // Older pages: a section shown as a popup becomes a popup with that section.
+        if (page.popups.length >= LIMITS.popups) return;
+        const name = popupName(rawSection);
+        page.popups.push({ id: newId('u'), name, title: str(rawSection.title, 120), width: 'medium', sections: [cleanSection(rawSection)] });
+        return;
+      }
+      page.sections.push(cleanSection(rawSection));
+    });
+    rawPopups.slice(0, LIMITS.popups).forEach((rp, i) => {
+      if (!rp || typeof rp !== 'object') return;
+      const popup = {
+        id: uniqueId(rp.id, 'u'),
+        name: popupNames[i],
+        title: str(rp.title, 120),
+        width: pick(rp.width, ['small', 'medium', 'large', 'full'], 'medium'),
+        sections: []
+      };
+      (Array.isArray(rp.sections) ? rp.sections : []).forEach(rawSection => {
+        if (!rawSection || typeof rawSection !== 'object' || sectionCount >= LIMITS.sections) return;
+        sectionCount += 1;
+        popup.sections.push(cleanSection(rawSection));
+      });
+      page.popups.push(popup);
     });
     return page;
   }
@@ -1260,8 +1289,17 @@
     return JSON.parse(JSON.stringify(page));
   }
 
+  // Every section: the page's, then each popup's.
+  function allSections(page) {
+    return page.sections.concat(...(page.popups || []).map(popup => popup.sections));
+  }
+
+  function findPopup(page, idOrName) {
+    return (page.popups || []).find(popup => popup.id === idOrName || popup.name === idOrName) || null;
+  }
+
   function findBlock(page, blockId) {
-    for (const section of page.sections) {
+    for (const section of allSections(page)) {
       for (const column of section.columns) {
         const index = column.blocks.findIndex(block => block.id === blockId);
         if (index !== -1) return { section, column, index, block: column.blocks[index] };
@@ -1271,20 +1309,30 @@
   }
 
   function findColumn(page, columnId) {
-    for (const section of page.sections) {
+    for (const section of allSections(page)) {
       const column = section.columns.find(item => item.id === columnId);
       if (column) return { section, column };
     }
     return null;
   }
 
+  // { section, index, list (the sections array it is in), popup (or null) }
   function findSection(page, sectionId) {
-    const index = page.sections.findIndex(section => section.id === sectionId);
-    return index === -1 ? null : { section: page.sections[index], index };
+    let index = page.sections.findIndex(section => section.id === sectionId);
+    if (index !== -1) return { section: page.sections[index], index, list: page.sections, popup: null };
+    for (const popup of page.popups || []) {
+      index = popup.sections.findIndex(section => section.id === sectionId);
+      if (index !== -1) return { section: popup.sections[index], index, list: popup.sections, popup };
+    }
+    return null;
+  }
+
+  function countSections(page) {
+    return allSections(page).length;
   }
 
   function countBlocks(page) {
-    return page.sections.reduce((total, section) =>
+    return allSections(page).reduce((total, section) =>
       total + section.columns.reduce((sum, column) => sum + column.blocks.length, 0), 0);
   }
 
@@ -1303,7 +1351,7 @@
     block.name = freeName(next, type);
     let target = columnId ? findColumn(next, columnId) : null;
     if (!target) {
-      if (next.sections.length >= LIMITS.sections) throw new Error('This page has the maximum number of sections.');
+      if (countSections(next) >= LIMITS.sections) throw new Error('This page has the maximum number of sections.');
       const section = createSection('1');
       next.sections.push(section);
       target = { section, column: section.columns[0] };
@@ -1373,22 +1421,27 @@
     return next;
   }
 
-  function addSection(page, layout, index) {
+  // popupId: add to that popup's sections instead of the page's.
+  function addSection(page, layout, index, popupId) {
     const next = clone(page);
-    if (next.sections.length >= LIMITS.sections) throw new Error('This page has the maximum number of sections.');
+    if (countSections(next) >= LIMITS.sections) throw new Error('This page has the maximum number of sections.');
+    const popup = popupId ? findPopup(next, popupId) : null;
+    if (popupId && !popup) throw new Error('That popup no longer exists.');
+    const list = popup ? popup.sections : next.sections;
     const section = createSection(layout);
-    next.sections.splice(clampIndex(index, next.sections.length), 0, section);
+    list.splice(clampIndex(index, list.length), 0, section);
     return { page: next, id: section.id };
   }
 
+  // Moves a section within the page or popup it belongs to.
   function moveSection(page, sectionId, index) {
     const next = clone(page);
     const found = findSection(next, sectionId);
     if (!found) return page;
-    let at = clampIndex(index, next.sections.length);
+    let at = clampIndex(index, found.list.length);
     if (found.index < at) at -= 1;
-    const [section] = next.sections.splice(found.index, 1);
-    next.sections.splice(at, 0, section);
+    const [section] = found.list.splice(found.index, 1);
+    found.list.splice(at, 0, section);
     return next;
   }
 
@@ -1396,7 +1449,7 @@
     const found = findSection(page, sectionId);
     if (!found) return page;
     const target = found.index + delta;
-    if (target < 0 || target >= page.sections.length) return page;
+    if (target < 0 || target >= found.list.length) return page;
     return moveSection(page, sectionId, delta > 0 ? target + 1 : target);
   }
 
@@ -1404,7 +1457,35 @@
     const next = clone(page);
     const found = findSection(next, sectionId);
     if (!found) return page;
-    next.sections.splice(found.index, 1);
+    found.list.splice(found.index, 1);
+    return next;
+  }
+
+  // ---------- popups ----------
+
+  // A new popup with one empty section: { page, id, name }.
+  function addPopup(page, title) {
+    const next = clone(page);
+    next.popups = next.popups || [];
+    if (next.popups.length >= LIMITS.popups) throw new Error('This page has the maximum number of popups.');
+    if (countSections(next) >= LIMITS.sections) throw new Error('This page has the maximum number of sections.');
+    const popup = { id: newId('u'), name: freeName(next, 'popup'), title: str(title, 120) || 'New popup', width: 'medium', sections: [createSection('1')] };
+    next.popups.push(popup);
+    return { page: next, id: popup.id, name: popup.name };
+  }
+
+  function updatePopup(page, popupId, changes) {
+    const next = clone(page);
+    const popup = findPopup(next, popupId);
+    if (!popup) return page;
+    if (changes.title !== undefined) popup.title = str(changes.title, 120);
+    if (changes.width !== undefined) popup.width = pick(changes.width, ['small', 'medium', 'large', 'full'], popup.width);
+    return next;
+  }
+
+  function removePopup(page, popupId) {
+    const next = clone(page);
+    next.popups = (next.popups || []).filter(popup => popup.id !== popupId);
     return next;
   }
 
@@ -1412,16 +1493,12 @@
     const next = clone(page);
     const found = findSection(next, sectionId);
     if (!found) return { page, id: null };
-    if (next.sections.length >= LIMITS.sections) throw new Error('This page has the maximum number of sections.');
+    if (countSections(next) >= LIMITS.sections) throw new Error('This page has the maximum number of sections.');
     const blocks = found.section.columns.reduce((sum, column) => sum + column.blocks.length, 0);
     if (countBlocks(next) + blocks > LIMITS.blocks) throw new Error('This page has the maximum number of blocks.');
     const copy = clone(found.section);
     copy.id = newId('s');
     const taken = allNames(next);
-    if (copy.popup) {
-      copy.name = freeName(next, 'popup', taken);
-      taken.add(copy.name);
-    }
     copy.columns.forEach(column => {
       column.id = newId('c');
       column.blocks.forEach(block => {
@@ -1430,7 +1507,7 @@
         taken.add(block.name);
       });
     });
-    next.sections.splice(found.index + 1, 0, copy);
+    found.list.splice(found.index + 1, 0, copy);
     return { page: next, id: copy.id };
   }
 
@@ -1451,16 +1528,6 @@
       section.layout = changes.layout;
     }
     if (changes.style) section.style = sanitizeSectionStyle({ ...section.style, ...changes.style });
-    if (changes.popup === true && !section.popup) {
-      section.popup = true;
-      section.name = freeName(next, 'popup');
-      section.title = str(changes.title, 120) || 'Popup';
-    } else if (changes.popup === false) {
-      delete section.popup;
-      delete section.name;
-      delete section.title;
-    }
-    if (section.popup && changes.title !== undefined) section.title = str(changes.title, 120);
     return next;
   }
 
@@ -1525,7 +1592,7 @@
 
   return {
     VERSION, LIMITS, LAYOUTS, LAYOUT_LABELS, BLOCKS, STYLE_FIELDS, SECTION_FIELDS, TONES, FIELD_TYPES, ACTIONS,
-    OPS, KEY_RE, RECORD_RE, pagePopups, allNames, parseCsv, toCsv, matchColumns, slug, uniqueKey, inputKey, dataCollection, pageInputs, pageElements, freeName, renameBlock,
+    OPS, KEY_RE, RECORD_RE, pagePopups, allNames, allSections, findPopup, addPopup, updatePopup, removePopup, countSections, parseCsv, toCsv, matchColumns, slug, uniqueKey, inputKey, dataCollection, pageInputs, pageElements, freeName, renameBlock,
     updatePageActions, sanitizeActions, sanitizeTables,
     findTable, addTable, updateTable, removeTable, addField, updateField, removeField, moveField,
     moveInList, grid, steps, cardItems, CARD_PARTS, CARD_STYLE_FIELDS, sanitizeDesign, cardDesign,

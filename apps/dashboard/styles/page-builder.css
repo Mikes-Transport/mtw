@@ -1046,3 +1046,34 @@ button.mtw-pb-record-card:hover { border-color: #9a9893; box-shadow: 0 4px 14px 
 .mtw-pb-card-button-danger:hover { background: #fdeeee; }
 .mtw-pb-card-button-link { border-color: transparent; padding-left: 0; padding-right: 0; text-decoration: underline; }
 .mtw-pb-card-button:hover { opacity: .88; }
+
+/* ---------- popups as mini pages ---------- */
+.mtw-pb-popup-dialog.mtw-pb-popup-small { width: min(420px, 100%); }
+.mtw-pb-popup-dialog.mtw-pb-popup-medium { width: min(640px, 100%); }
+.mtw-pb-popup-dialog.mtw-pb-popup-large { width: min(900px, 100%); }
+.mtw-pb-popup-dialog.mtw-pb-popup-full { width: min(1400px, 100%); }
+.mtw-pb-popup-body { display: flex; flex-direction: column; gap: 16px; }
+.mtw-pb-page.is-editing .mtw-pb-popup-body { gap: 14px; }
+
+/* In the builder: the popup drawn open on a dimmed canvas. */
+.mtw-pb-canvas-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 1100px;
+  margin: 0 auto 12px;
+  padding: 8px 12px;
+  border: 1px solid #e3d1fb;
+  border-radius: 10px;
+  background: #f7f3fe;
+  color: #5b21b6;
+  font-size: 13px;
+}
+.mtw-pb-canvas-bar[hidden] { display: none; }
+.mtw-pb-canvas-bar strong { margin-right: auto; }
+.mtw-pb-canvas-bar .mtw-pb-btn-light { width: auto; }
+.mtw-pb-frame.is-popup-frame { background: rgba(20, 20, 20, 0.45); }
+.mtw-pb-page.is-popup-canvas { align-items: center; }
+.mtw-pb-page.is-popup-canvas > .mtw-pb-popup-dialog { box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25); }
+.mtw-pb-page.is-popup-canvas .mtw-pb-popup-close { cursor: default; }
+.mtw-pb-back-to-page { margin-top: 6px; }

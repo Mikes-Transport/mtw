@@ -60,12 +60,15 @@ description; the list on the right). **Done** or Esc goes back to the page.
 
 ## Popups
 
-**Popups** tab -> **+ New popup** (or **+ Create a new popup** in any popup dropdown), or
-select a section and tick **Show as a popup**. Every button has an **Opens a popup**
-dropdown (runs after its steps). Popups: give it a title (and a name). On the live
-page it's hidden until an **Open a popup** step shows it over the page; it closes with
-its X, Esc, clicking outside, or a **Close a popup** step. In the builder popups show
-inline with a dashed purple border so you can edit them.
+Popups are built like pages. **Popups** tab -> **+ New popup** (or **+ Create a new popup**
+in any popup dropdown), then click a popup to open it on the canvas ("Editing popup ...").
+Drag in sections (1-4 columns) and blocks exactly as on the page; **Back to the page**
+(or Esc) returns. With nothing selected, the right panel has the popup's name, title,
+width (small / medium / large / full), which buttons open it, and Delete popup.
+
+Every button has an **Opens a popup** dropdown (runs after its steps). On the page a popup
+is hidden until opened; it closes with its X, Esc, clicking outside, or a **Close a popup**
+step. Pages saved with the older "section shown as a popup" convert automatically.
 
 ## Card lists, row and card clicks
 
@@ -111,11 +114,11 @@ design; **Use the standard look** removes it.
 **Add a card board for this table** (Data tab) builds a heading, + Add / Export / Import
 buttons, a card list, and an Add popup form (save, message, clear, close).
 
-The builder's **Preview** runs everything, but Save, Import and Delete don't write.
+The builder's **Preview** runs everything: saved, edited, imported and deleted records show straight away in the preview only; nothing is written to Firebase, and they disappear when you go back to editing.
 
 ## Data tables
 
-**Data** tab → **+ New data table**. Fields have a name, type (short/long text, number,
+**Data** tab → **+ New data table**. Fields have a name, type (short/long text, number, image web address,
 date, dropdown, yes/no), required, and choices. A field's saved key (shown under it)
 never changes, so renaming is safe. **Add a form and list for this table** builds inputs
 for every field, a Save button (save → message → clear) and a records list.

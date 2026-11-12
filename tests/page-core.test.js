@@ -245,25 +245,43 @@ test('CSV: parse quotes and line breaks, build safe CSV, match columns', () => {
   assert.deepEqual(core.matchColumns(['ORDER NUMBER', 'notes', 'Other'], table), ['order_number', 'notes', null]);
 });
 
-test('popups: sections become named popups; names are shared with elements and renames follow', () => {
-  let { page, id } = core.addSection(core.createPage(), '1');
-  page = core.updateSection(page, id, { popup: true, title: 'Add job' });
-  let r = core.insertBlock(page, 'button', page.sections[0].columns[0].id);
-  page = core.updateBlock(r.page, r.id, { props: { actions: [{ type: 'openPopup', target: 'popup_1' }, { type: 'if', left: 'record.status', op: 'notEmpty' }] } });
-  assert.deepEqual(core.pagePopups(page).map(p => [p.name, p.title]), [['popup_1', 'Add job']]);
+test('popups: their own sections; names shared with elements; renames follow; old section popups convert', () => {
+  let { page, id, name } = core.addPopup(core.createPage(), 'Add job');
+  assert.equal(name, 'popup_1');
+  const popup = () => core.findPopup(page, id);
+  // Build it like a page: more sections, blocks side by side.
+  const sec2 = core.addSection(page, '1-1', 1, id);
+  page = sec2.page;
+  const [left, right] = core.findSection(page, sec2.id).section.columns.map(col => col.id);
+  page = core.insertBlock(page, 'button', left, 0, { label: 'Save' }).page;
+  page = core.insertBlock(page, 'button', right, 0, { label: 'Cancel' }).page;
+  assert.equal(popup().sections.length, 2);
+  assert.equal(core.findSection(page, sec2.id).popup.id, id);
+  assert.equal(core.countBlocks(page), 2);
+  page = core.moveSection(page, sec2.id, 0);
+  assert.equal(popup().sections[0].id, sec2.id, 'sections move within the popup');
+  // Names are shared with page elements; renames update references.
+  let r = core.insertBlock(page, 'button');
+  page = core.updateBlock(r.page, r.id, { props: { popup: 'popup_1', actions: [{ type: 'openPopup', target: 'popup_1' }, { type: 'if', left: 'record.status', op: 'notEmpty' }] } });
   assert.match(core.renameBlock(page, r.id, 'popup_1').error, /already called/);
   page = core.renameBlock(page, id, 'add_job').page;
-  const steps = core.findBlock(page, r.id).block.props.actions;
-  assert.equal(steps[0].target, 'add_job');
-  assert.equal(steps[1].left, 'record.status', 'record fields are valid If values');
+  const btn = core.findBlock(page, r.id).block;
+  assert.equal(btn.props.popup, 'add_job');
+  assert.equal(btn.props.actions[0].target, 'add_job');
+  assert.equal(btn.props.actions[1].left, 'record.status');
   const again = core.sanitizePage(page);
-  assert.equal(again.sections[0].popup, true);
-  assert.equal(again.sections[0].name, 'add_job');
-  const copy = core.duplicateSection(again, id);
-  assert.notEqual(core.findSection(copy.page, copy.id).section.name, 'add_job');
-  page = core.updateSection(page, id, { popup: false });
-  assert.equal(page.sections[0].popup, undefined);
-  assert.equal(page.sections[0].name, undefined);
+  assert.deepEqual(again.popups.map(p => [p.name, p.title, p.sections.length]), [['add_job', 'Add job', 2]]);
+  page = core.updatePopup(page, id, { width: 'large', title: 'New job' });
+  assert.equal(popup().width, 'large');
+  assert.equal(core.removePopup(page, id).popups.length, 0);
+  // Older pages: a section marked as a popup becomes a popup holding that section.
+  const legacy = core.sanitizePage({ sections: [
+    { layout: '1', columns: [{ blocks: [{ type: 'button', name: 'go' }] }] },
+    { layout: '1-1', popup: true, name: 'old_popup', title: 'Old', columns: [{ blocks: [{ type: 'input', name: 'x' }] }, { blocks: [] }] }
+  ] });
+  assert.equal(legacy.sections.length, 1);
+  assert.deepEqual(legacy.popups.map(p => [p.name, p.title, p.sections[0].layout]), [['old_popup', 'Old', '1-1']]);
+  assert.ok(core.findBlock(legacy, legacy.popups[0].sections[0].columns[0].blocks[0].id), 'blocks inside popups are found');
 });
 
 test('card designs: parts, order, inline, style limits', () => {

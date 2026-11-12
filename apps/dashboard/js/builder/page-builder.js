@@ -163,6 +163,7 @@
       drag: null,
       listDrag: null,
       paletteTab: 'blocks',
+      canvas: null, // a popup id while editing that popup, else null (the page)
       logic: null, // { scope: 'page' | 'block:<id>' } while the steps editor is open
       inspectorKey: '',
       shared: root.MTW_PAGE_RUNTIME ? root.MTW_PAGE_RUNTIME.createShared() : null,
@@ -193,6 +194,8 @@
       if (state.preview) {
         state.selected = null;
         state.logic = null;
+      } else if (state.shared && root.MTW_PAGE_RUNTIME.clearPreview) {
+        root.MTW_PAGE_RUNTIME.clearPreview(state.shared); // drop pretend records from the preview
       }
       renderAll();
     });
@@ -210,7 +213,9 @@
     const palette = el('aside', 'mtw-pb-palette', null, { 'aria-label': 'Blocks' });
     const stage = el('main', 'mtw-pb-stage');
     const frame = el('div', 'mtw-pb-frame');
-    stage.appendChild(frame);
+    const canvasBar = el('div', 'mtw-pb-canvas-bar');
+    canvasBar.hidden = true;
+    stage.append(canvasBar, frame);
     const inspector = el('aside', 'mtw-pb-inspector', null, { 'aria-label': 'Settings' });
     // Steps editor: a wide panel over the page and settings while open.
     const logic = el('section', 'mtw-pb-logic', null, { 'aria-label': 'Steps editor' });
@@ -296,32 +301,44 @@
       });
     }
 
-    // Makes a new popup section at the end of the page: { page, id, name }.
+    // A new popup (one empty section): { page, id, name }.
     function newPopup(page, title) {
-      const added = c.addSection(page, '1', page.sections.length);
-      const next = c.updateSection(added.page, added.id, { popup: true, title: title || 'New popup' });
-      return { page: next, id: added.id, name: c.findSection(next, added.id).section.name };
+      return c.addPopup(page, title || 'New popup');
     }
 
-    function showSection(sectionId) {
-      select({ kind: 'section', id: sectionId });
-      const node = frame.querySelector(`[data-section-id="${sectionId}"]`);
-      if (node && node.scrollIntoView) node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    // The sections being edited: the open popup's, or the page's.
+    function canvasPopup() {
+      return state.canvas ? c.findPopup(history.page, state.canvas) : null;
+    }
+
+    function canvasSections() {
+      const popup = canvasPopup();
+      return popup ? popup.sections : history.page.sections;
+    }
+
+    // Shows a popup on the canvas to build it (null = back to the page).
+    function openCanvas(popupId) {
+      state.canvas = popupId || null;
+      state.selected = null;
+      state.logic = null;
+      stage.scrollTop = 0;
+      renderAll();
+      if (state.paletteTab === 'popups') buildPalette();
     }
 
     function buildPopupsTab() {
-      palette.appendChild(el('p', 'mtw-pb-palette-hint', 'Popups open over the page. Build one like a section, then pick it in a button\'s "Opens a popup" or a card list\'s "Add card popup".'));
+      palette.appendChild(el('p', 'mtw-pb-palette-hint', 'Popups open over the page. Click one to build it here like a page (sections, columns, blocks), then pick it in a button\'s "Opens a popup".'));
       const list = el('div', 'mtw-pb-table-list');
       c.pagePopups(history.page).forEach(item => {
-        const row = button('mtw-pb-table-item mtw-pb-popup-item', null, `Edit popup ${item.title}`, () => showSection(item.section.id));
+        const row = button('mtw-pb-table-item mtw-pb-popup-item', null, `Edit popup ${item.title}`, () => openCanvas(item.id));
         row.dataset.popup = item.name;
         const glyph = el('span', 'mtw-pb-tile-icon');
         glyph.appendChild(icon('card'));
         const text = el('span');
-        const count = item.section.columns.reduce((sum, col) => sum + col.blocks.length, 0);
+        const count = item.popup.sections.reduce((sum, sec) => sum + sec.columns.reduce((n, col) => n + col.blocks.length, 0), 0);
         text.append(el('strong', '', item.title || item.name), el('span', '', `${item.name} \u00b7 ${count} block${count === 1 ? '' : 's'}`));
         row.append(glyph, text);
-        if (state.selected && state.selected.kind === 'section' && state.selected.id === item.section.id) row.classList.add('is-selected');
+        if (state.canvas === item.id) row.classList.add('is-selected');
         list.appendChild(row);
       });
       if (!c.pagePopups(history.page).length) list.appendChild(el('p', 'mtw-pb-muted', 'No popups yet.'));
@@ -329,9 +346,13 @@
       palette.appendChild(button('mtw-pb-btn mtw-pb-btn-light mtw-pb-new-popup', '+ New popup', 'Add a popup', () => {
         const made = attempt(() => newPopup(history.page));
         if (!made) return;
-        commit(made.page, { kind: 'section', id: made.id });
-        showSection(made.id);
+        commit(made.page, null);
+        openCanvas(made.id);
       }));
+      if (state.canvas) {
+        palette.appendChild(button('mtw-pb-btn mtw-pb-btn-light mtw-pb-back-to-page', '\u2190 Back to the page', 'Edit the page', () => openCanvas(null)));
+      }
+      palette.appendChild(el('p', 'mtw-pb-palette-hint', 'While a popup is open here, the Blocks tab adds to it.'));
     }
 
     function buildDataTab() {
@@ -391,7 +412,8 @@
           return { columnId: column.id, index: column.blocks.length };
         }
       }
-      const last = page.sections[page.sections.length - 1];
+      const list = canvasSections();
+      const last = list[list.length - 1];
       if (last) {
         const column = last.columns[last.columns.length - 1];
         return { columnId: column.id, index: column.blocks.length };
@@ -401,6 +423,14 @@
 
     function addBlockToSelection(type) {
       const target = selectedColumnId();
+      if (!target.columnId && state.canvas) {
+        // An empty popup: give it a section first.
+        const added = attempt(() => c.addSection(history.page, '1', 0, state.canvas));
+        if (!added) return;
+        const result = attempt(() => c.insertBlock(added.page, type, c.findSection(added.page, added.id).section.columns[0].id, 0));
+        if (result) commit(result.page, { kind: 'block', id: result.id });
+        return;
+      }
       const result = attempt(() => c.insertBlock(history.page, type, target.columnId, target.index));
       if (result) commit(result.page, { kind: 'block', id: result.id });
     }
@@ -411,9 +441,9 @@
         const sel = state.selected;
         const sectionId = sel && (sel.kind === 'section' ? sel.id : (c.findBlock(history.page, sel.id) || {}).section?.id);
         const found = sectionId ? c.findSection(history.page, sectionId) : null;
-        at = found ? found.index + 1 : history.page.sections.length;
+        at = found && found.list === canvasSections() ? found.index + 1 : canvasSections().length;
       }
-      const result = attempt(() => c.addSection(history.page, layout, at));
+      const result = attempt(() => c.addSection(history.page, layout, at, state.canvas));
       if (result) commit(result.page, { kind: 'section', id: result.id });
     }
 
@@ -485,18 +515,29 @@
       frame.dataset.device = state.device;
       devices.querySelectorAll('[data-device]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.device === state.device)));
       const page = history.page;
+      if (state.canvas && !canvasPopup()) state.canvas = null; // popup was deleted or undone
+      const popup = state.preview ? null : canvasPopup();
       const node = renderer().render(page, {
-        editing: !state.preview, dryRun: state.preview, toolId, user, isManager: true, shared: state.shared
+        editing: !state.preview, dryRun: state.preview, toolId, user, isManager: true, shared: state.shared,
+        canvas: popup ? popup.id : null
       });
       frame.replaceChildren(node);
+      frame.classList.toggle('is-popup-frame', Boolean(popup));
+      canvasBar.hidden = !popup;
+      if (popup) {
+        canvasBar.replaceChildren(
+          el('span', '', 'Editing popup'),
+          el('strong', '', `${popup.title || popup.name} (${popup.name})`),
+          button('mtw-pb-btn mtw-pb-btn-light mtw-pb-canvas-back', '\u2190 Back to the page', 'Edit the page', () => openCanvas(null))
+        );
+      }
       if (state.preview) return;
+      const sectionHolder = node.querySelector('.mtw-pb-popup-body') || node;
 
       node.querySelectorAll('.mtw-pb-section').forEach(sectionNode => {
         const id = sectionNode.dataset.sectionId;
         const found = c.findSection(page, id);
-        sectionNode.prepend(toolbar('section', id, found.section.popup
-          ? `Popup: ${found.section.title || found.section.name}`
-          : `Section: ${c.LAYOUT_LABELS[found.section.layout]}`));
+        sectionNode.prepend(toolbar('section', id, `Section: ${c.LAYOUT_LABELS[found.section.layout]}`));
         sectionNode.addEventListener('click', event => {
           if (event.target.closest('.mtw-pb-item')) return;
           select({ kind: 'section', id });
@@ -521,7 +562,11 @@
         if (state.selected && state.selected.kind === 'block' && state.selected.id === id) blockNode.classList.add('is-selected');
       });
 
-      if (!page.sections.length) {
+      if (popup) {
+        const add = button('mtw-pb-add-section', '+ Add section', 'Add a one-column section at the end of the popup',
+          () => addSectionAt('1', popup.sections.length));
+        sectionHolder.appendChild(add);
+      } else if (!page.sections.length) {
         const empty = el('div', 'mtw-pb-empty');
         empty.append(
           el('h3', '', 'Start building'),
@@ -763,7 +808,7 @@
       const sel = state.selected;
       const page = history.page;
       if (state.preview) {
-        inspector.append(el('h3', '', 'Preview'), el('p', 'mtw-pb-muted', 'This is how the page looks to people using the tool. Inputs, buttons, popups and steps work here, but Save, Import and Delete do not write anything. Press Edit to keep editing.'));
+        inspector.append(el('h3', '', 'Preview'), el('p', 'mtw-pb-muted', 'This is how the page looks to people using the tool. Everything works here. Saved, edited, imported and deleted records show straight away but only in this preview: nothing is written to Firebase. Press Edit to keep editing.'));
         return;
       }
       if (!sel) renderPageInspector(page);
@@ -773,7 +818,53 @@
       inspector.scrollTop = scroll;
     }
 
+    function renderPopupInspector(popup) {
+      inspector.appendChild(el('h3', '', 'Popup'));
+      inspector.appendChild(el('p', 'mtw-pb-muted', 'Build it like a page: drag sections and blocks in. Buttons open it with "Opens a popup"; it closes with its X, Esc, a click outside, or a Close a popup step.'));
+      const nameWrap = el('div', 'mtw-pb-field mtw-pb-name-field');
+      nameWrap.dataset.field = 'name';
+      const nameId = `mtw-pb-name-${popup.id}`;
+      nameWrap.appendChild(el('label', '', 'Popup name', { for: nameId }));
+      const nameInput = el('input', '', null, { id: nameId, type: 'text', spellcheck: 'false' });
+      nameInput.value = popup.name;
+      const nameError = el('p', 'mtw-pb-field-error');
+      nameInput.addEventListener('change', () => {
+        const result = c.renameBlock(history.page, popup.id, nameInput.value);
+        if (result.error) {
+          nameError.textContent = result.error;
+          nameInput.value = popup.name;
+          return;
+        }
+        commit(result.page);
+      });
+      nameWrap.append(nameInput, nameError);
+      inspector.appendChild(nameWrap);
+      inspector.appendChild(fieldControl({ key: 'title', label: 'Title', type: 'text' }, popup.title,
+        value => commit(c.updatePopup(history.page, popup.id, { title: value }), undefined, `${popup.id}:title`)));
+      inspector.appendChild(fieldControl({ key: 'width', label: 'Width', type: 'select', options: [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large'], ['full', 'Full width']] },
+        popup.width, value => commit(c.updatePopup(history.page, popup.id, { width: value }))));
+      const used = c.pageElements(history.page).filter(item => item.block.props.popup === popup.name || item.block.props.formPopup === popup.name)
+        .map(item => item.name);
+      inspector.appendChild(el('p', 'mtw-pb-field-help', used.length ? `Opened by: ${used.join(', ')}.` : 'No button opens it yet.'));
+      inspector.appendChild(button('mtw-pb-btn mtw-pb-btn-light mtw-pb-canvas-back', '\u2190 Back to the page', 'Edit the page', () => openCanvas(null)));
+      const remove = button('mtw-pb-btn mtw-pb-btn-light mtw-pb-delete-table mtw-pb-delete-popup', 'Delete popup', `Delete ${popup.title || popup.name}`, () => {
+        if (remove.dataset.armed === 'true') {
+          state.canvas = null;
+          commit(c.removePopup(history.page, popup.id), null);
+        } else {
+          remove.dataset.armed = 'true';
+          remove.textContent = 'Press again to delete';
+        }
+      });
+      inspector.appendChild(remove);
+    }
+
     function renderPageInspector(page) {
+      const popup = canvasPopup();
+      if (popup) {
+        renderPopupInspector(popup);
+        return;
+      }
       inspector.append(
         el('h3', '', 'Page'),
         el('p', 'mtw-pb-muted', 'Click a block or a section on the page to change it. Every block has an element name that steps use to read or change it.'),
@@ -875,36 +966,7 @@
     function renderSectionInspector(page, sectionId) {
       const found = c.findSection(page, sectionId);
       if (!found) return;
-      const section = found.section;
-      inspector.appendChild(el('h3', '', section.popup ? 'Popup' : 'Section'));
-      const popupLabel = el('label', 'mtw-pb-check mtw-pb-popup-toggle');
-      const popupCheck = el('input', '', null, { type: 'checkbox' });
-      popupCheck.checked = section.popup === true;
-      popupCheck.addEventListener('change', () => commit(c.updateSection(history.page, sectionId, { popup: popupCheck.checked })));
-      popupLabel.append(popupCheck, document.createTextNode(' Show as a popup (opens with an Open a popup step)'));
-      inspector.appendChild(popupLabel);
-      if (section.popup) {
-        const nameWrap = el('div', 'mtw-pb-field mtw-pb-name-field');
-        nameWrap.dataset.field = 'name';
-        const nameId = `mtw-pb-name-${sectionId}`;
-        nameWrap.appendChild(el('label', '', 'Popup name', { for: nameId }));
-        const nameInput = el('input', '', null, { id: nameId, type: 'text', spellcheck: 'false' });
-        nameInput.value = section.name;
-        const nameError = el('p', 'mtw-pb-field-error');
-        nameInput.addEventListener('change', () => {
-          const result = c.renameBlock(history.page, sectionId, nameInput.value);
-          if (result.error) {
-            nameError.textContent = result.error;
-            nameInput.value = section.name;
-            return;
-          }
-          commit(result.page);
-        });
-        nameWrap.append(nameInput, nameError);
-        inspector.appendChild(nameWrap);
-        inspector.appendChild(fieldControl({ key: 'title', label: 'Popup title', type: 'text' }, section.title,
-          value => commit(c.updateSection(history.page, sectionId, { title: value }), undefined, `${sectionId}:title`)));
-      }
+      inspector.appendChild(el('h3', '', found.popup ? `Section in popup "${found.popup.title || found.popup.name}"` : 'Section'));
       c.SECTION_FIELDS.forEach(field => {
         const value = field.key === 'layout' ? found.section.layout : found.section.style[field.key];
         inspector.appendChild(fieldControl(field, value, next => {
@@ -1013,11 +1075,13 @@
     // in field order, labelled like the field; removed fields lose their input.
     function syncForm(page, tableId, popupName) {
       const table = c.findTable(page, tableId);
-      const popup = c.pagePopups(page).find(item => item.name === popupName);
-      if (!table || !popup) return page;
       let next = page;
-      const sectionId = popup.section.id;
-      const blocksIn = () => c.findSection(next, sectionId).section.columns.flatMap(col => col.blocks);
+      const found = c.findPopup(next, popupName);
+      if (!table || !found) return page;
+      if (!found.sections.length) next = c.addSection(next, '1', 0, found.id).page;
+      const popupId = found.id;
+      const sectionId = c.findPopup(next, popupId).sections[0].id;
+      const blocksIn = () => c.findPopup(next, popupId).sections.flatMap(sec => sec.columns.flatMap(col => col.blocks));
       const bound = block => block.type === 'input' && block.props.bind.startsWith(`${tableId}.`);
       blocksIn().filter(block => bound(block) && !table.fields.some(f => `${tableId}.${f.key}` === block.props.bind))
         .forEach(block => { next = c.removeBlock(next, block.id); });
@@ -1028,13 +1092,19 @@
         }
       });
       next = c.clone(next);
-      const section = c.findSection(next, sectionId).section;
-      const first = section.columns[0];
-      const all = section.columns.flatMap(col => col.blocks);
+      const popupNow = c.findPopup(next, popupId);
+      const first = c.findSection(next, sectionId).section.columns[0];
+      const all = popupNow.sections.flatMap(sec => sec.columns.flatMap(col => col.blocks));
       const inputs = table.fields.map(f => all.find(block => bound(block) && block.props.bind === `${tableId}.${f.key}`)).filter(Boolean);
       inputs.forEach(input => { input.props.label = table.fields.find(f => `${tableId}.${f.key}` === input.props.bind).label; });
-      section.columns.forEach(col => { col.blocks = col.blocks.filter(block => !inputs.includes(block)); });
-      first.blocks = inputs.concat(first.blocks);
+      // New inputs go into the first section; ones already placed elsewhere stay there.
+      const placed = new Set();
+      popupNow.sections.forEach((sec, si) => sec.columns.forEach((col, ci) => {
+        if (si === 0 && ci === 0) return;
+        col.blocks.forEach(block => { if (inputs.includes(block)) placed.add(block); });
+      }));
+      const firstInputs = inputs.filter(input => !placed.has(input));
+      first.blocks = firstInputs.concat(first.blocks.filter(block => !firstInputs.includes(block)));
       // A popup chosen for this card list gets a Save button if it has none for the table.
       const hasSave = all.some(block => block.type === 'button' &&
         JSON.stringify(block.props.actions || []).includes(`"table":"${tableId}"`));
@@ -1059,10 +1129,10 @@
         const tableId = tableAdded.id;
         page = c.updateField(page, tableId, 'name', { label: 'Title' });
         page = c.updateField(page, tableId, 'notes', { label: 'Details' });
-        const popupAdded = c.addSection(page, '1', page.sections.length);
-        page = c.updateSection(popupAdded.page, popupAdded.id, { popup: true, title: 'Add a card' });
-        const popupName = c.findSection(page, popupAdded.id).section.name;
-        const save = c.insertBlock(page, 'button', c.findSection(page, popupAdded.id).section.columns[0].id, 0, { label: 'Save card' });
+        const popupAdded = c.addPopup(page, 'Add a card');
+        page = popupAdded.page;
+        const popupName = popupAdded.name;
+        const save = c.insertBlock(page, 'button', c.findPopup(page, popupAdded.id).sections[0].columns[0].id, 0, { label: 'Save card' });
         page = c.updateBlock(save.page, save.id, { props: { actions: stepsOf([
           ['save', { table: tableId }], ['message', { text: 'Card added.' }], ['clear'], ['closePopup', { target: popupName }]
         ]) } });
@@ -1117,10 +1187,10 @@
         const result = attempt(() => c.addField(history.page, tableId, `Field ${table.fields.length + 1}`, 'text'));
         if (result && result.key) commit(withSync(result.page));
       }));
-      const popup = c.pagePopups(history.page).find(item => item.name === props.formPopup);
+      const popup = c.findPopup(history.page, props.formPopup);
       if (popup) {
-        inspector.appendChild(button('mtw-pb-btn mtw-pb-btn-light mtw-pb-edit-popup', 'Edit the Add card popup', 'Select the popup on the page',
-          () => select({ kind: 'section', id: popup.section.id })));
+        inspector.appendChild(button('mtw-pb-btn mtw-pb-btn-light mtw-pb-edit-popup', 'Edit the Add card popup', 'Open the popup to build it',
+          () => openCanvas(popup.id)));
       }
     }
 
@@ -1216,11 +1286,10 @@
       const result = attempt(() => {
         let page = history.page;
         // The popup form
-        const popupAdded = c.addSection(page, '1', page.sections.length);
-        page = c.updateSection(popupAdded.page, popupAdded.id, { popup: true, title: `Add to ${table.name}` });
-        const popupSection = c.findSection(page, popupAdded.id).section;
-        const popupName = popupSection.name;
-        const formCol = popupSection.columns[0].id;
+        const popupAdded = c.addPopup(page, `Add to ${table.name}`);
+        page = popupAdded.page;
+        const popupName = popupAdded.name;
+        const formCol = c.findPopup(page, popupAdded.id).sections[0].columns[0].id;
         table.fields.forEach((field, i) => {
           page = c.insertBlock(page, 'input', formCol, i, { label: field.label, bind: `${tableId}.${field.key}` }).page;
         });
@@ -1229,7 +1298,7 @@
           ['save', { table: tableId }], ['message', { text: 'Added.' }], ['clear'], ['closePopup', { target: popupName }]
         ]) } });
         // The board, placed before the popup section
-        const board = c.addSection(page, '1-1', page.sections.length - 1);
+        const board = c.addSection(page, '1-1', page.sections.length);
         page = c.updateSection(board.page, board.id, { style: { valign: 'center' } });
         const [left, right] = c.findSection(page, board.id).section.columns.map(col => col.id);
         page = c.insertBlock(page, 'heading', left, 0, { text: table.name, level: 'h2' }).page;
@@ -1239,7 +1308,7 @@
         page = c.updateBlock(exp.page, exp.id, { props: { actions: stepList([['exportCsv', { table: tableId }]]) }, style: { align: 'right' } });
         const imp = c.insertBlock(page, 'button', right, 2, { label: 'Import', variant: 'secondary' });
         page = c.updateBlock(imp.page, imp.id, { props: { actions: stepList([['importCsv', { table: tableId }]]) }, style: { align: 'right' } });
-        const list = c.addSection(page, '1', page.sections.length - 1);
+        const list = c.addSection(page, '1', page.sections.length);
         page = list.page;
         const cards = c.insertBlock(page, 'cards', c.findSection(page, list.id).section.columns[0].id, 0, {
           source: 'table', search: 'yes', table: tableId, titleField: table.fields[0] ? table.fields[0].key : '', textField: table.fields[1] ? table.fields[1].key : '', allowDelete: 'managers'
@@ -1410,6 +1479,23 @@
         tile.dataset.partType = type;
         tile.append(el('strong', '', def.label), el('span', '', def.description));
         const add = index => {
+          // An image on "Cards people add": use (or make) an Image field, so the Add card
+          // popup gets a web address box for it.
+          if (type === 'image' && props.source === 'added' && c.findTable(history.page, props.table)) {
+            const table = c.findTable(history.page, props.table);
+            let page = history.page;
+            let field = table.fields.find(f => f.type === 'image');
+            if (!field) {
+              const made = attempt(() => c.addField(page, table.id, 'Image', 'image'));
+              if (!made || !made.key) return;
+              page = syncForm(made.page, table.id, props.formPopup);
+              field = { key: made.key };
+            }
+            const result = attempt(() => c.cardDesign.add(c.findBlock(page, blockId).block.props.design, 'image',
+              index === null ? 0 : index, { source: 'field', field: field.key }));
+            if (result) commit(c.updateBlock(page, blockId, { props: { design: result.design } }));
+            return;
+          }
           const result = attempt(() => c.cardDesign.add(current(), type, index === null ? undefined : index,
             type === 'field' || type === 'badge' ? { field: (cardFieldOptions(props)[0] || [''])[0] } : null));
           if (result) setDesign(result.design);
@@ -1867,8 +1953,9 @@
 
     function findTarget(x, y, item) {
       const node = hit(x, y);
-      const page = frame.querySelector('.mtw-pb-page');
-      if (!page) return null;
+      const root0 = frame.querySelector('.mtw-pb-page');
+      if (!root0) return null;
+      const page = root0.querySelector('.mtw-pb-popup-body') || root0; // a popup's sections, or the page's
       const sections = [...page.querySelectorAll(':scope > .mtw-pb-section')];
       if (item.kind === 'section' || item.kind === 'newSection') {
         if (!node && !sections.length) return null;
@@ -1949,7 +2036,7 @@
         let columnId = target.columnId;
         let index = target.index;
         if (target.type !== 'block') {
-          const added = attempt(() => c.addSection(page, '1', target.index));
+          const added = attempt(() => c.addSection(page, '1', target.index, state.canvas));
           if (!added) return;
           next = added.page;
           columnId = c.findSection(next, added.id).section.columns[0].id;
@@ -2004,6 +2091,7 @@
       if (event.key === 'Escape') {
         if (state.drag) cancelDrag();
         else if (state.logic) closeLogic();
+        else if (state.canvas && !sel) openCanvas(null);
         else if (sel) select(null);
         else editor.close();
         return;
