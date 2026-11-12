@@ -644,6 +644,8 @@
       } else if (field.type === 'field') {
         const table = c.findTable(page, context.tableId);
         input = selectOf(id, [['', field.any || 'Any record (count all)']].concat(table ? table.fields.map(f => [f.key, f.label]) : []), value);
+      } else if (field.type === 'cardfield') {
+        input = selectOf(id, [['', field.any || 'Choose a field']].concat(context.cardFields || []), value);
       } else if (field.type === 'popup') {
         const popups = c.pagePopups(page);
         input = selectOf(id, [['', field.any || (popups.length ? 'Choose a popup' : 'No popups yet')]]
@@ -817,7 +819,7 @@
 
       const props = block.props;
       const contentFields = def.fields.filter(field => visible(field, props));
-      const plain = contentFields.filter(field => !['grid', 'actions', 'cardlist', 'cardfields'].includes(field.type));
+      const plain = contentFields.filter(field => !['grid', 'actions', 'cardlist', 'cardfields', 'carddesign'].includes(field.type));
       if (plain.length) {
         inspector.appendChild(sectionTitle('Content'));
         plain.forEach(field => {
@@ -846,6 +848,17 @@
       if (contentFields.some(field => field.type === 'grid')) renderGridEditor(blockId);
       if (contentFields.some(field => field.type === 'cardlist')) renderCardItemsEditor(blockId);
       if (contentFields.some(field => field.type === 'cardfields')) renderCardFieldsEditor(blockId);
+      if (contentFields.some(field => field.type === 'carddesign')) {
+        const design = props.design || { parts: [] };
+        const box = el('div', 'mtw-pb-steps-summary');
+        box.appendChild(sectionTitle('Card design'));
+        box.appendChild(el('p', 'mtw-pb-muted', design.parts.length
+          ? `${design.parts.length} part${design.parts.length === 1 ? '' : 's'}: ${design.parts.map(part => c.CARD_PARTS[part.type].label).join(', ')}.`
+          : 'Using the standard card look.'));
+        box.appendChild(button('mtw-pb-btn mtw-pb-btn-primary-dark mtw-pb-design-cards', 'Design cards', 'Open the card designer',
+          () => openDesigner(blockId)));
+        inspector.appendChild(box);
+      }
       const actionsField = contentFields.find(field => field.type === 'actions');
       if (actionsField) inspector.appendChild(stepsSummary(actionsField.label, `block:${blockId}`, props.actions || []));
 
@@ -1307,6 +1320,163 @@
       return box;
     }
 
+    // ---------- card designer ----------
+    function cardFieldOptions(props) {
+      if (props.source === 'manual') return [['title', 'Title'], ['text', 'Text'], ['note', 'Small note']];
+      const table = c.findTable(history.page, props.table);
+      return (table ? table.fields.map(f => [f.key, f.label]) : []).concat([['_createdAt', 'Added (date)'], ['_createdBy', 'Added by']]);
+    }
+
+    function sampleRecord(props) {
+      if (props.source === 'manual') {
+        const item = props.items[0] || { title: 'Card title', text: 'Card text', note: 'Note' };
+        return { _id: 'sample', title: item.title, text: item.text, note: item.note };
+      }
+      const entry = state.shared && state.shared.data[props.table];
+      if (entry && entry.rows && entry.rows.length) return entry.rows[entry.rows.length - 1];
+      const table = c.findTable(history.page, props.table);
+      const record = { _createdAt: Date.now(), _createdBy: user || 'Managers' };
+      (table ? table.fields : []).forEach(f => { record[f.key] = f.type === 'number' ? 12 : f.type === 'yesno' ? 'Yes' : f.label; });
+      return record;
+    }
+
+    function openDesigner(blockId) {
+      const found = c.findBlock(history.page, blockId);
+      if (!found) return;
+      const props = found.block.props;
+      if (!props.design || !props.design.parts.length) {
+        const starter = props.source === 'manual'
+          ? c.cardDesign.add(c.cardDesign.add({ parts: [], style: {} }, 'field', null, { field: 'title', weight: '700', size: 'large' }).design,
+            'field', null, { field: 'text', color: '#777774' }).design
+          : c.cardDesign.starter(props.titleField || ((c.findTable(history.page, props.table) || { fields: [] }).fields[0] || {}).key, props.textField);
+        commit(c.updateBlock(history.page, blockId, { props: { design: starter } }));
+      }
+      state.logic = { designer: blockId };
+      renderLogic();
+    }
+
+    function renderDesigner(blockId) {
+      const found = c.findBlock(history.page, blockId);
+      if (!found) {
+        state.logic = null;
+        logic.hidden = true;
+        overlay.classList.remove('has-logic');
+        return;
+      }
+      const props = found.block.props;
+      const design = props.design;
+      const setDesign = (next, coalesce) => commit(c.updateBlock(history.page, blockId, { props: { design: next } }), undefined, coalesce);
+      const current = () => c.findBlock(history.page, blockId).block.props.design;
+      const listScroll = logic.querySelector('.mtw-pb-design-list') ? logic.querySelector('.mtw-pb-design-list').scrollTop : 0;
+
+      const head = el('header', 'mtw-pb-logic-head');
+      const titles = el('div');
+      titles.append(el('span', 'mtw-pb-top-kicker', 'Card design'), el('strong', '', found.block.name),
+        el('span', 'mtw-pb-logic-trigger', 'Every card in this list uses this design.'));
+      const actionsWrap = el('div', 'mtw-pb-design-head-actions');
+      actionsWrap.append(
+        button('mtw-pb-btn mtw-pb-btn-light mtw-pb-design-reset', 'Use the standard look', 'Remove the design', () => {
+          setDesign({ parts: [], style: {} });
+          closeLogic();
+        }),
+        button('mtw-pb-btn mtw-pb-btn-primary-dark mtw-pb-logic-done', 'Done', 'Back to the page', () => closeLogic())
+      );
+      head.append(titles, actionsWrap);
+
+      const body = el('div', 'mtw-pb-designer');
+      // Parts palette
+      const palettePane = el('aside', 'mtw-pb-logic-palette');
+      palettePane.appendChild(el('p', 'mtw-pb-field-help', 'Drag a part into the card, or click to add it at the bottom.'));
+      const tiles = el('div', 'mtw-pb-step-tiles');
+      Object.entries(c.CARD_PARTS).forEach(([type, def]) => {
+        const tile = el('div', 'mtw-pb-step-tile', null, { role: 'button', tabindex: '0', title: def.description });
+        tile.dataset.partType = type;
+        tile.append(el('strong', '', def.label), el('span', '', def.description));
+        const add = index => {
+          const result = attempt(() => c.cardDesign.add(current(), type, index === null ? undefined : index,
+            type === 'field' || type === 'badge' ? { field: (cardFieldOptions(props)[0] || [''])[0] } : null));
+          if (result) setDesign(result.design);
+        };
+        tile.addEventListener('pointerdown', event => startListDrag(event, {
+          group: `parts:${blockId}`, label: def.label, tap: () => add(null), onDrop: (container, index) => add(index)
+        }));
+        tile.addEventListener('keydown', event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            add(null);
+          }
+        });
+        tiles.appendChild(tile);
+      });
+      palettePane.appendChild(tiles);
+
+      // Parts list
+      const listPane = el('div', 'mtw-pb-logic-list mtw-pb-design-list');
+      const list = el('div', 'mtw-pb-cards', null, { 'data-drop-group': `parts:${blockId}` });
+      design.parts.forEach((part, i) => {
+        const def = c.CARD_PARTS[part.type];
+        const card = el('div', `mtw-pb-card-item mtw-pb-part mtw-pb-part-${part.type}`, null, { 'data-drag-item': part.id });
+        card.dataset.partId = part.id;
+        const label = part.field ? `${def.label}: ${(cardFieldOptions(props).find(([k]) => k === part.field) || ['', part.field])[1]}` : def.label;
+        card.appendChild(cardHeader(`${i + 1}. ${label}`,
+          () => ({ group: `parts:${blockId}`, id: part.id, label: def.label, onDrop: (container, index) => setDesign(c.cardDesign.move(current(), part.id, index)) }),
+          () => setDesign(c.cardDesign.remove(current(), part.id)), `Delete ${def.label}`));
+        const fieldsBox = el('div', 'mtw-pb-step-body');
+        def.fields.forEach(field => {
+          fieldsBox.appendChild(fieldControl(field, part[field.key], value => {
+            const next = c.cardDesign.update(current(), part.id, { [field.key]: value });
+            if (['select', 'cardfield'].includes(field.type)) setDesign(next);
+            else setDesign(next, `${blockId}:part:${part.id}:${field.key}`);
+          }, { cardFields: cardFieldOptions(props), recordTable: props.source === 'manual' ? 'manual-cards' : props.table }));
+        });
+        card.appendChild(fieldsBox);
+        list.appendChild(card);
+      });
+      if (!design.parts.length) list.appendChild(el('div', 'mtw-pb-steps-empty', 'Drag parts in to build the card.'));
+      listPane.appendChild(list);
+
+      // Preview + card look
+      const side = el('aside', 'mtw-pb-design-side');
+      side.appendChild(sectionTitle('Preview'));
+      const previewWrap = el('div', 'mtw-pb-page mtw-pb-design-preview');
+      const card = el('div', 'mtw-pb-record-card');
+      renderer().applyCardStyle(card, design.style);
+      const fieldMap = {};
+      cardFieldOptions(props).forEach(([key, label]) => { fieldMap[key] = { label, type: 'text' }; });
+      const table = c.findTable(history.page, props.table);
+      if (table && props.source !== 'manual') table.fields.forEach(f => { fieldMap[f.key] = f; });
+      renderer().fillDesignedCard(document, card, design, sampleRecord(props), fieldMap, null);
+      previewWrap.appendChild(card);
+      side.appendChild(previewWrap);
+      side.appendChild(sectionTitle('Card look'));
+      c.CARD_STYLE_FIELDS.forEach(field => {
+        side.appendChild(fieldControl(field, design.style[field.key], value => {
+          setDesign(c.cardDesign.setStyle(current(), { [field.key]: value === undefined ? '' : value }), `${blockId}:cardstyle:${field.key}`);
+        }));
+      });
+
+      body.append(palettePane, listPane, side);
+      logic.replaceChildren(head, body);
+      listPane.scrollTop = listScroll;
+    }
+
+    // While typing in the designer: redraw only the preview card (fields keep focus).
+    function refreshDesignPreview() {
+      const blockId = state.logic.designer;
+      const found = c.findBlock(history.page, blockId);
+      const wrap = logic.querySelector('.mtw-pb-design-preview');
+      if (!found || !wrap) return;
+      const props = found.block.props;
+      const card = el('div', 'mtw-pb-record-card');
+      renderer().applyCardStyle(card, props.design.style);
+      const fieldMap = {};
+      cardFieldOptions(props).forEach(([key, label]) => { fieldMap[key] = { label, type: 'text' }; });
+      const table = c.findTable(history.page, props.table);
+      if (table && props.source !== 'manual') table.fields.forEach(f => { fieldMap[f.key] = f; });
+      renderer().fillDesignedCard(document, card, props.design, sampleRecord(props), fieldMap, null);
+      wrap.replaceChildren(card);
+    }
+
     function openLogic(scopeKey) {
       state.logic = { scope: scopeKey };
       renderLogic();
@@ -1326,6 +1496,10 @@
       overlay.classList.toggle('has-logic', open);
       if (!open) {
         logic.replaceChildren();
+        return;
+      }
+      if (state.logic.designer) {
+        renderDesigner(state.logic.designer);
         return;
       }
       const key = state.logic.scope;
@@ -1572,6 +1746,7 @@
       renderCanvas();
       if (!keepInspector) renderInspector();
       if (!keepInspector) renderLogic();
+      else if (state.logic && state.logic.designer) refreshDesignPreview();
       if (state.paletteTab === 'data' || state.paletteTab === 'popups') buildPalette();
     }
 

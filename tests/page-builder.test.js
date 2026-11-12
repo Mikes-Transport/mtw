@@ -946,3 +946,97 @@ test('cards people add: each card list gets its own popup + table; fields stay i
   assert.deepEqual(errors.filter(e => !/stylesheet|Could not parse CSS/i.test(e)), []);
   dom.window.close();
 });
+
+test('designed cards on the live page: fields, labels, badges, text with record values, card look', async () => {
+  const page = {
+    tables: [{ id: 't-jobs', name: 'Jobs', fields: [
+      { key: 'customer', label: 'Customer', type: 'text' }, { key: 'status', label: 'Status', type: 'choice', options: 'Open\nDone' },
+      { key: 'qty', label: 'Qty', type: 'number' }] }],
+    sections: [{ layout: '1', columns: [{ blocks: [{ type: 'cards', name: 'jobs', props: {
+      source: 'table', table: 't-jobs',
+      design: {
+        parts: [
+          { type: 'field', field: 'customer', size: 'large', weight: '700' },
+          { type: 'badge', field: 'status', tone: 'success', inline: 'yes', align: 'right' },
+          { type: 'field', field: 'qty', showLabel: 'before' },
+          { type: 'text', text: 'Job for {record.customer}', color: '#777774' },
+          { type: 'divider' },
+          { type: 'meta', show: 'who' }
+        ],
+        style: { accent: '#3b82f6', radius: 14, padding: 20 }
+      }
+    } }] }] }]
+  };
+  const db = store({ ...TOOLS, 'dashboard-tool-pages': { jobs: { published: page } },
+    'dashboard-data-jobs-t-jobs': { a: { customer: 'Smith Ltd', status: 'Open', qty: 4, _createdAt: 5, _createdBy: 'Stores' } } });
+  const { dom, window, document } = host({ db });
+  await waitFor(window, () => document.querySelector('.custom-dashboard-tool-jobs-panel .mtw-pb-record-card .mtw-pb-card-line'));
+  const card = document.querySelector('.custom-dashboard-tool-jobs-panel .mtw-pb-record-card');
+  const lines = [...card.querySelectorAll(':scope > .mtw-pb-card-line')];
+  assert.equal(lines.length, 5, 'badge shares the first line');
+  assert.equal(lines[0].children[0].textContent, 'Smith Ltd');
+  assert.equal(lines[0].children[0].style.fontWeight, '700');
+  assert.equal(lines[0].children[1].className.includes('mtw-pb-badge-success'), true);
+  assert.equal(lines[0].children[1].textContent, 'Open');
+  assert.equal(lines[1].textContent, 'Qty: 4');
+  assert.equal(lines[2].textContent, 'Job for Smith Ltd');
+  assert.equal(lines[4].textContent, 'by Stores');
+  assert.equal(card.style.borderLeft, '4px solid rgb(59, 130, 246)');
+  assert.equal(card.style.borderRadius, '14px');
+  dom.window.close();
+});
+
+test('builder: card designer adds, edits and styles parts with a live preview', async () => {
+  const db = store(TOOLS);
+  const { dom, window, document } = host({ db });
+  await waitFor(window, () => typeof window.MTW_OPEN_PAGE_BUILDER === 'function');
+  const editor = await window.MTW_OPEN_PAGE_BUILDER('jobs');
+  await editor.loaded;
+  const ui = editor.element;
+  const inspector = ui.querySelector('.mtw-pb-inspector');
+  pointer(window, ui.querySelector('.mtw-pb-tile[data-block-type="cards"]'), 'pointerdown');
+  pointer(window, document, 'pointerup');
+  await tick(window);
+  const id = editor.selected.id;
+  const design = () => editor.page.sections[0].columns[0].blocks.find(b => b.id === id).props.design;
+  assert.match(inspector.textContent, /Using the standard card look/);
+  inspector.querySelector('.mtw-pb-design-cards').click();
+  const logic = ui.querySelector('.mtw-pb-logic');
+  assert.equal(logic.hidden, false);
+  assert.deepEqual([...design().parts.map(p => p.field)], ['title', 'text'], 'starts from the current look');
+  // Click a Badge tile: added at the bottom with the first field.
+  pointer(window, logic.querySelector('.mtw-pb-step-tile[data-part-type="badge"]'), 'pointerdown');
+  pointer(window, document, 'pointerup');
+  assert.equal(design().parts.length, 3);
+  const badgeCard = logic.querySelectorAll('.mtw-pb-part')[2];
+  const tone = badgeCard.querySelector('[data-field="tone"] select');
+  tone.value = 'danger';
+  tone.dispatchEvent(new window.Event('change', { bubbles: true }));
+  const field = logic.querySelectorAll('.mtw-pb-part')[2].querySelector('[data-field="field"] select');
+  field.value = 'note';
+  field.dispatchEvent(new window.Event('change', { bubbles: true }));
+  assert.deepEqual([design().parts[2].type, design().parts[2].tone, design().parts[2].field], ['badge', 'danger', 'note']);
+  // Card look: accent strip shows in the preview and on the page.
+  const accent = [...logic.querySelectorAll('.mtw-pb-design-side .mtw-pb-field')].find(f => f.dataset.field === 'accent').querySelector('input[type="text"]');
+  accent.value = '#ff0000';
+  accent.dispatchEvent(new window.Event('input', { bubbles: true }));
+  assert.equal(design().style.accent, '#ff0000');
+  assert.equal(logic.querySelector('.mtw-pb-design-preview .mtw-pb-record-card').style.borderLeft, '4px solid rgb(255, 0, 0)');
+  assert.equal(ui.querySelector('.mtw-pb-frame .mtw-pb-record-card').style.borderLeft, '4px solid rgb(255, 0, 0)');
+  // Text part with a record value in the preview.
+  pointer(window, logic.querySelector('.mtw-pb-step-tile[data-part-type="text"]'), 'pointerdown');
+  pointer(window, document, 'pointerup');
+  const textInput = logic.querySelectorAll('.mtw-pb-part')[3].querySelector('[data-field="text"] input');
+  textInput.value = 'About {record.title}';
+  textInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+  assert.ok([...logic.querySelectorAll('.mtw-pb-design-preview .mtw-pb-card-text')].some(n => n.textContent === 'About {record.title}' || n.textContent.startsWith('About')));
+  assert.ok([...ui.querySelectorAll('.mtw-pb-frame .mtw-pb-card-text')].some(n => n.textContent === 'About First card'), 'page cards fill in the record');
+  // Remove a part; then go back to the standard look.
+  logic.querySelectorAll('.mtw-pb-part')[0].querySelector('.mtw-pb-card-delete').click();
+  assert.equal(design().parts.length, 3);
+  logic.querySelector('.mtw-pb-design-reset').click();
+  assert.equal(design().parts.length, 0);
+  assert.equal(logic.hidden, true);
+  editor.close(true);
+  dom.window.close();
+});

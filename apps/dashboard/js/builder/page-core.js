@@ -118,6 +118,7 @@
           { id: 'i-2', title: 'Second card', text: 'Something else.', note: '' },
           { id: 'i-3', title: 'Third card', text: 'One more.', note: '' }
         ],
+        design: { parts: [], style: {} },
         table: '', formPopup: '', titleField: '', textField: '', fields: [], perRow: 3, order: 'newest', limit: 60, search: 'no', allowDelete: 'no', emptyText: 'No cards yet.', actions: []
       },
       fields: [
@@ -129,6 +130,7 @@
         { key: 'titleField', label: 'Card title', type: 'field', any: 'First field', when: { source: ['added', 'table'] } },
         { key: 'textField', label: 'Card text', type: 'field', any: 'None', when: { source: ['added', 'table'] } },
         { key: 'fields', label: 'Also show', type: 'fieldpick', when: { source: ['added', 'table'] } },
+        { key: 'design', label: 'Card design', type: 'carddesign' },
         { key: 'perRow', label: 'Cards per row', type: 'select', options: [[1, '1'], [2, '2'], [3, '3'], [4, '4']] },
         { key: 'search', label: 'Search box', type: 'select', options: [['yes', 'Show'], ['no', 'Hide']] },
         { key: 'order', label: 'Order', type: 'select', options: [['newest', 'Newest first'], ['oldest', 'Oldest first']], when: { source: ['added', 'table'] } },
@@ -560,6 +562,8 @@
           .filter((key, i, all) => all.indexOf(key) === i).slice(0, LIMITS.fields);
       case 'actions':
         return sanitizeActions(value);
+      case 'carddesign':
+        return sanitizeDesign(value);
       case 'cardlist': {
         const seen = new Set();
         return (Array.isArray(value) ? value : []).filter(item => item && typeof item === 'object').slice(0, 100).map(item => {
@@ -762,6 +766,132 @@
 
   // Step lists by path: [] is the top list; [stepId, 'then'] is that If's Then list, and
   // so on. Every helper returns a new top list.
+  // ---------- card designs ----------
+
+  // Parts a card is built from (top to bottom; "Next to the previous part" puts it on the
+  // same line). Values come from the card's record.
+  const SIZE = [['', 'Normal'], ['small', 'Small'], ['large', 'Large'], ['xl', 'Extra large']];
+  const WEIGHT = [['', 'Normal'], ['500', 'Medium'], ['600', 'Semibold'], ['700', 'Bold'], ['800', 'Extra bold']];
+  const LOOK = [
+    { key: 'size', label: 'Size', type: 'select', options: SIZE },
+    { key: 'weight', label: 'Weight', type: 'select', options: WEIGHT },
+    { key: 'color', label: 'Colour', type: 'color' },
+    { key: 'align', label: 'Align', type: 'select', options: [['', 'Left'], ['center', 'Centre'], ['right', 'Right']] },
+    { key: 'inline', label: 'Next to the previous part', type: 'select', options: [['no', 'No'], ['yes', 'Yes']] }
+  ];
+  const CARD_PARTS = Object.freeze({
+    field: {
+      label: 'Field value', description: 'Shows one of the record\'s fields.',
+      defaults: { field: '', showLabel: 'no', size: '', weight: '', color: '', align: '', inline: 'no' },
+      fields: [
+        { key: 'field', label: 'Field', type: 'cardfield' },
+        { key: 'showLabel', label: 'Show the field name', type: 'select', options: [['no', 'No'], ['above', 'Above'], ['before', 'Before the value']] }
+      ].concat(LOOK)
+    },
+    text: {
+      label: 'Text', description: 'Your own words; {record.field} shows a value.',
+      defaults: { text: 'Text', size: '', weight: '', color: '', align: '', inline: 'no' },
+      fields: [{ key: 'text', label: 'Text', type: 'text', tokens: true }].concat(LOOK)
+    },
+    badge: {
+      label: 'Badge', description: 'A coloured tag, e.g. a status.',
+      defaults: { field: '', text: '', tone: 'neutral', inline: 'no' },
+      fields: [
+        { key: 'field', label: 'Field', type: 'cardfield', any: 'None (use the text below)' },
+        { key: 'text', label: 'Text (when no field)', type: 'text', tokens: true },
+        { key: 'tone', label: 'Colour', type: 'select', options: [['neutral', 'Grey'], ['info', 'Blue'], ['success', 'Green'], ['warning', 'Amber'], ['danger', 'Red']] },
+        { key: 'inline', label: 'Next to the previous part', type: 'select', options: [['no', 'No'], ['yes', 'Yes']] }
+      ]
+    },
+    meta: {
+      label: 'Added by / when', description: 'When the record was added, and by whom.',
+      defaults: { show: 'both', align: '', inline: 'no' },
+      fields: [
+        { key: 'show', label: 'Show', type: 'select', options: [['both', 'When and who'], ['when', 'When'], ['who', 'Who']] },
+        { key: 'align', label: 'Align', type: 'select', options: [['', 'Left'], ['center', 'Centre'], ['right', 'Right']] },
+        { key: 'inline', label: 'Next to the previous part', type: 'select', options: [['no', 'No'], ['yes', 'Yes']] }
+      ]
+    },
+    divider: { label: 'Divider', description: 'A thin line.', defaults: {}, fields: [] },
+    spacer: {
+      label: 'Spacer', description: 'Empty space.',
+      defaults: { height: 8 },
+      fields: [{ key: 'height', label: 'Height (px)', type: 'number', min: 2, max: 80 }]
+    }
+  });
+  const CARD_STYLE_FIELDS = Object.freeze([
+    { key: 'background', label: 'Background', type: 'color' },
+    { key: 'accent', label: 'Accent strip (left edge)', type: 'color' },
+    { key: 'border', label: 'Border', type: 'select', options: [['', 'Thin line'], ['none', 'None'], ['strong', 'Strong line']] },
+    { key: 'radius', label: 'Rounded corners (px)', type: 'number', min: 0, max: 40 },
+    { key: 'padding', label: 'Inner spacing (px)', type: 'number', min: 0, max: 60 },
+    { key: 'shadow', label: 'Shadow', type: 'select', options: [['', 'None'], ['soft', 'Soft'], ['strong', 'Strong']] },
+    { key: 'gap', label: 'Space between parts (px)', type: 'number', min: 0, max: 40 }
+  ]);
+
+  const CARD_FIELD_RE = /^(?:[a-z][a-z0-9_]{0,39}|_createdAt|_createdBy)$/;
+
+  function sanitizeDesign(raw) {
+    const d = raw && typeof raw === 'object' ? raw : {};
+    const seen = new Set();
+    const parts = (Array.isArray(d.parts) ? d.parts : []).filter(part => part && CARD_PARTS[part.type]).slice(0, 30).map(part => {
+      const def = CARD_PARTS[part.type];
+      let id = typeof part.id === 'string' && ID_RE.test(part.id) && !seen.has(part.id) ? part.id : newId('p');
+      while (seen.has(id)) id = newId('p');
+      seen.add(id);
+      const out = { id, type: part.type };
+      def.fields.forEach(field => {
+        const value = part[field.key];
+        const fallback = def.defaults[field.key];
+        if (field.type === 'cardfield') out[field.key] = typeof value === 'string' && CARD_FIELD_RE.test(value) ? value : '';
+        else if (field.type === 'color') out[field.key] = color(value);
+        else out[field.key] = sanitizeValue(field, value === undefined ? fallback : value, fallback, 'cardpart');
+      });
+      return out;
+    });
+    const st = d.style && typeof d.style === 'object' ? d.style : {};
+    const style = {};
+    CARD_STYLE_FIELDS.forEach(field => {
+      const v = st[field.key];
+      if (field.type === 'color') { const c2 = color(v); if (c2) style[field.key] = c2; }
+      else if (field.type === 'number') { const n = num(v, field.min, field.max, null); if (n !== null) style[field.key] = n; }
+      else { const o = pick(v, field.options.map(x => x[0]), ''); if (o) style[field.key] = o; }
+    });
+    return { parts, style };
+  }
+
+  const cardDesign = {
+    add(design, type, index, values) {
+      if (!CARD_PARTS[type]) throw new Error(`Unknown card part: ${type}`);
+      if (design.parts.length >= 30) throw new Error('A card can have at most 30 parts.');
+      const part = sanitizeDesign({ parts: [{ type, ...clone(CARD_PARTS[type].defaults), ...(values || {}) }] }).parts[0];
+      part.id = newId('p');
+      const parts = design.parts.slice();
+      parts.splice(clampIndex(index, parts.length), 0, part);
+      return { design: { ...design, parts }, id: part.id };
+    },
+    remove(design, id) {
+      return { ...design, parts: design.parts.filter(part => part.id !== id) };
+    },
+    move(design, id, index) {
+      return { ...design, parts: moveInList(design.parts, part => part.id === id, index) };
+    },
+    update(design, id, changes) {
+      return sanitizeDesign({ ...design, parts: design.parts.map(part => (part.id === id ? { ...part, ...changes } : part)) });
+    },
+    setStyle(design, changes) {
+      return sanitizeDesign({ ...design, style: { ...design.style, ...changes } });
+    },
+    // A starting design that matches the default card look.
+    starter(titleKey, textKey) {
+      let d = { parts: [], style: {} };
+      if (titleKey) d = cardDesign.add(d, 'field', null, { field: titleKey, weight: '700', size: 'large' }).design;
+      if (textKey) d = cardDesign.add(d, 'field', null, { field: textKey, color: '#777774' }).design;
+      d = cardDesign.add(d, 'meta', null, { show: 'when' }).design;
+      return d;
+    }
+  };
+
   // Cards typed into a Card list block.
   const cardItems = {
     add(props) {
@@ -1362,7 +1492,7 @@
     OPS, KEY_RE, RECORD_RE, pagePopups, allNames, parseCsv, toCsv, matchColumns, slug, uniqueKey, inputKey, dataCollection, pageInputs, pageElements, freeName, renameBlock,
     updatePageActions, sanitizeActions, sanitizeTables,
     findTable, addTable, updateTable, removeTable, addField, updateField, removeField, moveField,
-    moveInList, grid, steps, cardItems,
+    moveInList, grid, steps, cardItems, CARD_PARTS, CARD_STYLE_FIELDS, sanitizeDesign, cardDesign,
     newId, createPage, createBlock, createSection, sanitizePage, sanitizeStyle, sanitizeProps,
     safeUrl, safeEmbedUrl, color, classNames,
     clone, findBlock, findColumn, findSection, countBlocks,

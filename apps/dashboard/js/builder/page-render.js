@@ -222,6 +222,81 @@
     }
   }
 
+  // ---------- designed cards ----------
+  const PART_SIZES = { small: '12px', large: '17px', xl: '22px' };
+  const MANUAL_FIELDS = { title: { label: 'Title', type: 'text' }, text: { label: 'Text', type: 'longtext' }, note: { label: 'Small note', type: 'text' } };
+
+  function applyCardStyle(card, style) {
+    const st = style || {};
+    if (st.background) card.style.background = st.background;
+    if (st.accent) card.style.borderLeft = `4px solid ${st.accent}`;
+    if (st.border === 'none') card.style.borderColor = 'transparent';
+    if (st.border === 'strong') card.style.border = '2px solid var(--mtw-ink, #242424)';
+    if (st.border === 'strong' && st.accent) card.style.borderLeft = `4px solid ${st.accent}`;
+    if (st.radius !== undefined) card.style.borderRadius = `${st.radius}px`;
+    if (st.padding !== undefined) card.style.padding = `${st.padding}px`;
+    if (st.shadow) card.dataset.shadow = st.shadow;
+    if (st.gap !== undefined) card.style.gap = `${st.gap}px`;
+  }
+
+  // Fills a card from its design. fields: { key: { label, type } } for the record.
+  function fillDesignedCard(doc, card, design, record, fields, rt) {
+    let line = null;
+    design.parts.forEach((part, i) => {
+      if (!line || part.inline !== 'yes' || i === 0) {
+        line = el(doc, 'div', 'mtw-pb-card-line');
+        card.appendChild(line);
+      }
+      let node;
+      const field = part.field ? fields[part.field] : null;
+      const raw = part.field ? record[part.field] : undefined;
+      const value = part.field === '_createdAt' ? when(raw) : fmt(raw, field ? field.type : 'text');
+      switch (part.type) {
+        case 'field': {
+          node = el(doc, 'div', 'mtw-pb-card-part mtw-pb-card-field');
+          if (part.showLabel !== 'no' && field) {
+            node.appendChild(el(doc, 'span', 'mtw-pb-card-field-label', part.showLabel === 'before' ? `${field.label}: ` : field.label));
+            if (part.showLabel === 'above') node.classList.add('is-label-above');
+          }
+          node.appendChild(el(doc, 'span', 'mtw-pb-card-field-value', value || (part.field ? '-' : '')));
+          break;
+        }
+        case 'text':
+          node = el(doc, 'div', 'mtw-pb-card-part mtw-pb-card-text', rt ? rt.tokens(part.text, { record }) : part.text);
+          break;
+        case 'badge': {
+          const text = part.field ? value : (rt ? rt.tokens(part.text, { record }) : part.text);
+          if (!text) return;
+          node = el(doc, 'span', `mtw-pb-card-part mtw-pb-badge mtw-pb-badge-${part.tone}`, text);
+          break;
+        }
+        case 'meta': {
+          const bits = [];
+          if (part.show !== 'who' && record._createdAt) bits.push(when(record._createdAt));
+          if (part.show !== 'when' && record._createdBy) bits.push(`by ${record._createdBy}`);
+          if (!bits.length) return;
+          node = el(doc, 'div', 'mtw-pb-card-part mtw-pb-records-when', bits.join(' '));
+          break;
+        }
+        case 'divider':
+          node = el(doc, 'hr', 'mtw-pb-card-part mtw-pb-divider');
+          break;
+        case 'spacer':
+          node = el(doc, 'div', 'mtw-pb-card-part');
+          node.style.height = `${part.height}px`;
+          break;
+        default:
+          return;
+      }
+      if (part.size && PART_SIZES[part.size]) node.style.fontSize = PART_SIZES[part.size];
+      if (part.weight) node.style.fontWeight = part.weight;
+      if (part.color) node.style.color = part.color;
+      if (part.align) node.dataset.align = part.align;
+      line.appendChild(node);
+    });
+    [...card.querySelectorAll(':scope > .mtw-pb-card-line')].forEach(l => { if (!l.children.length) l.remove(); });
+  }
+
   // Cards typed in the builder. Clicking one runs the steps with the card as the record
   // ({record.title}, {record.text}, {record.note}).
   function renderManualCards(doc, block, options, node) {
@@ -252,9 +327,14 @@
           card.type = 'button';
           card.addEventListener('click', () => rt.run(p.actions, { record: { _id: item.id, title: item.title, text: item.text, note: item.note } }));
         }
-        if (item.title) card.appendChild(el(doc, 'strong', 'mtw-pb-record-card-title', item.title));
-        if (item.text) card.appendChild(el(doc, 'p', 'mtw-pb-record-card-text', item.text));
-        if (item.note) card.appendChild(el(doc, 'span', 'mtw-pb-records-when', item.note));
+        applyCardStyle(card, p.design.style);
+        if (p.design.parts.length) {
+          fillDesignedCard(doc, card, p.design, { _id: item.id, title: item.title, text: item.text, note: item.note }, MANUAL_FIELDS, rt);
+        } else {
+          if (item.title) card.appendChild(el(doc, 'strong', 'mtw-pb-record-card-title', item.title));
+          if (item.text) card.appendChild(el(doc, 'p', 'mtw-pb-record-card-text', item.text));
+          if (item.note) card.appendChild(el(doc, 'span', 'mtw-pb-records-when', item.note));
+        }
         grid.appendChild(card);
       });
       status.textContent = !p.items.length ? p.emptyText : !items.length ? 'No cards match.' : '';
@@ -320,6 +400,24 @@
             if (event.target.closest('.mtw-pb-records-delete')) return;
             rt.run(p.actions, { record: row, table: p.table });
           });
+        }
+        applyCardStyle(card, p.design.style);
+        if (p.design.parts.length) {
+          const fieldMap = { _createdAt: { label: 'Added', type: 'text' }, _createdBy: { label: 'Added by', type: 'text' } };
+          def.fields.forEach(f => { fieldMap[f.key] = f; });
+          fillDesignedCard(doc, card, p.design, row, fieldMap, rt);
+          if (canDelete) {
+            const del = el(doc, 'span', 'mtw-pb-records-delete mtw-pb-card-delete-corner', 'Delete');
+            del.setAttribute('role', 'button');
+            del.tabIndex = 0;
+            del.addEventListener('click', event => {
+              event.stopPropagation();
+              deleteRow(p, row, options, null);
+            });
+            card.appendChild(del);
+          }
+          grid.appendChild(card);
+          return;
         }
         if (titleField) card.appendChild(el(doc, 'strong', 'mtw-pb-record-card-title', fmt(row[titleField.key], titleField.type) || '(untitled)'));
         if (textField && row[textField.key] !== undefined && row[textField.key] !== '') {
@@ -842,5 +940,5 @@
     };
   }
 
-  root.MTW_PAGE_RENDER = { COLLECTION, render, renderBlock, mount };
+  root.MTW_PAGE_RENDER = { COLLECTION, render, renderBlock, mount, fillDesignedCard, applyCardStyle, MANUAL_FIELDS };
 })(typeof self !== 'undefined' ? self : this);

@@ -265,3 +265,18 @@ test('popups: sections become named popups; names are shared with elements and r
   assert.equal(page.sections[0].popup, undefined);
   assert.equal(page.sections[0].name, undefined);
 });
+
+test('card designs: parts, order, inline, style limits', () => {
+  let d = core.cardDesign.starter('customer', 'notes');
+  assert.deepEqual(d.parts.map(p => [p.type, p.field || p.show]), [['field', 'customer'], ['field', 'notes'], ['meta', 'when']]);
+  let r = core.cardDesign.add(d, 'badge', 0, { field: 'status', tone: 'warning', inline: 'yes' });
+  d = core.cardDesign.move(r.design, r.id, 3);
+  assert.deepEqual(d.parts.map(p => p.type), ['field', 'field', 'badge', 'meta']);
+  d = core.cardDesign.update(d, r.id, { tone: 'nope', field: 'Bad Field' });
+  const badge = d.parts.find(p => p.id === r.id);
+  assert.equal(badge.tone, 'neutral');
+  assert.equal(badge.field, '');
+  d = core.cardDesign.setStyle(d, { accent: '#0a0', radius: 500, border: 'weird', padding: '12' });
+  assert.deepEqual(d.style, { accent: '#0a0', radius: 40, padding: 12 });
+  assert.equal(core.sanitizeDesign({ parts: [{ type: 'script' }, { type: 'divider' }] }).parts.length, 1);
+});

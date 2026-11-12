@@ -83,6 +83,15 @@ search, delete permissions). Card lists and Records lists have
 **When a card/row is clicked, do** steps: those steps can use the clicked record as
 `{record.field}` in text and `record.field` in If, and add **Delete this record**.
 
+## Card designs
+
+**Design cards** on a card list opens the card designer: drag in parts (Field value, Text
+with `{record.field}`, Badge, Added by / when, Divider, Spacer), reorder them, and set each
+part's size, weight, colour, alignment, field name label, and "Next to the previous part"
+(same line). **Card look** sets background, accent strip, border, corners, spacing and
+shadow. The preview uses a real record when there is one. Each card list has its own
+design; **Use the standard look** removes it.
+
 ## Export and import
 
 - **Export a table**: downloads the table as CSV (opens in Excel), with Added/Added by.
