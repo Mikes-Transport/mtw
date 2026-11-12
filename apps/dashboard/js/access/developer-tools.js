@@ -89,6 +89,22 @@
     const saveButton = node('button', '', isNew ? 'Add navigation item' : 'Save changes');
     saveButton.type = 'submit';
     buttons.appendChild(saveButton);
+    if (!isNew && settings.custom === true) {
+      const builderButton = node('button', 'developer-tool-build-page', 'Open page builder');
+      builderButton.type = 'button';
+      builderButton.addEventListener('click', async () => {
+        builderButton.disabled = true;
+        try {
+          if (typeof window.MTW_OPEN_PAGE_BUILDER !== 'function') throw new Error('The page builder is not available.');
+          await window.MTW_OPEN_PAGE_BUILDER(id, nameInput.value.trim() || registry.name);
+        } catch (error) {
+          showStatus(panel, `Could not open the page builder: ${error.message || 'unknown error'}`, true);
+        } finally {
+          builderButton.disabled = false;
+        }
+      });
+      buttons.appendChild(builderButton);
+    }
     if (!isNew) {
       const disableButton = node('button', 'developer-tool-disable', settings.enabled === false ? 'Re-enable item' : 'Disable item');
       disableButton.type = 'button';
@@ -135,7 +151,8 @@
         window.MTW_APPLY_TOOL_SETTINGS(updated);
         showStatus(panel, 'Saved. The navigation and role access are updated.', false);
         if (isNew) {
-          render(panel);
+          buildToolForm(panel, id, { name, roles: selectedRoles }, record, false);
+          showStatus(panel, 'Added. Press Open page builder to build its page.', false);
         }
       } catch (error) {
         console.error('[dashboard] could not save tool settings:', error);
@@ -152,7 +169,7 @@
     panel.dataset.view = 'list';
     panel.replaceChildren();
     panel.appendChild(node('h2', '', 'Manager tools'));
-    panel.appendChild(node('p', '', 'Manage navigation labels and access. New items create a placeholder only; the tool itself is added in code.'));
+    panel.appendChild(node('p', '', 'Manage navigation labels and access. New items get a page you build with drag and drop: open the item, then Open page builder.'));
 
     const addButton = node('button', 'developer-tool-add', 'Add navigation item');
     addButton.type = 'button';
@@ -169,7 +186,9 @@
         const row = node('button', 'developer-tool-row');
         row.type = 'button';
         const name = node('strong', '', config.name || tool.name);
-        const detail = node('span', '', config.enabled === false ? 'Disabled' : 'Edit name and access');
+        const detail = node('span', '', config.enabled === false
+          ? 'Disabled'
+          : config.custom === true ? 'Custom page · edit name, access and page' : 'Edit name and access');
         row.append(name, detail);
         row.addEventListener('click', () => buildToolForm(panel, id, tool, config, false));
         list.appendChild(row);
