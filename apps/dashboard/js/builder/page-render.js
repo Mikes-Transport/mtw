@@ -520,6 +520,10 @@
     return node;
   }
 
+  // Blocks whose "When clicked" steps run from a click on the block itself (buttons,
+  // inputs, records lists and card lists have their own triggers).
+  const CLICKABLE = ['heading', 'text', 'list', 'notice', 'card', 'stat', 'image', 'table', 'divider', 'spacer', 'embed'];
+
   function renderBlock(doc, block, options) {
     const p = block.props;
     const rt = options.runtime;
@@ -655,6 +659,20 @@
       }
       default:
         node = el(doc, 'div');
+    }
+    // Headings, text, notices, cards, tiles and images can run steps when clicked.
+    if (CLICKABLE.includes(block.type) && Array.isArray(p.actions) && p.actions.length && !options.editing && rt) {
+      node.classList.add('is-clickable');
+      node.setAttribute('role', 'button');
+      node.tabIndex = 0;
+      const go = () => rt.run(p.actions);
+      node.addEventListener('click', go);
+      node.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          go();
+        }
+      });
     }
     node.classList.add('mtw-pb-block', `mtw-pb-block-${block.type}`);
     node.dataset.blockId = block.id;
@@ -954,6 +972,7 @@
       if (!opts.editing) (safe.popups || []).forEach(popup => node.appendChild(popupShell(doc, popup, opts, ui)));
     }
     node.mtwRuntime = opts.runtime || null;
+    node.mtwUi = ui;
     return node;
   }
 

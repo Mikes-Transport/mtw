@@ -49,8 +49,10 @@ The right panel shows a short outline of an element's steps; **Edit steps** open
 full-width Steps panel (step types on the left, grouped, each with a one-line
 description; the list on the right). **Done** or Esc goes back to the page.
 
-- **When**: a button is clicked, an input changes, or the page opens (select nothing on
-  the page to edit that list).
+- **When**: any block is clicked (headings, text, lists, notices, cards, number tiles,
+  images, tables, dividers, spacers, embeds' frames), a button is clicked, an input
+  changes, a records row or card is clicked, or the page opens (select nothing on the
+  page to edit that list). A block with no steps isn't clickable.
 - **Do** (in order; drag steps in from the chips, drag cards to reorder or into an If's
   Then/Else): Save inputs to a table, Show a message, Ask to confirm, Clear inputs, Set an
   input, Set an element's text, Show/Hide an element, If / then / else (equal to, not
@@ -115,6 +117,14 @@ design; **Use the standard look** removes it.
 buttons, a card list, and an Add popup form (save, message, clear, close).
 
 The builder's **Preview** runs everything: saved, edited, imported and deleted records show straight away in the preview only; nothing is written to Firebase, and they disappear when you go back to editing.
+
+## Manage data
+
+Managers can type data straight into a tool's tables: **Manage data** on the live tool
+(next to Edit page), or **Open records** on a table in the builder's Data tab. A tab per
+table, a row per record, a column per field; click a cell to edit (saved when you leave
+it, checked like a form), **+ Add row**, Delete (asks first), search, Import and Export.
+Records added by people using the tool appear live.
 
 ## Data tables
 

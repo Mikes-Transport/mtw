@@ -43,32 +43,38 @@
   const BLOCKS = Object.freeze({
     heading: {
       label: 'Heading', group: 'Text',
-      defaults: { text: 'New heading', level: 'h2' },
+      defaults: { text: 'New heading', level: 'h2', actions: [] },
       fields: [
         { key: 'text', label: 'Text', type: 'text' },
-        { key: 'level', label: 'Size', type: 'select', options: [['h1', 'Large'], ['h2', 'Medium'], ['h3', 'Small']] }
+        { key: 'level', label: 'Size', type: 'select', options: [['h1', 'Large'], ['h2', 'Medium'], ['h3', 'Small']] },
+        { key: 'actions', label: 'When clicked, do', type: 'actions' }
       ]
     },
     text: {
       label: 'Text', group: 'Text',
-      defaults: { text: 'Write something here.' },
-      fields: [{ key: 'text', label: 'Text', type: 'textarea' }]
+      defaults: { text: 'Write something here.', actions: [] },
+      fields: [
+        { key: 'text', label: 'Text', type: 'textarea' },
+        { key: 'actions', label: 'When clicked, do', type: 'actions' }
+      ]
     },
     list: {
       label: 'List', group: 'Text',
-      defaults: { items: 'First item\nSecond item\nThird item', ordered: 'no' },
+      defaults: { items: 'First item\nSecond item\nThird item', ordered: 'no', actions: [] },
       fields: [
         { key: 'items', label: 'Items (one per line)', type: 'textarea' },
-        { key: 'ordered', label: 'Numbered', type: 'select', options: [['no', 'No'], ['yes', 'Yes']] }
+        { key: 'ordered', label: 'Numbered', type: 'select', options: [['no', 'No'], ['yes', 'Yes']] },
+        { key: 'actions', label: 'When clicked, do', type: 'actions' }
       ]
     },
     notice: {
       label: 'Notice', group: 'Text',
-      defaults: { tone: 'info', title: 'Heads up', text: 'Something people should know.' },
+      defaults: { tone: 'info', title: 'Heads up', text: 'Something people should know.', actions: [] },
       fields: [
         { key: 'tone', label: 'Type', type: 'select', options: [['info', 'Info'], ['success', 'Success'], ['warning', 'Warning'], ['danger', 'Danger']] },
         { key: 'title', label: 'Title', type: 'text' },
-        { key: 'text', label: 'Text', type: 'textarea' }
+        { key: 'text', label: 'Text', type: 'textarea' },
+        { key: 'actions', label: 'When clicked, do', type: 'actions' }
       ]
     },
     button: {
@@ -97,7 +103,7 @@
     },
     records: {
       label: 'Records list', group: 'Data',
-      defaults: { table: '', columns: [], order: 'newest', limit: 50, search: 'yes', allowDelete: 'no', emptyText: 'Nothing here yet.' },
+      defaults: { table: '', columns: [], order: 'newest', limit: 50, search: 'yes', allowDelete: 'no', emptyText: 'Nothing here yet.', actions: [] },
       fields: [
         { key: 'table', label: 'Data table', type: 'table' },
         { key: 'columns', label: 'Columns to show (none ticked = all)', type: 'fieldpick' },
@@ -142,15 +148,16 @@
     },
     card: {
       label: 'Card', group: 'Layout',
-      defaults: { title: 'Card title', text: 'Card text.' },
+      defaults: { title: 'Card title', text: 'Card text.', actions: [] },
       fields: [
         { key: 'title', label: 'Title', type: 'text' },
-        { key: 'text', label: 'Text', type: 'textarea' }
+        { key: 'text', label: 'Text', type: 'textarea' },
+        { key: 'actions', label: 'When clicked, do', type: 'actions' }
       ]
     },
     stat: {
       label: 'Number tile', group: 'Layout',
-      defaults: { label: 'Orders today', source: 'static', value: '24', table: '', filterField: '', filterValue: '', note: '' },
+      defaults: { label: 'Orders today', source: 'static', value: '24', table: '', filterField: '', filterValue: '', note: '', actions: [] },
       fields: [
         { key: 'label', label: 'Label', type: 'text' },
         { key: 'source', label: 'Number comes from', type: 'select', options: [['static', 'What I type'], ['count', 'Count of records in a data table']] },
@@ -158,44 +165,52 @@
         { key: 'table', label: 'Data table', type: 'table', when: { source: 'count' } },
         { key: 'filterField', label: 'Only count where', type: 'field', when: { source: 'count' } },
         { key: 'filterValue', label: 'equals', type: 'text', when: { source: 'count' } },
-        { key: 'note', label: 'Small note', type: 'text' }
+        { key: 'note', label: 'Small note', type: 'text' },
+        { key: 'actions', label: 'When clicked, do', type: 'actions' }
       ]
     },
-    divider: { label: 'Divider', group: 'Layout', defaults: {}, fields: [] },
+    divider: { label: 'Divider', group: 'Layout', defaults: { actions: [] }, fields: [{ key: 'actions', label: 'When clicked, do', type: 'actions' }] },
     spacer: {
       label: 'Spacer', group: 'Layout',
-      defaults: { height: 32 },
-      fields: [{ key: 'height', label: 'Height (px)', type: 'number', min: 4, max: 400 }]
+      defaults: { height: 32, actions: [] },
+      fields: [
+        { key: 'height', label: 'Height (px)', type: 'number', min: 4, max: 400 },
+        { key: 'actions', label: 'When clicked, do', type: 'actions' }
+      ]
     },
     table: {
       label: 'Table', group: 'Data',
       defaults: {
         header: 'yes',
+        actions: [],
         columns: [{ id: 'k-name', label: 'Name' }, { id: 'k-role', label: 'Role' }, { id: 'k-phone', label: 'Phone' }],
         rows: [{ id: 'r-1', cells: { 'k-name': 'Sam', 'k-role': 'Stores', 'k-phone': '021 000 000' } }]
       },
       fields: [
         { key: 'header', label: 'Show headings', type: 'select', options: [['yes', 'Yes'], ['no', 'No']] },
-        { key: 'columns', label: 'Columns and rows', type: 'grid' }
+        { key: 'columns', label: 'Columns and rows', type: 'grid' },
+        { key: 'actions', label: 'When clicked, do', type: 'actions' }
       ]
     },
     image: {
       label: 'Image', group: 'Media',
-      defaults: { src: '', alt: '', fit: 'contain', height: 0 },
+      defaults: { src: '', alt: '', fit: 'contain', height: 0, actions: [] },
       fields: [
         { key: 'src', label: 'Image address', type: 'url' },
         { key: 'alt', label: 'Description (for screen readers)', type: 'text' },
         { key: 'fit', label: 'Fit', type: 'select', options: [['contain', 'Whole image'], ['cover', 'Fill and crop']] },
-        { key: 'height', label: 'Height (px, 0 = automatic)', type: 'number', min: 0, max: 1200 }
+        { key: 'height', label: 'Height (px, 0 = automatic)', type: 'number', min: 0, max: 1200 },
+        { key: 'actions', label: 'When clicked, do', type: 'actions' }
       ]
     },
     embed: {
       label: 'Embed', group: 'Media',
-      defaults: { url: '', height: 420, title: 'Embedded page' },
+      defaults: { url: '', height: 420, title: 'Embedded page', actions: [] },
       fields: [
         { key: 'url', label: 'Page address (https://)', type: 'url' },
         { key: 'title', label: 'Title', type: 'text' },
-        { key: 'height', label: 'Height (px)', type: 'number', min: 80, max: 2000 }
+        { key: 'height', label: 'Height (px)', type: 'number', min: 80, max: 2000 },
+        { key: 'actions', label: 'When its frame is clicked, do (clicks inside the embedded page don\'t count)', type: 'actions' }
       ]
     }
   });

@@ -26,11 +26,12 @@
     core: new URL('js/builder/page-core.js', BASE_URL).href,
     runtime: new URL('js/builder/page-runtime.js', BASE_URL).href,
     render: new URL('js/builder/page-render.js', BASE_URL).href,
-    builder: new URL('js/builder/page-builder.js', BASE_URL).href
+    builder: new URL('js/builder/page-builder.js', BASE_URL).href,
+    data: new URL('js/builder/page-data.js', BASE_URL).href
   };
 
   // Bump on each release so the live page can be checked for the version it runs.
-  const NAVIGATION_BUILD = '2026-11-13.33';
+  const NAVIGATION_BUILD = '2026-11-13.34';
 
   const TOOLS = {
     'activity-logs': { panel: '.activity-logs-panel', name: 'Activity Logs', roles: ['Managers'] },
@@ -515,6 +516,23 @@
     return window.MTW_PAGE_BUILDER.open(id, name || (TOOLS[id] && TOOLS[id].name) || id);
   }
 
+  // Manage data: the spreadsheet-style editor for a custom tool's tables (Managers).
+  // page: the page whose tables to show (the builder passes its draft); otherwise the
+  // saved draft, or the published page.
+  async function openDataManager(id, page) {
+    if (!isManager(sessionStorage.getItem('mtw_admin_name'))) throw new Error('Only Managers can manage data.');
+    await loadPageRenderer();
+    if (!window.MTW_PAGE_DATA) await loadScript(PAGE_SCRIPTS.data, 'mtwPageData');
+    let source = page;
+    if (!source) {
+      const api = window.MTW || {};
+      const snap = await api.getDoc(api.doc(api.db, 'dashboard-tool-pages', id));
+      const data = snap && snap.exists() ? snap.data() : {};
+      source = data.draft || data.published || { sections: [] };
+    }
+    return window.MTW_PAGE_DATA.open({ toolId: id, toolName: (TOOLS[id] && TOOLS[id].name) || id, page: source });
+  }
+
   const pageMounts = {};
   function renderCustomPanel(panel, id) {
     if (pageMounts[id]) {
@@ -532,7 +550,14 @@
       edit.addEventListener('click', () => {
         openPageBuilder(id).catch(error => console.error('[dashboard] page builder:', error));
       });
-      bar.appendChild(edit);
+      const manage = document.createElement('button');
+      manage.type = 'button';
+      manage.className = 'mtw-pb-manage-data';
+      manage.textContent = 'Manage data';
+      manage.addEventListener('click', () => {
+        openDataManager(id).catch(error => console.error('[dashboard] manage data:', error));
+      });
+      bar.append(manage, edit);
       panel.appendChild(bar);
     }
     const content = document.createElement('div');
@@ -689,6 +714,7 @@
 
     window.MTW_TOOL_REGISTRY = TOOLS;
     window.MTW_OPEN_PAGE_BUILDER = openPageBuilder;
+    window.MTW_OPEN_DATA_MANAGER = openDataManager;
     window.MTW_APPLY_TOOL_SETTINGS = applyToolSettings;
     applyToolSettings({});
     createCustomCard('developer-tools', 'Manager Tools');

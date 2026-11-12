@@ -1231,6 +1231,17 @@
         if (result && result.key) commit(result.page);
       }));
 
+      inspector.appendChild(button('mtw-pb-btn mtw-pb-btn-primary-dark mtw-pb-open-records', 'Open records',
+        'Add, edit and delete this table\'s records like a spreadsheet', async () => {
+          try {
+            if (typeof root.MTW_OPEN_DATA_MANAGER !== 'function') throw new Error('Manage data is not available.');
+            const manager = await root.MTW_OPEN_DATA_MANAGER(toolId, history.page);
+            if (manager && manager.showTable) manager.showTable(tableId);
+          } catch (error) {
+            flash(error.message || 'Could not open the records.', true);
+          }
+        }));
+
       inspector.appendChild(sectionTitle('Shortcuts'));
       inspector.appendChild(button('mtw-pb-btn mtw-pb-btn-light mtw-pb-make-form', 'Add a form and list for this table',
         'Adds inputs for every field, a Save button and a records list', () => addFormFor(tableId)));

@@ -303,6 +303,45 @@
       return record;
     }
 
+    // Checks one value for a field: { value } or { error }.
+    function coerce(field, raw) {
+      let v = raw === undefined || raw === null ? '' : String(raw).trim();
+      if (field.type === 'image' && v !== '' && !c.safeUrl(v)) return { error: `${field.label} must be a web address starting with https://` };
+      if (field.type === 'number' && v !== '') {
+        const n = Number(v.replace(/,/g, ''));
+        if (!Number.isFinite(n)) return { error: `${field.label} must be a number.` };
+        return { value: n };
+      }
+      if (field.type === 'yesno' && v !== '') v = /^(yes|y|true|1)$/i.test(v) ? 'Yes' : 'No';
+      return { value: v.slice(0, c.LIMITS.text) };
+    }
+
+    // Manage data: change one field of a record directly.
+    async function updateRecord(tableId, id, key, raw) {
+      const def = tables[tableId];
+      const field = def && def.fields.find(f => f.key === key);
+      if (!field) throw new Error('Unknown field.');
+      const checked = coerce(field, raw);
+      if (checked.error) throw new Error(checked.error);
+      if (typeof api.updateDoc !== 'function' || typeof api.doc !== 'function') throw new Error('The dashboard database is unavailable.');
+      await api.updateDoc(api.doc(api.db, c.dataCollection(opts.toolId, tableId), id),
+        { [key]: checked.value, _updatedAt: Date.now(), _updatedBy: user });
+      return checked.value;
+    }
+
+    // Manage data: a new, empty record (fields blank).
+    async function addRecord(tableId) {
+      const def = tables[tableId];
+      if (!def) throw new Error('Unknown table.');
+      const record = {};
+      def.fields.forEach(f => { record[f.key] = f.type === 'yesno' ? 'No' : ''; });
+      record._createdAt = Date.now();
+      record._createdBy = user;
+      if (typeof api.addDoc !== 'function') throw new Error('The dashboard database is unavailable.');
+      const ref = await api.addDoc(collectionRef(tableId), record);
+      return ref && ref.id;
+    }
+
     async function remove(tableId, id) {
       if (opts.dryRun) {
         previewChange(tableId, rows => rows.filter(row => row._id !== id));
@@ -530,6 +569,9 @@
       remove,
       exportTable,
       importTable,
+      updateRecord,
+      addRecord,
+      coerce,
       stopEditing,
       run,
       started: () => running,

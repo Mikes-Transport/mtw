@@ -103,13 +103,14 @@ function host({ role = 'Managers', db } = {}) {
 }
 
 function waitFor(window, predicate, timeout = 4000) {
+  const where = (new Error().stack.split('\n')[2] || '').trim();
   return new Promise((resolve, reject) => {
     const started = Date.now();
     (function poll() {
       let ok = false;
       try { ok = predicate(); } catch (error) { ok = false; }
       if (ok) return resolve();
-      if (Date.now() - started > timeout) return reject(new Error('timed out'));
+      if (Date.now() - started > timeout) return reject(new Error(`timed out ${where}`));
       window.setTimeout(poll, 20);
     })();
   });
@@ -1267,4 +1268,142 @@ test('Manager Tools: delete a custom item (asks first; records kept unless ticke
     assert.match(document.querySelector('.developer-tools-status').textContent, /Deleted "Jobs"/);
     dom.window.close();
   }
+});
+
+test('Manage data: managers edit records like a spreadsheet from the live tool', async () => {
+  const page = {
+    tables: [
+      { id: 't-jobs', name: 'Jobs', fields: [
+        { key: 'customer', label: 'Customer', type: 'text', required: true },
+        { key: 'qty', label: 'Qty', type: 'number' },
+        { key: 'status', label: 'Status', type: 'choice', options: 'Open\nDone' },
+        { key: 'photo', label: 'Photo', type: 'image' }] },
+      { id: 't-parts', name: 'Parts', fields: [{ key: 'part', label: 'Part', type: 'text' }] }
+    ],
+    sections: [{ layout: '1', columns: [{ blocks: [{ type: 'heading', props: { text: 'Jobs' } }] }] }]
+  };
+  for (const role of ['Stores', 'Managers']) {
+    const db = store({ ...TOOLS, 'dashboard-tool-pages': { jobs: { published: page } },
+      'dashboard-data-jobs-t-jobs': { a: { customer: 'Smith', qty: 2, status: 'Open', _createdAt: 1 } } });
+    const { dom, window, document } = host({ role, db });
+    await waitFor(window, () => document.querySelector('.custom-dashboard-tool-jobs-panel .mtw-pb-page'));
+    const button0 = document.querySelector('.custom-dashboard-tool-jobs-panel .mtw-pb-manage-data');
+    if (role === 'Stores') {
+      assert.equal(button0, null, 'only managers');
+      dom.window.close();
+      continue;
+    }
+    button0.click();
+    await waitFor(window, () => document.querySelector('.mtw-pb-data .mtw-pb-data-grid tbody tr'));
+    const ui = document.querySelector('.mtw-pb-data');
+    assert.deepEqual([...ui.querySelectorAll('.mtw-pb-data-tab')].map(t => t.textContent), ['Jobs', 'Parts']);
+    assert.deepEqual([...ui.querySelectorAll('.mtw-pb-data-grid th')].slice(0, 3).map(th => th.textContent), ['Customer *', 'Qty', 'Status']);
+    const cells = ui.querySelectorAll('tbody tr')[0].querySelectorAll('.mtw-pb-data-cell');
+    assert.equal(cells[0].value, 'Smith');
+    assert.equal(cells[2].tagName, 'SELECT');
+    // Edit a cell: saved when leaving it.
+    cells[0].focus();
+    cells[0].value = 'Smith & Sons';
+    cells[0].dispatchEvent(new window.Event('blur'));
+    await waitFor(window, () => db.data['dashboard-data-jobs-t-jobs'].a.customer === 'Smith & Sons');
+    await waitFor(window, () => /Saved Customer/.test(ui.querySelector('.mtw-pb-data-status').textContent));
+    assert.equal(db.data['dashboard-data-jobs-t-jobs'].a._updatedBy, 'Managers');
+    // Bad image address: not saved, shown as an error.
+    const photo = ui.querySelectorAll('tbody tr')[0].querySelectorAll('.mtw-pb-data-cell')[3];
+    photo.value = 'not a link';
+    photo.dispatchEvent(new window.Event('blur'));
+    await waitFor(window, () => /Photo must be a web address/.test(ui.querySelector('.mtw-pb-data-status').textContent));
+    assert.equal(db.data['dashboard-data-jobs-t-jobs'].a.photo, undefined);
+    // Numbers save as numbers.
+    const qty = ui.querySelectorAll('tbody tr')[0].querySelectorAll('.mtw-pb-data-cell')[1];
+    qty.value = '5';
+    qty.dispatchEvent(new window.Event('blur'));
+    await waitFor(window, () => db.data['dashboard-data-jobs-t-jobs'].a.qty === 5);
+    // Dropdown saves on change.
+    const status = ui.querySelectorAll('tbody tr')[0].querySelectorAll('.mtw-pb-data-cell')[2];
+    status.value = 'Done';
+    status.dispatchEvent(new window.Event('change'));
+    await waitFor(window, () => db.data['dashboard-data-jobs-t-jobs'].a.status === 'Done');
+    // + Add row, then delete it (asks first).
+    ui.querySelector('.mtw-pb-data-add').click();
+    await waitFor(window, () => ui.querySelectorAll('tbody tr').length === 2);
+    assert.equal(Object.keys(db.data['dashboard-data-jobs-t-jobs']).length, 2);
+    ui.querySelectorAll('tbody tr')[0].querySelector('.mtw-pb-records-delete').click();
+    await waitFor(window, () => ui.querySelector('.mtw-pb-ask'));
+    [...ui.querySelectorAll('.mtw-pb-ask button')].find(b => b.textContent === 'Yes').click();
+    await waitFor(window, () => Object.keys(db.data['dashboard-data-jobs-t-jobs']).length === 1);
+    // Other table's tab.
+    ui.querySelectorAll('.mtw-pb-data-tab')[1].click();
+    await waitFor(window, () => /No records yet/.test(ui.querySelector('.mtw-pb-data-footer').textContent));
+    ui.querySelector('.mtw-pb-data-add').click();
+    await waitFor(window, () => db.data['dashboard-data-jobs-t-parts'] && Object.keys(db.data['dashboard-data-jobs-t-parts']).length === 1);
+    ui.querySelector('.mtw-pb-data-close').click();
+    assert.equal(document.querySelector('.mtw-pb-data'), null);
+    dom.window.close();
+  }
+});
+
+test('builder: Open records on a data table opens Manage data on that table', async () => {
+  const db = store({ ...TOOLS, 'dashboard-tool-pages': { jobs: { draft: JOBS_PAGE } },
+    'dashboard-data-jobs-t-jobs': { a: { order_number: '77', status: 'Urgent', _createdAt: 1 } } });
+  const { dom, window, document } = host({ db });
+  await waitFor(window, () => typeof window.MTW_OPEN_PAGE_BUILDER === 'function');
+  const editor = await window.MTW_OPEN_PAGE_BUILDER('jobs');
+  await editor.loaded;
+  editor.select({ kind: 'table', id: 't-jobs' });
+  editor.element.querySelector('.mtw-pb-open-records').click();
+  await waitFor(window, () => document.querySelector('.mtw-pb-data .mtw-pb-data-grid tbody tr'));
+  assert.equal(document.querySelector('.mtw-pb-data .mtw-pb-data-cell').value, '77');
+  document.querySelector('.mtw-pb-data-close').click();
+  editor.close(true);
+  dom.window.close();
+});
+
+test('notices, number tiles, headings, text, cards and images can run steps when clicked', async () => {
+  const page = { sections: [{ layout: '1-1', columns: [
+    { blocks: [
+      { type: 'notice', name: 'alert', props: { title: 'Heads up', text: 'Click me', actions: [{ type: 'setText', target: 'tile', value: '99' }] } },
+      { type: 'heading', name: 'plain', props: { text: 'No steps' } }
+    ] },
+    { blocks: [
+      { type: 'stat', name: 'tile', props: { label: 'Count', value: '1', actions: [{ type: 'message', text: 'Tile is {tile}' }] } },
+      { type: 'list', name: 'todo', props: { items: 'One\nTwo', actions: [{ type: 'message', text: 'List clicked' }] } },
+      { type: 'table', name: 'grid', props: { actions: [{ type: 'hide', target: 'todo' }] } }
+    ] }
+  ] }] };
+  const db = store({ ...TOOLS, 'dashboard-tool-pages': { jobs: { published: page } } });
+  const { dom, window, document } = host({ db });
+  await waitFor(window, () => document.querySelector('.custom-dashboard-tool-jobs-panel [data-name="alert"]'));
+  const panel = document.querySelector('.custom-dashboard-tool-jobs-panel');
+  const alert = panel.querySelector('[data-name="alert"]');
+  assert.ok(alert.classList.contains('is-clickable'));
+  assert.equal(alert.getAttribute('role'), 'button');
+  assert.equal(panel.querySelector('[data-name="plain"]').classList.contains('is-clickable'), false, 'no steps, not clickable');
+  alert.click();
+  await waitFor(window, () => panel.querySelector('[data-name="tile"] .mtw-pb-stat-value').textContent === '99');
+  panel.querySelector('[data-name="tile"]').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  await waitFor(window, () => /Tile is 99/.test(panel.querySelector('.mtw-pb-toasts').textContent));
+  panel.querySelector('[data-name="todo"]').click();
+  await waitFor(window, () => /List clicked/.test(panel.querySelector('.mtw-pb-toasts').textContent));
+  panel.querySelector('[data-name="grid"]').click();
+  await waitFor(window, () => panel.querySelector('[data-name="todo"]').style.display === 'none');
+  dom.window.close();
+});
+
+test('every block type has a steps list in the builder', async () => {
+  const db = store(TOOLS);
+  const { dom, window, document } = host({ db });
+  await waitFor(window, () => typeof window.MTW_OPEN_PAGE_BUILDER === 'function');
+  const editor = await window.MTW_OPEN_PAGE_BUILDER('jobs');
+  await editor.loaded;
+  const ui = editor.element;
+  for (const tile of [...ui.querySelectorAll('.mtw-pb-tile[data-block-type]')]) {
+    editor.select(null);
+    pointer(window, tile, 'pointerdown');
+    pointer(window, document, 'pointerup');
+    await tick(window);
+    assert.ok(ui.querySelector('.mtw-pb-inspector .mtw-pb-edit-steps'), `${tile.dataset.blockType} has steps`);
+  }
+  editor.close(true);
+  dom.window.close();
 });
