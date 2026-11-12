@@ -224,7 +224,7 @@
 
   // ---------- designed cards ----------
   const PART_SIZES = { small: '12px', large: '17px', xl: '22px' };
-  const MANUAL_FIELDS = { title: { label: 'Title', type: 'text' }, text: { label: 'Text', type: 'longtext' }, note: { label: 'Small note', type: 'text' } };
+  const MANUAL_FIELDS = { title: { label: 'Title', type: 'text' }, text: { label: 'Text', type: 'longtext' }, note: { label: 'Small note', type: 'text' }, image: { label: 'Image address', type: 'text' } };
 
   function applyCardStyle(card, style) {
     const st = style || {};
@@ -240,7 +240,9 @@
   }
 
   // Fills a card from its design. fields: { key: { label, type } } for the record.
-  function fillDesignedCard(doc, card, design, record, fields, rt) {
+  // extra: { table, formPopup, isManager, editing, onRun(list, ctx) } for buttons.
+  function fillDesignedCard(doc, card, design, record, fields, rt, extra) {
+    const more = extra || {};
     let line = null;
     design.parts.forEach((part, i) => {
       if (!line || part.inline !== 'yes' || i === 0) {
@@ -276,6 +278,44 @@
           if (part.show !== 'when' && record._createdBy) bits.push(`by ${record._createdBy}`);
           if (!bits.length) return;
           node = el(doc, 'div', 'mtw-pb-card-part mtw-pb-records-when', bits.join(' '));
+          break;
+        }
+        case 'image': {
+          const src = core().safeUrl(part.source === 'field' ? (part.field ? record[part.field] : '') : part.url);
+          if (!src) {
+            if (!more.preview) return;
+            node = el(doc, 'div', 'mtw-pb-card-part mtw-pb-placeholder mtw-pb-card-image', 'Image');
+            if (part.height) node.style.height = `${part.height}px`;
+            break;
+          }
+          node = el(doc, 'img', 'mtw-pb-card-part mtw-pb-card-image');
+          node.src = src;
+          node.alt = '';
+          node.loading = 'lazy';
+          node.style.objectFit = part.fit;
+          node.style.borderRadius = `${part.radius}px`;
+          if (part.height) node.style.height = `${part.height}px`;
+          break;
+        }
+        case 'button': {
+          if (part.visibleTo === 'managers' && !more.isManager) return;
+          if ((part.preset === 'edit' || part.preset === 'delete') && !more.table && !more.preview) return; // needs a saved record
+          node = el(doc, 'button', `mtw-pb-card-part mtw-pb-card-button mtw-pb-card-button-${part.variant}`, part.label || 'Button');
+          node.type = 'button';
+          node.addEventListener('click', event => {
+            event.stopPropagation();
+            event.preventDefault();
+            if (more.editing || !more.onRun) return;
+            const ctx = { record, table: more.table };
+            if (part.preset === 'edit') {
+              const popup = part.popup || more.formPopup;
+              more.onRun([{ id: 'a-edit', type: 'fillFromRecord' }].concat(popup ? [{ id: 'a-open', type: 'openPopup', target: popup }] : []), ctx);
+            } else if (part.preset === 'delete') {
+              more.onRun([{ id: 'a-del', type: 'deleteRecord', confirm: 'yes' }], ctx);
+            } else {
+              more.onRun(part.actions, ctx);
+            }
+          });
           break;
         }
         case 'divider':
@@ -329,8 +369,17 @@
         }
         applyCardStyle(card, p.design.style);
         if (p.design.parts.length) {
-          fillDesignedCard(doc, card, p.design, { _id: item.id, title: item.title, text: item.text, note: item.note }, MANUAL_FIELDS, rt);
+          fillDesignedCard(doc, card, p.design, { _id: item.id, title: item.title, text: item.text, note: item.note, image: item.image }, MANUAL_FIELDS, rt, {
+            isManager: rt && rt.isManager, editing: options.editing, onRun: rt ? (list, ctx) => rt.run(list, ctx) : null
+          });
         } else {
+          if (item.image) {
+            const img = el(doc, 'img', 'mtw-pb-card-image');
+            img.src = item.image;
+            img.alt = '';
+            img.loading = 'lazy';
+            card.appendChild(img);
+          }
           if (item.title) card.appendChild(el(doc, 'strong', 'mtw-pb-record-card-title', item.title));
           if (item.text) card.appendChild(el(doc, 'p', 'mtw-pb-record-card-text', item.text));
           if (item.note) card.appendChild(el(doc, 'span', 'mtw-pb-records-when', item.note));
@@ -405,7 +454,10 @@
         if (p.design.parts.length) {
           const fieldMap = { _createdAt: { label: 'Added', type: 'text' }, _createdBy: { label: 'Added by', type: 'text' } };
           def.fields.forEach(f => { fieldMap[f.key] = f; });
-          fillDesignedCard(doc, card, p.design, row, fieldMap, rt);
+          fillDesignedCard(doc, card, p.design, row, fieldMap, rt, {
+            table: p.table, formPopup: p.formPopup, isManager: rt && rt.isManager, editing: options.editing,
+            onRun: (list, ctx) => rt.run(list, ctx)
+          });
           if (canDelete) {
             const del = el(doc, 'span', 'mtw-pb-records-delete mtw-pb-card-delete-corner', 'Delete');
             del.setAttribute('role', 'button');
@@ -742,6 +794,8 @@
         if (!target) return;
         const shell = node.querySelector(`.mtw-pb-popup[data-popup="${target}"]`);
         if (shell) shell.hidden = true;
+        // Closing without saving drops an unfinished edit, so the next Add adds.
+        if (options.runtime && options.runtime.stopEditing) options.runtime.stopEditing();
         const i = openPopups.lastIndexOf(target);
         if (i !== -1) openPopups.splice(i, 1);
       },

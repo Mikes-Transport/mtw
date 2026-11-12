@@ -220,9 +220,18 @@
   // Steps refer to elements by their element name; text can use {element_name}.
   const ACTIONS = Object.freeze({
     save: {
-      group: 'Data', label: 'Save inputs to a table', description: 'Adds a record from the inputs saved into that table.',
-      defaults: { table: '' },
-      fields: [{ key: 'table', label: 'Data table', type: 'table' }]
+      group: 'Data', label: 'Save inputs to a table', description: 'Adds a record from the inputs saved into that table (or updates the one being edited).',
+      defaults: { table: '', mode: 'auto' },
+      fields: [
+        { key: 'table', label: 'Data table', type: 'table' },
+        { key: 'mode', label: 'Saves as', type: 'select', options: [['auto', 'New record, or update the one being edited'], ['add', 'Always a new record']] }
+      ]
+    },
+    fillFromRecord: {
+      group: 'Data', label: 'Edit this record', description: 'Fills the inputs with the clicked record\'s values; the next Save updates it.',
+      defaults: {},
+      fields: [],
+      needsRecord: true
     },
     message: {
       group: 'Messages', label: 'Show a message', description: 'A short message at the top of the page.',
@@ -570,7 +579,7 @@
           let id = typeof item.id === 'string' && ID_RE.test(item.id) && !seen.has(item.id) ? item.id : newId('i');
           while (seen.has(id)) id = newId('i');
           seen.add(id);
-          return { id, title: str(item.title, LIMITS.short), text: str(item.text, LIMITS.text), note: str(item.note, LIMITS.short) };
+          return { id, title: str(item.title, LIMITS.short), text: str(item.text, LIMITS.text), note: str(item.note, LIMITS.short), image: safeUrl(item.image) };
         });
       }
       case 'textarea':
@@ -812,6 +821,33 @@
         { key: 'inline', label: 'Next to the previous part', type: 'select', options: [['no', 'No'], ['yes', 'Yes']] }
       ]
     },
+    image: {
+      label: 'Image', description: 'A picture from a web address (typed here, or from a field).',
+      defaults: { source: 'url', url: '', field: '', height: 140, fit: 'cover', radius: 8, inline: 'no' },
+      fields: [
+        { key: 'source', label: 'Picture comes from', type: 'select', options: [['url', 'An address I type'], ['field', 'A field with the address']] },
+        { key: 'url', label: 'Image address', type: 'url', when: { source: 'url' } },
+        { key: 'field', label: 'Field', type: 'cardfield', when: { source: 'field' } },
+        { key: 'height', label: 'Height (px, 0 = automatic)', type: 'number', min: 0, max: 600 },
+        { key: 'fit', label: 'Fit', type: 'select', options: [['cover', 'Fill and crop'], ['contain', 'Whole image']] },
+        { key: 'radius', label: 'Rounded corners (px)', type: 'number', min: 0, max: 40 },
+        { key: 'inline', label: 'Next to the previous part', type: 'select', options: [['no', 'No'], ['yes', 'Yes']] }
+      ]
+    },
+    button: {
+      label: 'Button', description: 'Edit, Delete, or your own steps for this card.',
+      defaults: { label: 'Edit', preset: 'edit', variant: 'secondary', popup: '', visibleTo: 'everyone', actions: [], align: '', inline: 'no' },
+      fields: [
+        { key: 'label', label: 'Label', type: 'text' },
+        { key: 'preset', label: 'When clicked', type: 'select', options: [['edit', 'Edit this card (opens its popup filled in)'], ['delete', 'Delete this card (asks first)'], ['steps', 'Run my steps']] },
+        { key: 'popup', label: 'Edit popup', type: 'popup', any: 'The card list\'s Add card popup', when: { preset: 'edit' } },
+        { key: 'actions', label: 'Steps', type: 'actions', when: { preset: 'steps' } },
+        { key: 'variant', label: 'Style', type: 'select', options: [['secondary', 'Outline'], ['primary', 'Solid'], ['danger', 'Red'], ['link', 'Text link']] },
+        { key: 'visibleTo', label: 'Who sees it', type: 'select', options: [['everyone', 'Everyone'], ['managers', 'Managers only']] },
+        { key: 'align', label: 'Align', type: 'select', options: [['', 'Left'], ['center', 'Centre'], ['right', 'Right']] },
+        { key: 'inline', label: 'Next to the previous part', type: 'select', options: [['no', 'No'], ['yes', 'Yes']] }
+      ]
+    },
     divider: { label: 'Divider', description: 'A thin line.', defaults: {}, fields: [] },
     spacer: {
       label: 'Spacer', description: 'Empty space.',
@@ -896,7 +932,7 @@
   const cardItems = {
     add(props) {
       if (props.items.length >= 100) throw new Error('A card list can have at most 100 cards.');
-      return { ...props, items: props.items.concat({ id: newId('i'), title: `Card ${props.items.length + 1}`, text: '', note: '' }) };
+      return { ...props, items: props.items.concat({ id: newId('i'), title: `Card ${props.items.length + 1}`, text: '', note: '', image: '' }) };
     },
     remove(props, id) {
       return { ...props, items: props.items.filter(item => item.id !== id) };
@@ -909,8 +945,8 @@
         ...props,
         items: props.items.map(item => (item.id === id ? {
           ...item,
-          ...Object.fromEntries(Object.entries(changes).filter(([key]) => ['title', 'text', 'note'].includes(key))
-            .map(([key, value]) => [key, str(value, key === 'text' ? LIMITS.text : LIMITS.short)]))
+          ...Object.fromEntries(Object.entries(changes).filter(([key]) => ['title', 'text', 'note', 'image'].includes(key))
+            .map(([key, value]) => [key, key === 'image' ? safeUrl(value) : str(value, key === 'text' ? LIMITS.text : LIMITS.short)]))
         } : item))
       };
     }

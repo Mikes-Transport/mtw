@@ -228,7 +228,27 @@
     }
 
     // ---------- records ----------
-    async function save(tableId) {
+    // The record an "Edit this record" step loaded into the inputs (next Save updates it).
+    state.editing = null;
+
+    function editRecord(ctx) {
+      if (!ctx || !ctx.record || !ctx.table || !tables[ctx.table]) return;
+      tables[ctx.table].fields.forEach(field => {
+        Object.values(elements).forEach(block => {
+          if (block.type === 'input' && block.props.bind === `${ctx.table}.${field.key}`) {
+            const v = ctx.record[field.key];
+            setValue(block.name, v === undefined || v === null ? '' : field.type === 'yesno' ? (v === true || v === 'Yes' ? 'Yes' : 'No') : String(v));
+          }
+        });
+      });
+      state.editing = { table: ctx.table, id: ctx.record._id };
+    }
+
+    function stopEditing() {
+      state.editing = null;
+    }
+
+    async function save(tableId, mode) {
       const def = tables[tableId];
       if (!def) throw new Error('Pick a data table for the Save step.');
       const record = {};
@@ -245,6 +265,17 @@
         record[field.key] = typeof v === 'string' ? v.slice(0, c.LIMITS.text) : v;
       });
       if (missing.length) throw new Error(`Please fill in: ${missing.join(', ')}.`);
+      const editing = mode !== 'add' && state.editing && state.editing.table === tableId ? state.editing : null;
+      if (editing) {
+        if (opts.dryRun) {
+          state.editing = null;
+          return record;
+        }
+        if (typeof api.updateDoc !== 'function' || typeof api.doc !== 'function') throw new Error('The dashboard database is unavailable.');
+        await api.updateDoc(api.doc(api.db, c.dataCollection(opts.toolId, tableId), editing.id), { ...record, _updatedAt: Date.now(), _updatedBy: user });
+        state.editing = null;
+        return record;
+      }
       record._createdAt = Date.now();
       record._createdBy = user;
       if (opts.dryRun) return record; // builder preview: everything runs, nothing is written
@@ -336,7 +367,7 @@
       switch (step.type) {
         case 'save':
           try {
-            await save(step.table);
+            await save(step.table, step.mode);
           } catch (error) {
             if (ui.toast) ui.toast(error.message || 'Could not save.', 'danger');
             return STOP;
@@ -354,6 +385,10 @@
           return null;
         case 'closePopup':
           if (ui.closePopup) ui.closePopup(step.target || '');
+          stopEditing();
+          return null;
+        case 'fillFromRecord':
+          editRecord(ctx);
           return null;
         case 'exportCsv':
           try {
@@ -469,6 +504,7 @@
       remove,
       exportTable,
       importTable,
+      stopEditing,
       run,
       started: () => running,
       dispose

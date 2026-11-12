@@ -1027,3 +1027,22 @@ button.mtw-pb-record-card:hover { border-color: #9a9893; box-shadow: 0 4px 14px 
 .mtw-pb-design-head-actions .mtw-pb-btn-light { width: auto; }
 .mtw-pb-design-list .mtw-pb-field[data-field="color"],
 .mtw-pb-design-list .mtw-pb-field:has(.mtw-pb-token-row) { grid-column: span 2; }
+
+/* Card parts: image and buttons */
+.mtw-pb-card-image { display: block; width: 100%; max-width: 100%; object-fit: cover; border-radius: 8px; background: #f2f1ef; }
+.mtw-pb-card-line > .mtw-pb-card-image { flex: 1 1 100%; }
+.mtw-pb-card-button {
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid var(--mtw-ink, #242424);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--mtw-ink, #242424);
+  font: 600 13px/1.2 Inter, Arial, sans-serif;
+  cursor: pointer;
+}
+.mtw-pb-card-button-primary { background: var(--mtw-ink, #242424); color: #fff; }
+.mtw-pb-card-button-danger { border-color: #e3b9b7; color: #b92b27; }
+.mtw-pb-card-button-danger:hover { background: #fdeeee; }
+.mtw-pb-card-button-link { border-color: transparent; padding-left: 0; padding-right: 0; text-decoration: underline; }
+.mtw-pb-card-button:hover { opacity: .88; }

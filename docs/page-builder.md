@@ -86,10 +86,18 @@ search, delete permissions). Card lists and Records lists have
 ## Card designs
 
 **Design cards** on a card list opens the card designer: drag in parts (Field value, Text
-with `{record.field}`, Badge, Added by / when, Divider, Spacer), reorder them, and set each
+with `{record.field}`, Badge, Image, Button, Added by / when, Divider, Spacer), reorder them, and set each
 part's size, weight, colour, alignment, field name label, and "Next to the previous part"
 (same line). **Card look** sets background, accent strip, border, corners, spacing and
-shadow. The preview uses a real record when there is one. Each card list has its own
+shadow. The preview uses a real record when there is one.
+
+- **Image**: a web address typed in, or a field holding one (http/https only). Uploading
+  pictures isn't built yet.
+- **Button**: **Edit this card** (fills its popup; Save then updates that record instead of
+  adding; closing without saving cancels the edit), **Delete this card** (asks first), or
+  **Run my steps** (with the card's values). **Who sees it**: everyone or Managers only.
+- Steps also have **Edit this record** and Save's "Saves as" (update the record being
+  edited, or always add new). Each card list has its own
 design; **Use the standard look** removes it.
 
 ## Export and import

@@ -990,7 +990,7 @@
         card.appendChild(cardHeader(item.title || `Card ${i + 1}`,
           () => ({ group: `items:${blockId}`, id: item.id, label: item.title || `Card ${i + 1}`, onDrop: (container, index) => apply(p => c.cardItems.move(p, item.id, index)) }),
           () => apply(p => c.cardItems.remove(p, item.id)), `Delete card ${item.title || i + 1}`));
-        [['title', 'Title', 'text'], ['text', 'Text', 'textarea'], ['note', 'Small note', 'text']].forEach(([key, label, type]) => {
+        [['title', 'Title', 'text'], ['text', 'Text', 'textarea'], ['note', 'Small note', 'text'], ['image', 'Image address', 'url']].forEach(([key, label, type]) => {
           card.appendChild(fieldControl({ key: `${key}-${item.id}`, label, type }, item[key],
             value => apply(p => c.cardItems.update(p, item.id, { [key]: value }), `${blockId}:item:${item.id}:${key}`)));
         });
@@ -1252,6 +1252,23 @@
     // ---------- When -> Do steps ----------
     // A step list owner: 'page' (When the page opens) or 'block:<id>'.
     function scopeFor(key) {
+      if (key.startsWith('part:')) {
+        const [, blockId, partId] = key.split(':');
+        const owner = c.findBlock(history.page, blockId);
+        const props = owner ? owner.block.props : {};
+        const getDesign = () => (c.findBlock(history.page, blockId) || { block: { props: { design: { parts: [], style: {} } } } }).block.props.design;
+        return {
+          key,
+          recordTable: props.source === 'manual' ? 'manual-cards' : props.table || '',
+          get: () => {
+            const part = getDesign().parts.find(item => item.id === partId);
+            return part && Array.isArray(part.actions) ? part.actions : [];
+          },
+          set: (list, coalesce) => commit(c.updateBlock(history.page, blockId, {
+            props: { design: c.cardDesign.update(getDesign(), partId, { actions: list }) }
+          }), undefined, coalesce)
+        };
+      }
       if (key === 'page') {
         return {
           key,
@@ -1322,7 +1339,7 @@
 
     // ---------- card designer ----------
     function cardFieldOptions(props) {
-      if (props.source === 'manual') return [['title', 'Title'], ['text', 'Text'], ['note', 'Small note']];
+      if (props.source === 'manual') return [['title', 'Title'], ['text', 'Text'], ['note', 'Small note'], ['image', 'Image address']];
       const table = c.findTable(history.page, props.table);
       return (table ? table.fields.map(f => [f.key, f.label]) : []).concat([['_createdAt', 'Added (date)'], ['_createdBy', 'Added by']]);
     }
@@ -1422,10 +1439,19 @@
           () => ({ group: `parts:${blockId}`, id: part.id, label: def.label, onDrop: (container, index) => setDesign(c.cardDesign.move(current(), part.id, index)) }),
           () => setDesign(c.cardDesign.remove(current(), part.id)), `Delete ${def.label}`));
         const fieldsBox = el('div', 'mtw-pb-step-body');
-        def.fields.forEach(field => {
+        def.fields.filter(field => visible(field, part)).forEach(field => {
+          if (field.type === 'actions') {
+            const count = c.steps.count(part.actions || []);
+            const wrap = el('div', 'mtw-pb-field mtw-pb-part-steps');
+            wrap.appendChild(el('label', '', 'Steps'));
+            wrap.appendChild(button('mtw-pb-btn mtw-pb-btn-primary-dark mtw-pb-part-edit-steps', count ? `Edit steps (${count})` : 'Add steps',
+              'Open the steps editor for this button', () => openLogic(`part:${blockId}:${part.id}`, { designer: blockId })));
+            fieldsBox.appendChild(wrap);
+            return;
+          }
           fieldsBox.appendChild(fieldControl(field, part[field.key], value => {
             const next = c.cardDesign.update(current(), part.id, { [field.key]: value });
-            if (['select', 'cardfield'].includes(field.type)) setDesign(next);
+            if (['select', 'cardfield', 'popup'].includes(field.type)) setDesign(next);
             else setDesign(next, `${blockId}:part:${part.id}:${field.key}`);
           }, { cardFields: cardFieldOptions(props), recordTable: props.source === 'manual' ? 'manual-cards' : props.table }));
         });
@@ -1445,7 +1471,7 @@
       cardFieldOptions(props).forEach(([key, label]) => { fieldMap[key] = { label, type: 'text' }; });
       const table = c.findTable(history.page, props.table);
       if (table && props.source !== 'manual') table.fields.forEach(f => { fieldMap[f.key] = f; });
-      renderer().fillDesignedCard(document, card, design, sampleRecord(props), fieldMap, null);
+      renderer().fillDesignedCard(document, card, design, sampleRecord(props), fieldMap, null, { preview: true, editing: true, isManager: true, table: props.source === 'manual' ? '' : props.table });
       previewWrap.appendChild(card);
       side.appendChild(previewWrap);
       side.appendChild(sectionTitle('Card look'));
@@ -1473,19 +1499,19 @@
       cardFieldOptions(props).forEach(([key, label]) => { fieldMap[key] = { label, type: 'text' }; });
       const table = c.findTable(history.page, props.table);
       if (table && props.source !== 'manual') table.fields.forEach(f => { fieldMap[f.key] = f; });
-      renderer().fillDesignedCard(document, card, props.design, sampleRecord(props), fieldMap, null);
+      renderer().fillDesignedCard(document, card, props.design, sampleRecord(props), fieldMap, null, { preview: true, editing: true, isManager: true, table: props.source === 'manual' ? '' : props.table });
       wrap.replaceChildren(card);
     }
 
-    function openLogic(scopeKey) {
-      state.logic = { scope: scopeKey };
+    function openLogic(scopeKey, returnTo) {
+      state.logic = { scope: scopeKey, returnTo: returnTo || null };
       renderLogic();
       const first = logic.querySelector('.mtw-pb-logic-done');
       if (first) first.focus();
     }
 
     function closeLogic() {
-      state.logic = null;
+      state.logic = state.logic && state.logic.returnTo ? state.logic.returnTo : null;
       renderLogic();
       renderInspector();
     }
@@ -1508,6 +1534,12 @@
       if (key === 'page') {
         title = 'This page';
         trigger = 'When the page opens';
+      } else if (key.startsWith('part:')) {
+        const [, blockId, partId] = key.split(':');
+        const owner = c.findBlock(history.page, blockId);
+        const part = owner && owner.block.props.design.parts.find(item => item.id === partId);
+        title = `Card button: ${part ? part.label : ''}`;
+        trigger = 'When it is clicked (on a card)';
       } else {
         const found = c.findBlock(history.page, key.slice('block:'.length));
         if (!found) {

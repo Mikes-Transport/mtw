@@ -66,7 +66,12 @@ function store(initial) {
           delete (data[ref.collection] || {})[ref.id];
           notify(ref.collection);
         },
-        updateDoc: async () => {},
+        updateDoc: async (ref, value) => {
+          const tableData = data[ref.collection] || {};
+          if (tableData[ref.id]) tableData[ref.id] = { ...tableData[ref.id], ...copy(value) };
+          self.writes.push({ ref, value, update: true });
+          notify(ref.collection);
+        },
         onSnapshot: (ref, fn) => {
           const entry = { ref, fn };
           listeners.push(entry);
@@ -1037,6 +1042,130 @@ test('builder: card designer adds, edits and styles parts with a live preview', 
   logic.querySelector('.mtw-pb-design-reset').click();
   assert.equal(design().parts.length, 0);
   assert.equal(logic.hidden, true);
+  editor.close(true);
+  dom.window.close();
+});
+
+
+test('card buttons: Edit fills the popup and Save updates the card; Delete; managers-only; own steps; images', async () => {
+  const page = {
+    tables: [{ id: 't-jobs', name: 'Jobs', fields: [
+      { key: 'customer', label: 'Customer', type: 'text', required: true }, { key: 'photo', label: 'Photo', type: 'text' }] }],
+    sections: [
+      { layout: '1', columns: [{ blocks: [{ type: 'cards', name: 'jobs', props: {
+        source: 'added', table: 't-jobs', formPopup: 'job_form',
+        design: { parts: [
+          { type: 'image', source: 'field', field: 'photo', height: 100 },
+          { type: 'field', field: 'customer' },
+          { type: 'button', label: 'Edit', preset: 'edit' },
+          { type: 'button', label: 'Delete', preset: 'delete', variant: 'danger', inline: 'yes', visibleTo: 'managers' },
+          { type: 'button', label: 'Hello', preset: 'steps', inline: 'yes', actions: [{ type: 'message', text: 'Hi {record.customer}' }] }
+        ], style: {} }
+      } }] }] },
+      { layout: '1', popup: true, name: 'job_form', title: 'Job', columns: [{ blocks: [
+        { type: 'input', name: 'customer', props: { label: 'Customer', bind: 't-jobs.customer' } },
+        { type: 'input', name: 'photo', props: { label: 'Photo', bind: 't-jobs.photo' } },
+        { type: 'button', name: 'save', props: { label: 'Save card', actions: [
+          { type: 'save', table: 't-jobs' }, { type: 'clear' }, { type: 'closePopup', target: 'job_form' }] } }
+      ] }] }
+    ]
+  };
+  const records = { a: { customer: 'Smith Ltd', photo: 'https://example.com/a.jpg', _createdAt: 1 }, b: { customer: 'Jones', photo: 'javascript:alert(1)', _createdAt: 2 } };
+  for (const role of ['Stores', 'Managers']) {
+    const db = store({ ...TOOLS, 'dashboard-tool-pages': { jobs: { published: page } }, 'dashboard-data-jobs-t-jobs': records });
+    const { dom, window, document } = host({ role, db });
+    await waitFor(window, () => document.querySelectorAll('.custom-dashboard-tool-jobs-panel .mtw-pb-record-card').length === 2);
+    const panel = document.querySelector('.custom-dashboard-tool-jobs-panel');
+    const cardFor = name => [...panel.querySelectorAll('.mtw-pb-record-card')].find(card => card.textContent.includes(name));
+    const buttons = card => [...card.querySelectorAll('.mtw-pb-card-button')].map(b => b.textContent);
+    assert.deepEqual(buttons(cardFor('Smith Ltd')), role === 'Managers' ? ['Edit', 'Delete', 'Hello'] : ['Edit', 'Hello']);
+    assert.equal(cardFor('Smith Ltd').querySelector('img.mtw-pb-card-image').getAttribute('src'), 'https://example.com/a.jpg');
+    assert.equal(cardFor('Jones').querySelector('img'), null, 'unsafe image addresses are not shown');
+    if (role === 'Stores') {
+      dom.window.close();
+      continue;
+    }
+    // Own steps with the card's values.
+    [...cardFor('Jones').querySelectorAll('.mtw-pb-card-button')].find(b => b.textContent === 'Hello').click();
+    await waitFor(window, () => /Hi Jones/.test(panel.querySelector('.mtw-pb-toasts').textContent));
+    // Edit: popup opens filled in; Save updates the same record.
+    [...cardFor('Smith Ltd').querySelectorAll('.mtw-pb-card-button')].find(b => b.textContent === 'Edit').click();
+    const shell = panel.querySelector('.mtw-pb-popup[data-popup="job_form"]');
+    await waitFor(window, () => !shell.hidden);
+    assert.equal(shell.querySelector('[data-name="customer"] .mtw-pb-control').value, 'Smith Ltd');
+    setControl(window, shell, 'customer', 'Smith & Sons');
+    shell.querySelector('[data-name="save"] button').click();
+    await waitFor(window, () => shell.hidden);
+    assert.equal(Object.keys(db.data['dashboard-data-jobs-t-jobs']).length, 2, 'updated, not added');
+    assert.equal(db.data['dashboard-data-jobs-t-jobs'].a.customer, 'Smith & Sons');
+    assert.equal(db.data['dashboard-data-jobs-t-jobs'].a._updatedBy, 'Managers');
+    await waitFor(window, () => cardFor('Smith & Sons'));
+    // Closing an edit without saving: the next Save adds a new card instead.
+    [...cardFor('Jones').querySelectorAll('.mtw-pb-card-button')].find(b => b.textContent === 'Edit').click();
+    await waitFor(window, () => !shell.hidden);
+    shell.querySelector('.mtw-pb-popup-close').click();
+    window.MTW_TEST_SHELL = shell;
+    shell.hidden = false; // reopen as "+ Add card" would
+    setControl(window, shell, 'customer', 'New Co');
+    shell.querySelector('[data-name="save"] button').click();
+    await waitFor(window, () => Object.keys(db.data['dashboard-data-jobs-t-jobs']).length === 3);
+    assert.equal(db.data['dashboard-data-jobs-t-jobs'].b.customer, 'Jones', 'Jones untouched');
+    // Delete (asks first).
+    [...cardFor('Jones').querySelectorAll('.mtw-pb-card-button')].find(b => b.textContent === 'Delete').click();
+    await waitFor(window, () => panel.querySelector('.mtw-pb-ask'));
+    [...panel.querySelectorAll('.mtw-pb-ask button')].find(b => b.textContent === 'Yes').click();
+    await waitFor(window, () => !db.data['dashboard-data-jobs-t-jobs'].b);
+    dom.window.close();
+  }
+});
+
+test('builder: card designer buttons, images and button steps', async () => {
+  const db = store(TOOLS);
+  const { dom, window, document } = host({ db });
+  await waitFor(window, () => typeof window.MTW_OPEN_PAGE_BUILDER === 'function');
+  const editor = await window.MTW_OPEN_PAGE_BUILDER('jobs');
+  await editor.loaded;
+  const ui = editor.element;
+  const inspector = ui.querySelector('.mtw-pb-inspector');
+  pointer(window, ui.querySelector('.mtw-pb-tile[data-block-type="cards"]'), 'pointerdown');
+  pointer(window, document, 'pointerup');
+  await tick(window);
+  const id = editor.selected.id;
+  const source = inspector.querySelector('[data-field="source"] select');
+  source.value = 'added';
+  source.dispatchEvent(new window.Event('change', { bubbles: true }));
+  inspector.querySelector('.mtw-pb-design-cards').click();
+  const logic = ui.querySelector('.mtw-pb-logic');
+  const design = () => editor.page.sections.flatMap(s => s.columns.flatMap(col => col.blocks)).find(b => b.id === id).props.design;
+  const tap = type => {
+    pointer(window, logic.querySelector(`.mtw-pb-step-tile[data-part-type="${type}"]`), 'pointerdown');
+    pointer(window, document, 'pointerup');
+  };
+  tap('image');
+  tap('button');
+  const parts = design().parts;
+  assert.deepEqual([...parts.slice(-2).map(p => p.type)], ['image', 'button']);
+  assert.ok(logic.querySelector('.mtw-pb-design-preview .mtw-pb-card-image'), 'image placeholder in the preview');
+  assert.ok([...logic.querySelectorAll('.mtw-pb-design-preview .mtw-pb-card-button')].some(b => b.textContent === 'Edit'));
+  // Button set to "Run my steps": Edit steps opens the steps panel; Done comes back here.
+  const buttonCard = [...logic.querySelectorAll('.mtw-pb-part')].pop();
+  const preset = buttonCard.querySelector('[data-field="preset"] select');
+  preset.value = 'steps';
+  preset.dispatchEvent(new window.Event('change', { bubbles: true }));
+  [...logic.querySelectorAll('.mtw-pb-part')].pop().querySelector('.mtw-pb-part-edit-steps').click();
+  assert.match(logic.querySelector('.mtw-pb-logic-head strong').textContent, /Card button/);
+  assert.ok(logic.querySelector('.mtw-pb-step-tile[data-step-type="fillFromRecord"]'), 'edit-this-record step offered');
+  const partId = design().parts[design().parts.length - 1].id;
+  editor.dropStep({ kind: 'newStep', type: 'message', scope: `part:${id}:${partId}` }, [], 0);
+  assert.equal(design().parts.find(p => p.id === partId).actions[0].type, 'message');
+  logic.querySelector('.mtw-pb-logic-done').click();
+  assert.match(logic.querySelector('.mtw-pb-logic-head strong').textContent, /cards_1/, 'back in the card designer');
+  // Image from a typed address
+  const imageCard = [...logic.querySelectorAll('.mtw-pb-part')].find(card => card.classList.contains('mtw-pb-part-image'));
+  const url = imageCard.querySelector('[data-field="url"] input');
+  url.value = 'https://example.com/x.png';
+  url.dispatchEvent(new window.Event('input', { bubbles: true }));
+  assert.equal(logic.querySelector('.mtw-pb-design-preview img.mtw-pb-card-image').getAttribute('src'), 'https://example.com/x.png');
   editor.close(true);
   dom.window.close();
 });

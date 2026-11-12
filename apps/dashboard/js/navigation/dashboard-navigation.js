@@ -30,7 +30,7 @@
   };
 
   // Bump on each release so the live page can be checked for the version it runs.
-  const NAVIGATION_BUILD = '2026-11-13.30';
+  const NAVIGATION_BUILD = '2026-11-13.31';
 
   const TOOLS = {
     'activity-logs': { panel: '.activity-logs-panel', name: 'Activity Logs', roles: ['Managers'] },
