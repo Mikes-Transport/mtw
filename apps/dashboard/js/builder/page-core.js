@@ -104,7 +104,25 @@
         { key: 'limit', label: 'Show at most', type: 'number', min: 1, max: 500 },
         { key: 'search', label: 'Search box', type: 'select', options: [['yes', 'Show'], ['no', 'Hide']] },
         { key: 'allowDelete', label: 'Delete button on rows', type: 'select', options: [['no', 'Nobody'], ['managers', 'Managers only'], ['everyone', 'Everyone who can see the tool']] },
-        { key: 'emptyText', label: 'Text when empty', type: 'text' }
+        { key: 'emptyText', label: 'Text when empty', type: 'text' },
+        { key: 'actions', label: 'When a row is clicked, do', type: 'actions' }
+      ]
+    },
+    cards: {
+      label: 'Card list', group: 'Data',
+      defaults: { table: '', titleField: '', textField: '', fields: [], perRow: 3, order: 'newest', limit: 60, search: 'yes', allowDelete: 'no', emptyText: 'No cards yet.', actions: [] },
+      fields: [
+        { key: 'table', label: 'Data table', type: 'table' },
+        { key: 'titleField', label: 'Card title', type: 'field', any: 'First field' },
+        { key: 'textField', label: 'Card text', type: 'field', any: 'None' },
+        { key: 'fields', label: 'Also show', type: 'fieldpick' },
+        { key: 'perRow', label: 'Cards per row', type: 'select', options: [[1, '1'], [2, '2'], [3, '3'], [4, '4']] },
+        { key: 'order', label: 'Order', type: 'select', options: [['newest', 'Newest first'], ['oldest', 'Oldest first']] },
+        { key: 'limit', label: 'Show at most', type: 'number', min: 1, max: 500 },
+        { key: 'search', label: 'Search box', type: 'select', options: [['yes', 'Show'], ['no', 'Hide']] },
+        { key: 'allowDelete', label: 'Delete button on cards', type: 'select', options: [['no', 'Nobody'], ['managers', 'Managers only'], ['everyone', 'Everyone who can see the tool']] },
+        { key: 'emptyText', label: 'Text when empty', type: 'text' },
+        { key: 'actions', label: 'When a card is clicked, do', type: 'actions' }
       ]
     },
     card: {
@@ -256,6 +274,32 @@
       defaults: { tool: '' },
       fields: [{ key: 'tool', label: 'Tool', type: 'tool' }]
     },
+    openPopup: {
+      group: 'Popups', label: 'Open a popup', description: 'Shows a popup section over the page.',
+      defaults: { target: '' },
+      fields: [{ key: 'target', label: 'Popup', type: 'popup' }]
+    },
+    closePopup: {
+      group: 'Popups', label: 'Close a popup', description: 'Closes a popup (leave empty for the one that is open).',
+      defaults: { target: '' },
+      fields: [{ key: 'target', label: 'Popup', type: 'popup', any: 'The open popup' }]
+    },
+    exportCsv: {
+      group: 'Data', label: 'Export a table', description: 'Downloads a data table as a CSV file (opens in Excel).',
+      defaults: { table: '' },
+      fields: [{ key: 'table', label: 'Data table', type: 'table' }]
+    },
+    importCsv: {
+      group: 'Data', label: 'Import into a table', description: 'Picks a CSV file, matches its columns to the table\'s fields, previews, then adds the rows.',
+      defaults: { table: '' },
+      fields: [{ key: 'table', label: 'Data table', type: 'table' }]
+    },
+    deleteRecord: {
+      group: 'Data', label: 'Delete this record', description: 'Deletes the clicked row or card\'s record (after asking).',
+      defaults: { confirm: 'yes' },
+      fields: [{ key: 'confirm', label: 'Ask first', type: 'select', options: [['yes', 'Yes'], ['no', 'No']] }],
+      needsRecord: true
+    },
     openUrl: {
       group: 'Go to', label: 'Open a web address', description: 'Goes to a page or opens it in a new tab.',
       defaults: { url: '', newTab: 'yes' },
@@ -298,6 +342,8 @@
 
   const ID_RE = /^[a-z]{1,3}-[a-z0-9]{1,36}$/;
   const KEY_RE = /^[a-z][a-z0-9_]{0,39}$/;
+  // A field of the clicked row or card: record.order_number (or record._createdBy).
+  const RECORD_RE = /^record\.(?:[a-z][a-z0-9_]{0,39}|_createdAt|_createdBy)$/;
   const BIND_RE = /^[a-z]{1,3}-[a-z0-9]{1,36}\.[a-z][a-z0-9_]{0,39}$/;
   const TOOL_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -474,8 +520,11 @@
 
   function sanitizeValue(field, value, fallback, type) {
     switch (field.type) {
-      case 'select':
-        return pick(value, field.options.map(option => option[0]), fallback);
+      case 'select': {
+        const values = field.options.map(option => option[0]);
+        const numeric = typeof values[0] === 'number';
+        return pick(numeric && typeof value === 'string' ? Number(value) : value, values, fallback);
+      }
       case 'number':
         return num(value, field.min, field.max, fallback);
       case 'url':
@@ -489,8 +538,10 @@
       case 'field':
         return typeof value === 'string' && KEY_RE.test(value) ? value : '';
       case 'input':
-      case 'element':
+      case 'popup':
         return typeof value === 'string' && KEY_RE.test(value) ? value : '';
+      case 'element':
+        return typeof value === 'string' && (KEY_RE.test(value) || RECORD_RE.test(value)) ? value : '';
       case 'fieldpick':
         return (Array.isArray(value) ? value : []).filter(key => typeof key === 'string' && KEY_RE.test(key))
           .filter((key, i, all) => all.indexOf(key) === i).slice(0, LIMITS.fields);
@@ -772,30 +823,43 @@
     return list;
   }
 
+  // Sections shown as popups: [{ name, title, section }].
+  function pagePopups(page) {
+    return page.sections.filter(section => section.popup && section.name)
+      .map(section => ({ name: section.name, title: section.title || section.name, section }));
+  }
+
+  function allNames(page) {
+    return new Set(pageElements(page).map(item => item.name).concat(pagePopups(page).map(item => item.name)));
+  }
+
   function pageInputs(page) {
     return pageElements(page).filter(item => item.type === 'input');
   }
 
   // A free element name for a new block: "input_1", "button_2", ...
   function freeName(page, base, taken) {
-    const used = taken || new Set(pageElements(page).map(item => item.name));
+    const used = taken || allNames(page);
     const stem = slug(base);
     let n = 1;
     while (used.has(`${stem}_${n}`)) n += 1;
     return `${stem}_${n}`;
   }
 
-  function renameBlock(page, blockId, name) {
+  // Renames a block or a popup section (both share the page's names).
+  function renameBlock(page, id, name) {
     const next = clone(page);
-    const found = findBlock(next, blockId);
-    if (!found) return { page, name: null, error: 'Element not found.' };
+    const found = findBlock(next, id);
+    const section = found ? null : (findSection(next, id) || {}).section;
+    const owner = found ? found.block : section;
+    if (!owner) return { page, name: null, error: 'Element not found.' };
     const wanted = String(name || '').trim().toLowerCase();
-    if (!KEY_RE.test(wanted)) return { page, name: null, error: 'Start with a letter; use lowercase letters, numbers and _.' };
-    if (pageElements(next).some(item => item.name === wanted && item.block.id !== blockId)) {
+    if (!KEY_RE.test(wanted) || wanted === 'record') return { page, name: null, error: 'Start with a letter; use lowercase letters, numbers and _.' };
+    if (wanted !== owner.name && allNames(next).has(wanted)) {
       return { page, name: null, error: `Another element is already called ${wanted}.` };
     }
-    const previous = found.block.name;
-    found.block.name = wanted;
+    const previous = owner.name;
+    owner.name = wanted;
     if (previous && previous !== wanted) renameReferences(next, previous, wanted);
     return { page: next, name: wanted, error: null };
   }
@@ -817,6 +881,68 @@
         if (typeof block.props[key] === 'string') block.props[key] = fixText(block.props[key]);
       });
     })));
+  }
+
+  function popupFields(raw, page, names) {
+    let name = typeof raw.name === 'string' && KEY_RE.test(raw.name) ? raw.name : '';
+    if (!name || names.has(name)) name = freeName(page, 'popup', names);
+    names.add(name);
+    return { popup: true, name, title: str(raw.title, 120) };
+  }
+
+  // ---------- CSV ----------
+
+  // Parses CSV text (quotes, "" escapes, commas/newlines in quotes, CRLF, BOM).
+  function parseCsv(text) {
+    const src = String(text || '').replace(/^\uFEFF/, '');
+    const rows = [];
+    let row = [];
+    let cell = '';
+    let quoted = false;
+    for (let i = 0; i < src.length; i += 1) {
+      const ch = src[i];
+      if (quoted) {
+        if (ch === '"' && src[i + 1] === '"') {
+          cell += '"';
+          i += 1;
+        } else if (ch === '"') quoted = false;
+        else cell += ch;
+      } else if (ch === '"' && cell === '') quoted = true;
+      else if (ch === ',') {
+        row.push(cell);
+        cell = '';
+      } else if (ch === '\n' || ch === '\r') {
+        if (ch === '\r' && src[i + 1] === '\n') i += 1;
+        row.push(cell);
+        rows.push(row);
+        row = [];
+        cell = '';
+      } else cell += ch;
+    }
+    if (cell !== '' || row.length) {
+      row.push(cell);
+      rows.push(row);
+    }
+    return rows.filter(r => r.some(value => String(value).trim() !== ''));
+  }
+
+  // Builds CSV text. Cells that look like formulas get a leading ' so Excel won't run them.
+  function toCsv(rows) {
+    return rows.map(row => row.map(value => {
+      let v = value === undefined || value === null ? '' : String(value);
+      if (/^[=+\-@\t\r]/.test(v)) v = `'${v}`;
+      return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+    }).join(',')).join('\r\n');
+  }
+
+  // Matches CSV header cells to a table's fields (by name or key, any case/spacing).
+  function matchColumns(header, table) {
+    const norm = v => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    return header.map(cell => {
+      const n = norm(cell);
+      const field = table.fields.find(f => norm(f.label) === n || norm(f.key) === n);
+      return field ? field.key : null;
+    });
   }
 
   // ---------- constructors ----------
@@ -882,6 +1008,7 @@
         id: uniqueId(rawSection.id, 's'),
         layout,
         style: sanitizeSectionStyle(rawSection.style),
+        ...(rawSection.popup === true ? popupFields(rawSection, page, names) : {}),
         columns: LAYOUTS[layout].map((_, index) => {
           const rawColumn = rawColumns[index] && typeof rawColumns[index] === 'object' ? rawColumns[index] : {};
           const blocks = [];
@@ -1074,7 +1201,11 @@
     if (countBlocks(next) + blocks > LIMITS.blocks) throw new Error('This page has the maximum number of blocks.');
     const copy = clone(found.section);
     copy.id = newId('s');
-    const taken = new Set(pageElements(next).map(item => item.name));
+    const taken = allNames(next);
+    if (copy.popup) {
+      copy.name = freeName(next, 'popup', taken);
+      taken.add(copy.name);
+    }
     copy.columns.forEach(column => {
       column.id = newId('c');
       column.blocks.forEach(block => {
@@ -1104,6 +1235,16 @@
       section.layout = changes.layout;
     }
     if (changes.style) section.style = sanitizeSectionStyle({ ...section.style, ...changes.style });
+    if (changes.popup === true && !section.popup) {
+      section.popup = true;
+      section.name = freeName(next, 'popup');
+      section.title = str(changes.title, 120) || 'Popup';
+    } else if (changes.popup === false) {
+      delete section.popup;
+      delete section.name;
+      delete section.title;
+    }
+    if (section.popup && changes.title !== undefined) section.title = str(changes.title, 120);
     return next;
   }
 
@@ -1168,7 +1309,7 @@
 
   return {
     VERSION, LIMITS, LAYOUTS, LAYOUT_LABELS, BLOCKS, STYLE_FIELDS, SECTION_FIELDS, TONES, FIELD_TYPES, ACTIONS,
-    OPS, KEY_RE, slug, uniqueKey, inputKey, dataCollection, pageInputs, pageElements, freeName, renameBlock,
+    OPS, KEY_RE, RECORD_RE, pagePopups, allNames, parseCsv, toCsv, matchColumns, slug, uniqueKey, inputKey, dataCollection, pageInputs, pageElements, freeName, renameBlock,
     updatePageActions, sanitizeActions, sanitizeTables,
     findTable, addTable, updateTable, removeTable, addField, updateField, removeField, moveField,
     moveInList, grid, steps,

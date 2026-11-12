@@ -82,14 +82,22 @@
     };
     let ui = opts.ui || {};
 
-    function tokens(text) {
-      return String(text === undefined || text === null ? '' : text).replace(/\{([a-z][a-z0-9_]{0,39})\}/g, (match, name) => {
+    // ctx.record: the clicked row or card's record (for {record.field} and record.field).
+    function tokens(text, ctx) {
+      return String(text === undefined || text === null ? '' : text).replace(/\{(record\.[a-z_][a-z0-9_]{0,39}|[a-z][a-z0-9_]{0,39})\}/g, (match, name) => {
         if (name === 'user') return user;
         if (name === 'today') return today();
         if (name === 'now') return nowText();
+        if (name.startsWith('record.')) return ctx && ctx.record ? fmtValue(ctx.record[name.slice(7)]) : '';
         if (elements[name]) return String(value(name));
         return match;
       });
+    }
+
+    function fmtValue(v) {
+      if (v === undefined || v === null) return '';
+      if (typeof v === 'number' && v > 1e12) return new Date(v).toLocaleString('en-NZ');
+      return String(v);
     }
 
     // Field definition for a bound input (or null).
@@ -129,16 +137,19 @@
       if (!tables[tableId]) return null;
       if (!state.data[tableId]) {
         const entry = { rows: [], loaded: false, error: null, unsubscribe: null, listeners: new Set() };
+        entry.ready = new Promise(resolve => { entry.resolve = resolve; });
         state.data[tableId] = entry;
         const update = rows => {
           entry.rows = rows;
           entry.loaded = true;
           entry.error = null;
+          entry.resolve();
           entry.listeners.forEach(fn => fn(entry));
         };
         const fail = error => {
           entry.error = error;
           entry.loaded = true;
+          entry.resolve();
           entry.listeners.forEach(fn => fn(entry));
         };
         if (!api.db || typeof api.collection !== 'function') {
@@ -179,7 +190,10 @@
     }
 
     // ---------- element values ----------
-    function value(name) {
+    function value(name, ctx) {
+      if (typeof name === 'string' && name.startsWith('record.')) {
+        return ctx && ctx.record ? fmtValue(ctx.record[name.slice(7)]) : '';
+      }
       const block = elements[name];
       if (!block) return '';
       if (block.type === 'input') return state.values[name] === undefined ? '' : state.values[name];
@@ -231,14 +245,16 @@
         record[field.key] = typeof v === 'string' ? v.slice(0, c.LIMITS.text) : v;
       });
       if (missing.length) throw new Error(`Please fill in: ${missing.join(', ')}.`);
-      if (typeof api.addDoc !== 'function') throw new Error('The dashboard database is unavailable.');
       record._createdAt = Date.now();
       record._createdBy = user;
+      if (opts.dryRun) return record; // builder preview: everything runs, nothing is written
+      if (typeof api.addDoc !== 'function') throw new Error('The dashboard database is unavailable.');
       await api.addDoc(collectionRef(tableId), record);
       return record;
     }
 
     async function remove(tableId, id) {
+      if (opts.dryRun) return;
       if (typeof api.deleteDoc !== 'function' || typeof api.doc !== 'function') throw new Error('The dashboard database is unavailable.');
       await api.deleteDoc(api.doc(api.db, c.dataCollection(opts.toolId, tableId), id));
     }
@@ -246,16 +262,77 @@
     // ---------- running steps ----------
     const STOP = { stop: true };
 
-    async function runList(list, depth) {
+    async function runList(list, depth, ctx) {
       for (const step of list || []) {
         if (state.disposed) return STOP;
-        const result = await runStep(step, depth);
+        const result = await runStep(step, depth, ctx);
         if (result === STOP) return STOP;
       }
       return null;
     }
 
-    async function runStep(step, depth) {
+    async function exportTable(tableId) {
+      const def = tables[tableId];
+      if (!def) throw new Error('Pick a data table to export.');
+      const entry = table(tableId);
+      await Promise.race([entry.ready, new Promise(resolve => root.setTimeout(resolve, 8000))]);
+      if (entry.error) throw entry.error;
+      const header = def.fields.map(f => f.label).concat('Added', 'Added by');
+      const rows = entry.rows.map(row => def.fields.map(f => fmtValue(row[f.key]))
+        .concat(row._createdAt ? new Date(row._createdAt).toLocaleString('en-NZ') : '', row._createdBy || ''));
+      const name = `${def.name.replace(/[^A-Za-z0-9 _-]+/g, '').trim() || 'export'} ${today()}.csv`;
+      if (!ui.download) throw new Error('Downloads are not available here.');
+      ui.download(name, `\uFEFF${c.toCsv([header].concat(rows))}`, 'text/csv;charset=utf-8');
+      return rows.length;
+    }
+
+    async function importTable(tableId) {
+      const def = tables[tableId];
+      if (!def) throw new Error('Pick a data table to import into.');
+      if (!ui.pickFile) throw new Error('Picking files is not available here.');
+      const text = await ui.pickFile('.csv,text/csv');
+      if (text === null || text === undefined) return null; // cancelled
+      const parsed = c.parseCsv(text);
+      if (parsed.length < 2) throw new Error('That file has no rows under its header row.');
+      const header = parsed[0];
+      const keys = c.matchColumns(header, def);
+      if (!keys.some(Boolean)) throw new Error(`None of the file's columns match ${def.name}'s fields (${def.fields.map(f => f.label).join(', ')}).`);
+      const rows = [];
+      const skipped = [];
+      parsed.slice(1, 2001).forEach((cells, i) => {
+        const record = {};
+        def.fields.forEach(f => { record[f.key] = ''; });
+        keys.forEach((key, col) => { if (key) record[key] = String(cells[col] === undefined ? '' : cells[col]).trim().slice(0, c.LIMITS.text); });
+        let problem = '';
+        def.fields.forEach(f => {
+          if (f.required && !record[f.key]) problem = problem || `${f.label} is empty`;
+          if (f.type === 'number' && record[f.key] !== '') {
+            const n = Number(record[f.key].replace(/,/g, ''));
+            if (Number.isFinite(n)) record[f.key] = n;
+            else problem = problem || `${f.label} isn't a number`;
+          }
+        });
+        if (problem) skipped.push(`Row ${i + 2}: ${problem}`);
+        else rows.push(record);
+      });
+      const ok = ui.importPreview ? await ui.importPreview({
+        table: def,
+        matched: header.map((cell, i) => ({ column: cell, field: keys[i] ? def.fields.find(f => f.key === keys[i]).label : null })),
+        rows,
+        skipped,
+        total: parsed.length - 1
+      }) : true;
+      if (!ok) return null;
+      if (opts.dryRun) return { added: rows.length, skipped: skipped.length };
+      if (typeof api.addDoc !== 'function') throw new Error('The dashboard database is unavailable.');
+      const now = Date.now();
+      for (let i = 0; i < rows.length; i += 1) {
+        await api.addDoc(collectionRef(tableId), { ...rows[i], _createdAt: now + i, _createdBy: user });
+      }
+      return { added: rows.length, skipped: skipped.length };
+    }
+
+    async function runStep(step, depth, ctx) {
       switch (step.type) {
         case 'save':
           try {
@@ -266,11 +343,50 @@
           }
           return null;
         case 'message':
-          if (ui.toast) ui.toast(tokens(step.text), step.tone);
+          if (ui.toast) ui.toast(tokens(step.text, ctx), step.tone);
           return null;
         case 'confirm': {
-          const yes = ui.confirm ? await ui.confirm(tokens(step.text)) : true;
+          const yes = ui.confirm ? await ui.confirm(tokens(step.text, ctx)) : true;
           return yes ? null : STOP;
+        }
+        case 'openPopup':
+          if (step.target && ui.openPopup) ui.openPopup(step.target);
+          return null;
+        case 'closePopup':
+          if (ui.closePopup) ui.closePopup(step.target || '');
+          return null;
+        case 'exportCsv':
+          try {
+            const count = await exportTable(step.table);
+            if (ui.toast) ui.toast(`Exported ${count} record${count === 1 ? '' : 's'}.`, 'success');
+          } catch (error) {
+            if (ui.toast) ui.toast(error.message || 'Could not export.', 'danger');
+            return STOP;
+          }
+          return null;
+        case 'importCsv':
+          try {
+            const result = await importTable(step.table);
+            if (!result) return STOP;
+            if (ui.toast) {
+              ui.toast(`Imported ${result.added} record${result.added === 1 ? '' : 's'}${result.skipped ? `, skipped ${result.skipped}` : ''}.`,
+                result.skipped ? 'warning' : 'success');
+            }
+          } catch (error) {
+            if (ui.toast) ui.toast(error.message || 'Could not import.', 'danger');
+            return STOP;
+          }
+          return null;
+        case 'deleteRecord': {
+          if (!ctx || !ctx.record || !ctx.table) return null;
+          if (step.confirm === 'yes' && ui.confirm && !(await ui.confirm('Delete this record? This cannot be undone.'))) return STOP;
+          try {
+            await remove(ctx.table, ctx.record._id);
+          } catch (error) {
+            if (ui.toast) ui.toast(`Could not delete: ${error.message || 'unknown error'}`, 'danger');
+            return STOP;
+          }
+          return null;
         }
         case 'clear':
           Object.keys(state.values).forEach(name => {
@@ -279,13 +395,13 @@
           });
           return null;
         case 'setValue':
-          setValue(step.target, tokens(step.value));
+          setValue(step.target, tokens(step.value, ctx));
           return null;
         case 'setText':
           if (elements[step.target]) {
-            if (elements[step.target].type === 'input') setValue(step.target, tokens(step.value));
+            if (elements[step.target].type === 'input') setValue(step.target, tokens(step.value, ctx));
             else {
-              state.texts[step.target] = tokens(step.value);
+              state.texts[step.target] = tokens(step.value, ctx);
               refresh(step.target);
             }
           }
@@ -299,8 +415,8 @@
           }
           return null;
         case 'if': {
-          const pass = compare(value(step.left), step.op, tokens(step.right));
-          return runList(pass ? step.then : step.else, depth + 1);
+          const pass = compare(value(step.left, ctx), step.op, tokens(step.right, ctx));
+          return runList(pass ? step.then : step.else, depth + 1, ctx);
         }
         case 'openTool':
           if (step.tool && ui.openTool) ui.openTool(step.tool);
@@ -317,9 +433,9 @@
 
     let running = Promise.resolve();
     // Runs a step list. Lists run one at a time, in order.
-    function run(list) {
+    function run(list, ctx) {
       if (opts.editing || !list || !list.length) return Promise.resolve();
-      running = running.then(() => runList(list, 1)).catch(error => {
+      running = running.then(() => runList(list, 1, ctx || null)).catch(error => {
         console.error('[dashboard] page steps:', error);
         if (ui.toast) ui.toast('Something went wrong running those steps.', 'danger');
       });
@@ -351,6 +467,8 @@
       count,
       save,
       remove,
+      exportTable,
+      importTable,
       run,
       started: () => running,
       dispose

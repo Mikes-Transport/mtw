@@ -58,6 +58,33 @@ description; the list on the right). **Done** or Esc goes back to the page.
   numbers, text ignores case), Stop, Open a dashboard tool, Open a web address.
 - Save checks required fields first and stops with a message if any are empty.
 
+## Popups
+
+Select a section and tick **Show as a popup**: give it a title (and a name). On the live
+page it's hidden until an **Open a popup** step shows it over the page; it closes with
+its X, Esc, clicking outside, or a **Close a popup** step. In the builder popups show
+inline with a dashed purple border so you can edit them.
+
+## Card lists, row and card clicks
+
+**Card list** shows a data table's records as cards (title field, text field, extra
+fields, 1-4 per row, search, delete permissions), live. Card lists and Records lists have
+**When a card/row is clicked, do** steps: those steps can use the clicked record as
+`{record.field}` in text and `record.field` in If, and add **Delete this record**.
+
+## Export and import
+
+- **Export a table**: downloads the table as CSV (opens in Excel), with Added/Added by.
+  Cells starting with = + - @ get a leading ' so Excel won't treat them as formulas.
+- **Import into a table**: pick a CSV (up to 5 MB, 2000 rows). Columns match fields by
+  name or key (any case); a preview shows the matches, the first rows, and rows that will
+  be skipped (missing required values, bad numbers). Then it adds the rows.
+
+**Add a card board for this table** (Data tab) builds a heading, + Add / Export / Import
+buttons, a card list, and an Add popup form (save, message, clear, close).
+
+The builder's **Preview** runs everything, but Save, Import and Delete don't write.
+
 ## Data tables
 
 **Data** tab → **+ New data table**. Fields have a name, type (short/long text, number,

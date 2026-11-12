@@ -581,3 +581,203 @@ test('hidden at start and middle-aligned sections on a published page', async ()
   await waitFor(window, () => panel.querySelector('[data-name="done_note"]').style.display !== 'none');
   dom.window.close();
 });
+
+// ---------- stage 3: popups, card lists, export, import ----------
+
+const BOARD_PAGE = {
+  tables: [{
+    id: 't-jobs', name: 'Jobs',
+    fields: [
+      { key: 'customer', label: 'Customer', type: 'text', required: true },
+      { key: 'notes', label: 'Notes', type: 'longtext' },
+      { key: 'qty', label: 'Qty', type: 'number' }
+    ]
+  }],
+  sections: [
+    { layout: '1-1', columns: [
+      { blocks: [{ type: 'heading', name: 'board_title', props: { text: 'Jobs' } }] },
+      { blocks: [
+        { type: 'button', name: 'add', props: { label: '+ Add', actions: [{ type: 'openPopup', target: 'add_job' }] } },
+        { type: 'button', name: 'export', props: { label: 'Export', actions: [{ type: 'exportCsv', table: 't-jobs' }] } },
+        { type: 'button', name: 'import', props: { label: 'Import', actions: [{ type: 'importCsv', table: 't-jobs' }] } }
+      ] }
+    ] },
+    { layout: '1', columns: [{ blocks: [
+      { type: 'cards', name: 'job_cards', props: { table: 't-jobs', titleField: 'customer', textField: 'notes', fields: ['qty'], actions: [
+        { type: 'setText', target: 'detail_title', value: '{record.customer} ({record.qty})' },
+        { type: 'if', left: 'record.qty', op: 'greater', right: '5', then: [{ type: 'message', text: 'Big job for {record.customer}' }] },
+        { type: 'openPopup', target: 'details' }
+      ] } }
+    ] }] },
+    { layout: '1', popup: true, name: 'add_job', title: 'Add a job', columns: [{ blocks: [
+      { type: 'input', name: 'customer', props: { label: 'Customer', bind: 't-jobs.customer' } },
+      { type: 'input', name: 'notes', props: { label: 'Notes', bind: 't-jobs.notes' } },
+      { type: 'input', name: 'qty', props: { label: 'Qty', bind: 't-jobs.qty' } },
+      { type: 'button', name: 'save', props: { label: 'Save', actions: [
+        { type: 'save', table: 't-jobs' }, { type: 'clear' }, { type: 'closePopup', target: 'add_job' }
+      ] } }
+    ] }] },
+    { layout: '1', popup: true, name: 'details', title: 'Job', columns: [{ blocks: [
+      { type: 'heading', name: 'detail_title', props: { text: '' } },
+      { type: 'button', name: 'close_details', props: { label: 'Close', actions: [{ type: 'closePopup' }] } }
+    ] }] }
+  ]
+};
+
+test('card board: popup form adds a card, card click fills a popup with the record, export, import', async () => {
+  const db = store({ ...TOOLS, 'dashboard-tool-pages': { jobs: { published: BOARD_PAGE } } });
+  const { dom, window, document, errors } = host({ db });
+  await waitFor(window, () => document.querySelector('.custom-dashboard-tool-jobs-panel [data-name="job_cards"]'));
+  const panel = document.querySelector('.custom-dashboard-tool-jobs-panel');
+  const popup = name => panel.querySelector(`.mtw-pb-popup[data-popup="${name}"]`);
+  assert.equal(popup('add_job').hidden, true, 'popups start closed');
+  assert.equal(panel.querySelector('.mtw-pb-popup-tag'), null, 'no editor tags on the live page');
+  await waitFor(window, () => /No cards yet/.test(panel.querySelector('[data-name="job_cards"]').textContent));
+
+  // + Add opens the popup; Save adds a record, clears and closes it.
+  panel.querySelector('[data-name="add"] button').click();
+  await waitFor(window, () => !popup('add_job').hidden);
+  assert.equal(popup('add_job').querySelector('.mtw-pb-popup-head strong').textContent, 'Add a job');
+  setControl(window, panel, 'customer', 'Smith Ltd');
+  setControl(window, panel, 'notes', 'Two pallets');
+  setControl(window, panel, 'qty', '8');
+  panel.querySelector('[data-name="save"] button').click();
+  await waitFor(window, () => popup('add_job').hidden);
+  const rows = Object.values(db.data['dashboard-data-jobs-t-jobs']);
+  assert.deepEqual([rows[0].customer, rows[0].notes, rows[0].qty], ['Smith Ltd', 'Two pallets', 8], 'numbers saved as numbers');
+  await waitFor(window, () => panel.querySelectorAll('.mtw-pb-record-card').length === 1);
+  const card = panel.querySelector('.mtw-pb-record-card');
+  assert.equal(card.querySelector('.mtw-pb-record-card-title').textContent, 'Smith Ltd');
+  assert.equal(card.querySelector('.mtw-pb-record-card-text').textContent, 'Two pallets');
+  assert.deepEqual([...card.querySelectorAll('dt, dd')].map(n => n.textContent), ['Qty', '8']);
+
+  // Clicking a card: {record.*} and If on record values, then the details popup.
+  card.click();
+  await waitFor(window, () => !popup('details').hidden);
+  assert.equal(panel.querySelector('[data-name="detail_title"]').textContent, 'Smith Ltd (8)');
+  await waitFor(window, () => /Big job for Smith Ltd/.test(panel.querySelector('.mtw-pb-toasts').textContent));
+  // Close with no target closes the open popup; Esc also closes.
+  panel.querySelector('[data-name="close_details"] button').click();
+  await waitFor(window, () => popup('details').hidden);
+  card.click();
+  await waitFor(window, () => !popup('details').hidden);
+  window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }));
+  await waitFor(window, () => popup('details').hidden);
+
+  // Export: a CSV download of the table.
+  let download = null;
+  window.URL.createObjectURL = blob => { download = { blob }; return 'blob:mtw'; };
+  window.URL.revokeObjectURL = () => {};
+  window.HTMLAnchorElement.prototype.click = function () { if (download) download.name = this.download; };
+  panel.querySelector('[data-name="export"] button').click();
+  await waitFor(window, () => download && download.name);
+  assert.match(download.name, /^Jobs \d{4}-\d{2}-\d{2}\.csv$/);
+  const text = await new Promise(resolve => {
+    const reader = new window.FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.readAsText(download.blob);
+  });
+  const csv = text.replace(/^﻿/, '').split('\r\n');
+  assert.equal(csv[0], 'Customer,Notes,Qty,Added,Added by');
+  assert.match(csv[1], /^Smith Ltd,Two pallets,8,.+,Managers$/);
+
+  // Import: pick a CSV, preview (matched columns, skipped rows), import.
+  panel.querySelector('[data-name="import"] button').click();
+  await waitFor(window, () => panel.querySelector('.mtw-pb-file-input'));
+  const fileInput = panel.querySelector('.mtw-pb-file-input');
+  const file = new window.File(['customer,QTY,Colour\nJones,3,red\n,4,blue\n"Brown, Co",x,green\nGreen,12,\n'], 'jobs.csv', { type: 'text/csv' });
+  Object.defineProperty(fileInput, 'files', { value: [file] });
+  fileInput.dispatchEvent(new window.Event('change'));
+  await waitFor(window, () => panel.querySelector('.mtw-pb-import'));
+  const preview = panel.querySelector('.mtw-pb-import');
+  assert.match(preview.textContent, /2 of 4 rows ready to add\. 2 will be skipped/);
+  assert.match(preview.textContent, /customer → Customer/);
+  assert.match(preview.textContent, /Colour: not imported/);
+  assert.match(preview.textContent, /Row 3: Customer is empty/);
+  assert.match(preview.textContent, /Row 4: Qty isn't a number/);
+  [...preview.querySelectorAll('button')].find(b => /^Import/.test(b.textContent)).click();
+  await waitFor(window, () => Object.keys(db.data['dashboard-data-jobs-t-jobs']).length === 3);
+  const imported = Object.values(db.data['dashboard-data-jobs-t-jobs']).map(r => [r.customer, r.qty]);
+  assert.deepEqual(imported.slice(1), [['Jones', 3], ['Green', 12]]);
+  await waitFor(window, () => /Imported 2 records, skipped 2/.test(panel.querySelector('.mtw-pb-toasts').textContent));
+  await waitFor(window, () => panel.querySelectorAll('.mtw-pb-record-card').length === 3);
+  assert.deepEqual(errors.filter(e => !/stylesheet|Could not parse CSS|navigation to another Document/i.test(e)), []);
+  dom.window.close();
+});
+
+test('builder: section as popup, card board shortcut, record fields in the steps panel', async () => {
+  const db = store(TOOLS);
+  const { dom, window, document } = host({ db });
+  await waitFor(window, () => typeof window.MTW_OPEN_PAGE_BUILDER === 'function');
+  const editor = await window.MTW_OPEN_PAGE_BUILDER('jobs');
+  await editor.loaded;
+  const ui = editor.element;
+  const inspector = ui.querySelector('.mtw-pb-inspector');
+  ui.querySelector('.mtw-pb-tab[data-tab="data"]').click();
+  ui.querySelector('.mtw-pb-add-table').click();
+  const tableId = editor.page.tables[0].id;
+  inspector.querySelector('.mtw-pb-make-board').click();
+  const popups = editor.page.sections.filter(s => s.popup);
+  assert.equal(popups.length, 1);
+  assert.equal(editor.page.sections[editor.page.sections.length - 1].popup, true, 'popup section goes last');
+  const blocks = editor.page.sections.flatMap(s => s.columns.flatMap(col => col.blocks));
+  const byLabel = label => blocks.find(b => b.props.label === label);
+  assert.deepEqual([...byLabel('+ Add').props.actions.map(a => [a.type, a.target])], [['openPopup', popups[0].name]]);
+  assert.deepEqual([...byLabel('Save').props.actions.map(a => a.type)], ['save', 'message', 'clear', 'closePopup']);
+  assert.equal(byLabel('Export').props.actions[0].table, tableId);
+  assert.equal(byLabel('Import').props.actions[0].type, 'importCsv');
+  const cards = blocks.find(b => b.type === 'cards');
+  assert.equal(cards.props.table, tableId);
+  assert.equal(cards.props.titleField, 'name');
+  // In the editor the popup shows inline with a tag.
+  assert.ok(ui.querySelector('.mtw-pb-frame .mtw-pb-section.is-popup .mtw-pb-popup-tag'));
+
+  // The cards' steps: record fields are offered; "Delete this record" is available.
+  editor.select({ kind: 'block', id: cards.id });
+  inspector.querySelector('.mtw-pb-edit-steps').click();
+  const logic = ui.querySelector('.mtw-pb-logic');
+  assert.match(logic.querySelector('.mtw-pb-logic-trigger').textContent, /When a card is clicked/);
+  assert.ok(logic.querySelector('.mtw-pb-step-tile[data-step-type="deleteRecord"]'));
+  editor.dropStep({ kind: 'newStep', type: 'if', scope: `block:${cards.id}` }, [], 0);
+  const left = logic.querySelector('.mtw-pb-step-if [data-field="left"] select');
+  assert.ok([...left.options].some(o => o.value === 'record.name'), 'If can test the clicked record');
+  const token = logic.querySelector('.mtw-pb-step-if .mtw-pb-token');
+  assert.ok([...token.options].some(o => o.value === '{record.name}'));
+  editor.closeSteps();
+  // A button's steps don't offer record-only steps.
+  editor.select({ kind: 'block', id: byLabel('+ Add').id });
+  inspector.querySelector('.mtw-pb-edit-steps').click();
+  assert.equal(logic.querySelector('.mtw-pb-step-tile[data-step-type="deleteRecord"]'), null);
+  assert.ok([...logic.querySelector('.mtw-pb-step-openPopup [data-field="target"] select').options].some(o => o.value === popups[0].name));
+  editor.closeSteps();
+
+  // Section inspector: turn a section into a popup and back.
+  const first = editor.page.sections[0];
+  editor.select({ kind: 'section', id: first.id });
+  inspector.querySelector('.mtw-pb-popup-toggle input').click();
+  assert.equal(editor.page.sections[0].popup, true);
+  assert.ok(inspector.querySelector('[data-field="title"] input'));
+  inspector.querySelector('.mtw-pb-popup-toggle input').click();
+  assert.equal(editor.page.sections[0].popup, undefined);
+  editor.close(true);
+  dom.window.close();
+});
+
+test('builder preview runs steps without writing to Firestore', async () => {
+  const db = store({ ...TOOLS, 'dashboard-tool-pages': { jobs: { draft: BOARD_PAGE } } });
+  const { dom, window, document } = host({ db });
+  await waitFor(window, () => typeof window.MTW_OPEN_PAGE_BUILDER === 'function');
+  const editor = await window.MTW_OPEN_PAGE_BUILDER('jobs');
+  await editor.loaded;
+  const ui = editor.element;
+  [...ui.querySelectorAll('.mtw-pb-top-actions button')].find(b => b.textContent === 'Preview').click();
+  const frame = ui.querySelector('.mtw-pb-frame');
+  frame.querySelector('[data-name="add"] button').click();
+  await waitFor(window, () => !frame.querySelector('.mtw-pb-popup[data-popup="add_job"]').hidden);
+  setControl(window, frame, 'customer', 'Test Co');
+  frame.querySelector('[data-name="save"] button').click();
+  await waitFor(window, () => frame.querySelector('.mtw-pb-popup[data-popup="add_job"]').hidden);
+  assert.equal(db.data['dashboard-data-jobs-t-jobs'], undefined, 'nothing written');
+  editor.close(true);
+  dom.window.close();
+});
