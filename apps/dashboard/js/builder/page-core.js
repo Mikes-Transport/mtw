@@ -89,7 +89,7 @@
     },
     input: {
       label: 'Input', group: 'Interactive',
-      defaults: { label: 'Your answer', bind: '', kind: 'text', placeholder: '', required: 'no', options: '', defaultValue: '', actions: [] },
+      defaults: { label: 'Your answer', bind: '', kind: 'text', placeholder: '', required: 'no', options: '', defaultValue: '', trigger: 'change', actions: [] },
       fields: [
         { key: 'label', label: 'Label', type: 'text' },
         { key: 'bind', label: 'Save into (data table field)', type: 'bind' },
@@ -98,15 +98,18 @@
         { key: 'required', label: 'Required', type: 'select', options: [['no', 'No'], ['yes', 'Yes']], when: { bind: '' } },
         { key: 'placeholder', label: 'Hint inside the box', type: 'text' },
         { key: 'defaultValue', label: 'Starting value', type: 'text', tokens: true },
+        { key: 'trigger', label: 'Its steps run', type: 'select', options: [['change', 'When it changes (after leaving the box / picking)'], ['typing', 'While typing (after a short pause)']] },
         { key: 'actions', label: 'When changed, do', type: 'actions' }
       ]
     },
     records: {
       label: 'Records list', group: 'Data',
-      defaults: { table: '', columns: [], order: 'newest', limit: 50, search: 'yes', allowDelete: 'no', emptyText: 'Nothing here yet.', actions: [] },
+      defaults: { table: '', columns: [], editable: [], editBy: 'everyone', order: 'newest', limit: 50, search: 'yes', allowDelete: 'no', emptyText: 'Nothing here yet.', actions: [] },
       fields: [
         { key: 'table', label: 'Data table', type: 'table' },
         { key: 'columns', label: 'Columns to show (none ticked = all)', type: 'fieldpick' },
+        { key: 'editable', label: 'Columns people can change right here (dropdowns, yes/no, text, numbers)', type: 'fieldpick' },
+        { key: 'editBy', label: 'Who can change them', type: 'select', options: [['everyone', 'Everyone who can see the tool'], ['managers', 'Managers only']] },
         { key: 'order', label: 'Order', type: 'select', options: [['newest', 'Newest first'], ['oldest', 'Oldest first']] },
         { key: 'limit', label: 'Show at most', type: 'number', min: 1, max: 500 },
         { key: 'search', label: 'Search box', type: 'select', options: [['yes', 'Show'], ['no', 'Hide']] },
@@ -125,7 +128,7 @@
           { id: 'i-3', title: 'Third card', text: 'One more.', note: '' }
         ],
         design: { parts: [], style: {} },
-        table: '', formPopup: '', titleField: '', textField: '', fields: [], perRow: 3, order: 'newest', limit: 60, search: 'no', allowDelete: 'no', emptyText: 'No cards yet.', actions: []
+        table: '', formPopup: '', titleField: '', textField: '', fields: [], editBy: 'everyone', perRow: 3, order: 'newest', limit: 60, search: 'no', allowDelete: 'no', emptyText: 'No cards yet.', actions: []
       },
       fields: [
         { key: 'source', label: 'Cards come from', type: 'select', options: [['manual', 'Cards I type in here'], ['added', 'Cards people add (saved to Firebase)'], ['table', 'An existing data table']] },
@@ -142,6 +145,7 @@
         { key: 'order', label: 'Order', type: 'select', options: [['newest', 'Newest first'], ['oldest', 'Oldest first']], when: { source: ['added', 'table'] } },
         { key: 'limit', label: 'Show at most', type: 'number', min: 1, max: 500, when: { source: ['added', 'table'] } },
         { key: 'allowDelete', label: 'Delete button on cards', type: 'select', options: [['no', 'Nobody'], ['managers', 'Managers only'], ['everyone', 'Everyone who can see the tool']], when: { source: ['added', 'table'] } },
+        { key: 'editBy', label: 'Who can change editable card fields', type: 'select', options: [['everyone', 'Everyone who can see the tool'], ['managers', 'Managers only']], when: { source: ['added', 'table'] } },
         { key: 'emptyText', label: 'Text when empty', type: 'text' },
         { key: 'actions', label: 'When a card is clicked, do', type: 'actions' }
       ]
@@ -807,10 +811,11 @@
   const CARD_PARTS = Object.freeze({
     field: {
       label: 'Field value', description: 'Shows one of the record\'s fields.',
-      defaults: { field: '', showLabel: 'no', size: '', weight: '', color: '', align: '', inline: 'no' },
+      defaults: { field: '', showLabel: 'no', editable: 'no', size: '', weight: '', color: '', align: '', inline: 'no' },
       fields: [
         { key: 'field', label: 'Field', type: 'cardfield' },
-        { key: 'showLabel', label: 'Show the field name', type: 'select', options: [['no', 'No'], ['above', 'Above'], ['before', 'Before the value']] }
+        { key: 'showLabel', label: 'Show the field name', type: 'select', options: [['no', 'No'], ['above', 'Above'], ['before', 'Before the value']] },
+        { key: 'editable', label: 'People can change it on the card', type: 'select', options: [['no', 'No'], ['yes', 'Yes (dropdown / box)']] }
       ].concat(LOOK)
     },
     text: {
@@ -1106,6 +1111,10 @@
       fixList(step.else);
     });
     fixList(page.onOpen);
+    (page.automations || []).forEach(auto => {
+      if (auto.popup === from) auto.popup = to;
+      fixList(auto.steps);
+    });
     allSections(page).forEach(section => section.columns.forEach(column => column.blocks.forEach(block => {
       if (Array.isArray(block.props.actions)) fixList(block.props.actions);
       ['popup', 'formPopup'].forEach(key => { if (block.props[key] === from) block.props[key] = to; });
@@ -1113,6 +1122,55 @@
         if (typeof block.props[key] === 'string') block.props[key] = fixText(block.props[key]);
       });
     })));
+  }
+
+  // ---------- automations (steps that start on their own) ----------
+
+  const AUTOMATIONS = Object.freeze({
+    interval: { label: 'Every few seconds', description: 'Repeats while the tool is open (at least every 5 seconds).' },
+    tableChange: { label: 'When a data table changes', description: 'A record is added, changed or deleted (by anyone). The record is available as {record.field}.' },
+    popupOpen: { label: 'When a popup opens', description: 'Runs each time the popup opens.' },
+    popupClose: { label: 'When a popup closes', description: 'Runs each time the popup closes (X, Esc, outside click or a step).' }
+  });
+
+  function sanitizeAutomations(list) {
+    const seen = new Set();
+    return (Array.isArray(list) ? list : []).filter(a => a && AUTOMATIONS[a.when]).slice(0, 20).map(a => {
+      let id = typeof a.id === 'string' && ID_RE.test(a.id) && !seen.has(a.id) ? a.id : newId('w');
+      while (seen.has(id)) id = newId('w');
+      seen.add(id);
+      return {
+        id,
+        when: a.when,
+        seconds: num(a.seconds, 5, 3600, 30),
+        table: typeof a.table === 'string' && ID_RE.test(a.table) ? a.table : '',
+        change: pick(a.change, ['any', 'added', 'changed', 'deleted'], 'added'),
+        popup: typeof a.popup === 'string' && KEY_RE.test(a.popup) ? a.popup : '',
+        steps: sanitizeActions(a.steps)
+      };
+    });
+  }
+
+  function addAutomation(page, when, options) {
+    const next = clone(page);
+    next.automations = next.automations || [];
+    if (next.automations.length >= 20) throw new Error('A page can have at most 20 automations.');
+    const auto = sanitizeAutomations([{ when, ...(options || {}) }])[0];
+    if (!auto) throw new Error('Unknown automation.');
+    next.automations.push(auto);
+    return { page: next, id: auto.id };
+  }
+
+  function updateAutomation(page, id, changes) {
+    const next = clone(page);
+    next.automations = sanitizeAutomations((next.automations || []).map(a => (a.id === id ? { ...a, ...changes } : a)));
+    return next;
+  }
+
+  function removeAutomation(page, id) {
+    const next = clone(page);
+    next.automations = (next.automations || []).filter(a => a.id !== id);
+    return next;
   }
 
   // ---------- CSV ----------
@@ -1206,7 +1264,7 @@
   }
 
   function createPage() {
-    return { version: VERSION, sections: [], tables: [], onOpen: [], popups: [] };
+    return { version: VERSION, sections: [], tables: [], onOpen: [], popups: [], automations: [] };
   }
 
   // ---------- sanitize (everything read from storage) ----------
@@ -1215,6 +1273,7 @@
     const page = createPage();
     page.tables = sanitizeTables(raw && raw.tables);
     page.onOpen = sanitizeActions(raw && raw.onOpen);
+    page.automations = sanitizeAutomations(raw && raw.automations);
     const names = new Set();
     const sections = raw && Array.isArray(raw.sections) ? raw.sections : [];
     const seen = new Set();
@@ -1607,7 +1666,7 @@
 
   return {
     VERSION, LIMITS, LAYOUTS, LAYOUT_LABELS, BLOCKS, STYLE_FIELDS, SECTION_FIELDS, TONES, FIELD_TYPES, ACTIONS,
-    OPS, KEY_RE, RECORD_RE, pagePopups, allNames, allSections, findPopup, addPopup, updatePopup, removePopup, countSections, parseCsv, toCsv, matchColumns, slug, uniqueKey, inputKey, dataCollection, pageInputs, pageElements, freeName, renameBlock,
+    OPS, KEY_RE, RECORD_RE, AUTOMATIONS, sanitizeAutomations, addAutomation, updateAutomation, removeAutomation, pagePopups, allNames, allSections, findPopup, addPopup, updatePopup, removePopup, countSections, parseCsv, toCsv, matchColumns, slug, uniqueKey, inputKey, dataCollection, pageInputs, pageElements, freeName, renameBlock,
     updatePageActions, sanitizeActions, sanitizeTables,
     findTable, addTable, updateTable, removeTable, addField, updateField, removeField, moveField,
     moveInList, grid, steps, cardItems, CARD_PARTS, CARD_STYLE_FIELDS, sanitizeDesign, cardDesign,

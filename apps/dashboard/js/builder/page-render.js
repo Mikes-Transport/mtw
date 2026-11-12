@@ -105,10 +105,18 @@
       control.tabIndex = -1;
       control.readOnly = true;
     } else if (rt) {
-      control.addEventListener('input', () => rt.setValue(block.name, control.value, true));
+      let typingTimer = null;
+      control.addEventListener('input', () => {
+        rt.setValue(block.name, control.value, true);
+        if (block.props.trigger === 'typing' && control.tagName !== 'SELECT') {
+          const view = doc.defaultView || root;
+          view.clearTimeout(typingTimer);
+          typingTimer = view.setTimeout(() => rt.run(block.props.actions), 400);
+        }
+      });
       control.addEventListener('change', () => {
         rt.setValue(block.name, control.value, true);
-        rt.run(block.props.actions);
+        if (block.props.trigger !== 'typing' || control.tagName === 'SELECT') rt.run(block.props.actions);
       });
     }
     wrap.append(label, control);
@@ -142,6 +150,7 @@
     const canDelete = canDeleteRows(p, options);
     const clickable = !options.editing && p.actions && p.actions.length;
     if (clickable) node.classList.add('is-clickable');
+    const editableKeys = (options.editing || canEdit(p, options)) ? (p.editable || []) : [];
     if (canDelete) head.appendChild(el(doc, 'th', 'mtw-pb-records-actions', ''));
     const body = tableEl.appendChild(el(doc, 'tbody'));
     wrap.appendChild(tableEl);
@@ -178,7 +187,13 @@
             if (event.key === 'Enter' && !event.target.closest('.mtw-pb-records-delete')) go();
           });
         }
-        fields.forEach(field => tr.appendChild(el(doc, 'td', '', fmt(row[field.key], field.type))));
+        fields.forEach(field => {
+          if (editableKeys.includes(field.key)) {
+            const td = el(doc, 'td', 'mtw-pb-edit-cell');
+            td.appendChild(editableControl(doc, field, row, p.table, options));
+            tr.appendChild(td);
+          } else tr.appendChild(el(doc, 'td', '', fmt(row[field.key], field.type)));
+        });
         const added = el(doc, 'td', 'mtw-pb-records-when', when(row._createdAt));
         if (row._createdBy) added.title = `Added by ${row._createdBy}`;
         tr.appendChild(added);
@@ -199,11 +214,84 @@
           : total > rows.length ? `Showing ${rows.length} of ${total}.` : '';
     };
     if (search) search.addEventListener('input', draw);
+    const redraw = guardedDraw(node, draw);
     rt.watch(p.table, node, current => {
       entry = current;
-      draw();
+      redraw();
     });
     return node;
+  }
+
+  // A field people can change right in a list or card; saves when picked / left.
+  function editableControl(doc, field, row, tableId, options) {
+    const rt = options.runtime;
+    let control;
+    const v = row[field.key];
+    if (field.type === 'choice' || field.type === 'yesno') {
+      control = el(doc, 'select', 'mtw-pb-control mtw-pb-inline-edit');
+      const choices = field.type === 'yesno' ? ['No', 'Yes'] : [''].concat(core().listItems(field.options));
+      const value = field.type === 'yesno' ? (v === true || v === 'Yes' ? 'Yes' : 'No') : String(v === undefined || v === null ? '' : v);
+      if (field.type === 'choice' && value && !choices.includes(value)) choices.push(value);
+      choices.forEach(text => {
+        const option = el(doc, 'option', '', text || '-');
+        option.value = text;
+        control.appendChild(option);
+      });
+      control.value = value;
+    } else {
+      control = el(doc, 'input', 'mtw-pb-control mtw-pb-inline-edit');
+      control.type = field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : field.type === 'image' ? 'url' : 'text';
+      control.value = v === undefined || v === null ? '' : String(v);
+    }
+    control.setAttribute('aria-label', field.label);
+    if (options.editing || !rt) {
+      control.disabled = true;
+      return control;
+    }
+    const original = control.value;
+    const save = async () => {
+      if (control.value === original) return;
+      try {
+        await rt.updateRecord(tableId, row._id, field.key, control.value);
+      } catch (error) {
+        control.value = original;
+        if (options.ui && options.ui.toast) options.ui.toast(error.message || 'Could not save.', 'danger');
+      }
+    };
+    control.addEventListener(control.tagName === 'SELECT' ? 'change' : 'blur', save);
+    control.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && control.tagName === 'INPUT') control.blur();
+    });
+    // Changing a value shouldn't also "click" the row or card.
+    ['click', 'keydown', 'pointerdown'].forEach(type => control.addEventListener(type, event => event.stopPropagation()));
+    return control;
+  }
+
+  function canEdit(p, options) {
+    const rt = options.runtime;
+    return Boolean(rt) && (p.editBy !== 'managers' || rt.isManager);
+  }
+
+  // Live lists redraw on every change; wait while someone is changing a value in it.
+  function guardedDraw(node, draw) {
+    let pending = false;
+    node.addEventListener('focusout', () => {
+      const view = node.ownerDocument.defaultView || root;
+      view.setTimeout(() => {
+        if (pending && !node.contains(node.ownerDocument.activeElement)) {
+          pending = false;
+          draw();
+        }
+      }, 0);
+    });
+    return () => {
+      const active = node.ownerDocument.activeElement;
+      if (active && node.contains(active) && active.classList && active.classList.contains('mtw-pb-inline-edit')) {
+        pending = true;
+        return;
+      }
+      draw();
+    };
   }
 
   function canDeleteRows(p, options) {
@@ -261,7 +349,12 @@
             node.appendChild(el(doc, 'span', 'mtw-pb-card-field-label', part.showLabel === 'before' ? `${field.label}: ` : field.label));
             if (part.showLabel === 'above') node.classList.add('is-label-above');
           }
-          node.appendChild(el(doc, 'span', 'mtw-pb-card-field-value', value || (part.field ? '-' : '')));
+          if (part.editable === 'yes' && field && more.table && (more.preview || more.canEdit)) {
+            node.appendChild(editableControl(doc, field, record, more.table, { runtime: more.preview ? null : rt, editing: more.editing || more.preview, ui: more.ui }));
+            node.classList.add('is-editable');
+          } else {
+            node.appendChild(el(doc, 'span', 'mtw-pb-card-field-value', value || (part.field ? '-' : '')));
+          }
           break;
         }
         case 'text':
@@ -457,6 +550,7 @@
           def.fields.forEach(f => { fieldMap[f.key] = f; });
           fillDesignedCard(doc, card, p.design, row, fieldMap, rt, {
             table: p.table, formPopup: p.formPopup, isManager: rt && rt.isManager, editing: options.editing,
+            canEdit: canEdit(p, options), ui: options.ui,
             onRun: (list, ctx) => rt.run(list, ctx)
           });
           if (canDelete) {
@@ -513,9 +607,10 @@
           : total > rows.length ? `Showing ${rows.length} of ${total}.` : '';
     };
     if (search) search.addEventListener('input', draw);
+    const redraw = guardedDraw(node, draw);
     rt.watch(p.table, node, current => {
       entry = current;
-      draw();
+      redraw();
     });
     return node;
   }
@@ -820,8 +915,10 @@
       openPopup(name) {
         const shell = node.querySelector(`.mtw-pb-popup[data-popup="${name}"]`);
         if (!shell) return;
+        const wasOpen = !shell.hidden;
         shell.hidden = false;
         openPopups.push(name);
+        if (!wasOpen && options.runtime && options.runtime.popupEvent) options.runtime.popupEvent(name, 'open');
         const focusable = shell.querySelector('input, select, textarea, button:not(.mtw-pb-popup-close)') || shell.querySelector('button');
         if (focusable) focusable.focus();
       },
@@ -829,7 +926,9 @@
         const target = name || openPopups[openPopups.length - 1];
         if (!target) return;
         const shell = node.querySelector(`.mtw-pb-popup[data-popup="${target}"]`);
+        const wasOpen = shell && !shell.hidden;
         if (shell) shell.hidden = true;
+        if (wasOpen && options.runtime && options.runtime.popupEvent) options.runtime.popupEvent(target, 'close');
         // Closing without saving drops an unfinished edit, so the next Add adds.
         if (options.runtime && options.runtime.stopEditing) options.runtime.stopEditing();
         const i = openPopups.lastIndexOf(target);
@@ -996,7 +1095,7 @@
         runtime = node.mtwRuntime;
         panel.replaceChildren(node);
         panel.dataset.pageState = 'published';
-        if (runtime) runtime.run(runtime.page.onOpen);
+        if (runtime) runtime.start();
       } else if (typeof fallback === 'function') {
         panel.replaceChildren(...fallback());
         panel.dataset.pageState = 'empty';

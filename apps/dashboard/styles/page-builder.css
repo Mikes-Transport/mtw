@@ -1148,3 +1148,11 @@ button.mtw-pb-record-card:hover { border-color: #9a9893; box-shadow: 0 4px 14px 
 .mtw-pb-block.is-clickable { cursor: pointer; transition: opacity .12s ease, box-shadow .12s ease; }
 .mtw-pb-block.is-clickable:hover { opacity: .88; }
 .mtw-pb-block.is-clickable:focus-visible { outline: 2px solid var(--mtw-ink, #242424); outline-offset: 2px; }
+
+/* Fields people can change right in a list or card */
+.mtw-pb-inline-edit { min-height: 32px; padding: 4px 8px; font-size: 13.5px; }
+.mtw-pb-edit-cell { padding: 4px 6px !important; }
+.mtw-pb-card-field.is-editable { flex: 1 1 140px; }
+.mtw-pb-card-field.is-editable .mtw-pb-inline-edit { width: 100%; }
+.mtw-pb-automation { margin-bottom: 8px; }
+.mtw-pb-automation .mtw-pb-steps-summary .mtw-pb-group { margin-top: 4px; }

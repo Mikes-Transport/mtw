@@ -27,7 +27,8 @@ columns stack on narrow screens.
 - **Input**: short/long text, number, date, dropdown or yes/no. **Save into** points it
   at a data table field (its type, choices and required come from the field).
 - **Records list**: a data table's records, live, with search and an optional Delete
-  button (nobody / Managers / everyone).
+  button (nobody / Managers / everyone). **Columns people can change right here** turns
+  columns into dropdowns / boxes that save in place (everyone or Managers only).
 - **Number tile**: a typed value, or a live count of a table's records (optionally
   only where a field equals a value).
 
@@ -37,6 +38,16 @@ Every block has an **Element name** (e.g. `order_number`), set automatically and
 renameable. Steps choose elements from a list by name, and any step text can show a
 value with `{order_number}` (the **Insert value** picker adds it). Also `{user}`,
 `{today}`, `{now}`. Renaming an element updates the steps that use it.
+
+## Automations
+
+Steps that start on their own. With nothing selected on the page, the right panel's
+**Automations** section has **When the page opens** plus **+ Add an automation**:
+**Every few seconds** (5+), **When a data table changes** (added / changed / deleted /
+any; the record is `{record.field}`), **When a popup opens**, **When a popup closes**.
+A popup's settings also have **Steps when it opens / closes**. Inputs can run their steps
+**while typing** (after a short pause) instead of when changed. Automations run in the
+builder's Preview too (without writing).
 
 ## Hidden at start
 
@@ -98,6 +109,8 @@ shadow. The preview uses a real record when there is one.
 
 - **Image**: a web address typed in, or a field holding one (http/https only). Uploading
   pictures isn't built yet.
+- **Field value** can be **People can change it on the card**: a dropdown / box that
+  saves in place (the list's "Who can change editable card fields" decides who).
 - **Button**: **Edit this card** (fills its popup; Save then updates that record instead of
   adding; closing without saving cancels the edit), **Delete this card** (asks first), or
   **Run my steps** (with the card's values). **Who sees it**: everyone or Managers only.

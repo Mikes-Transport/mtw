@@ -323,6 +323,10 @@
       if (!field) throw new Error('Unknown field.');
       const checked = coerce(field, raw);
       if (checked.error) throw new Error(checked.error);
+      if (opts.dryRun) {
+        previewChange(tableId, rows => rows.map(row => (row._id === id ? { ...row, [key]: checked.value, _preview: true } : row)));
+        return checked.value;
+      }
       if (typeof api.updateDoc !== 'function' || typeof api.doc !== 'function') throw new Error('The dashboard database is unavailable.');
       await api.updateDoc(api.doc(api.db, c.dataCollection(opts.toolId, tableId), id),
         { [key]: checked.value, _updatedAt: Date.now(), _updatedBy: user });
@@ -542,7 +546,63 @@
       return running;
     }
 
+    // ---------- automations ----------
+    const timers = [];
+    const unwatchers = [];
+
+    // Starts the page's automations (and its "When the page opens" steps). Called once
+    // the page is on screen; dispose() stops them.
+    function start() {
+      if (opts.editing || state.started) return;
+      state.started = true;
+      run(page.onOpen);
+      (page.automations || []).forEach(auto => {
+        if (!auto.steps.length) return;
+        if (auto.when === 'interval') {
+          timers.push(root.setInterval(() => {
+            if (!state.disposed) run(auto.steps);
+          }, Math.max(5, auto.seconds) * 1000));
+        } else if (auto.when === 'tableChange' && tables[auto.table]) {
+          const entry = table(auto.table);
+          let known = null; // id -> JSON of the record, after the first load
+          const listener = current => {
+            if (state.disposed || !current.loaded || current.error) return;
+            const now = new Map(current.rows.filter(row => !row._preview || opts.dryRun).map(row => [row._id, row]));
+            if (known === null) {
+              known = new Map([...now].map(([id, row]) => [id, JSON.stringify(row)]));
+              return;
+            }
+            const events = [];
+            now.forEach((row, id) => {
+              if (!known.has(id)) events.push(['added', row]);
+              else if (known.get(id) !== JSON.stringify(row)) events.push(['changed', row]);
+            });
+            known.forEach((json, id) => {
+              if (!now.has(id)) events.push(['deleted', JSON.parse(json)]);
+            });
+            known = new Map([...now].map(([id, row]) => [id, JSON.stringify(row)]));
+            events.slice(0, 20).forEach(([kind, record]) => {
+              if (auto.change === 'any' || auto.change === kind) run(auto.steps, { record, table: auto.table, change: kind });
+            });
+          };
+          entry.listeners.add(listener);
+          listener(entry);
+          unwatchers.push(() => entry.listeners.delete(listener));
+        }
+      });
+    }
+
+    // Called by the page when a popup opens or closes.
+    function popupEvent(name, kind) {
+      if (opts.editing || state.disposed) return;
+      (page.automations || []).forEach(auto => {
+        if (auto.popup === name && auto.when === (kind === 'open' ? 'popupOpen' : 'popupClose')) run(auto.steps);
+      });
+    }
+
     function dispose() {
+      timers.forEach(id => root.clearInterval(id));
+      unwatchers.forEach(fn => fn());
       state.disposed = true;
       if (!opts.shared) disposeShared({ data: state.data });
     }
@@ -569,6 +629,8 @@
       remove,
       exportTable,
       importTable,
+      start,
+      popupEvent,
       updateRecord,
       addRecord,
       coerce,

@@ -521,7 +521,15 @@
         editing: !state.preview, dryRun: state.preview, toolId, user, isManager: true, shared: state.shared,
         canvas: popup ? popup.id : null
       });
+      if (state.previewRuntime) {
+        state.previewRuntime.dispose();
+        state.previewRuntime = null;
+      }
       frame.replaceChildren(node);
+      if (state.preview && node.mtwRuntime) {
+        state.previewRuntime = node.mtwRuntime; // automations and page-open steps run in preview
+        node.mtwRuntime.start();
+      }
       frame.classList.toggle('is-popup-frame', Boolean(popup));
       canvasBar.hidden = !popup;
       if (popup) {
@@ -818,6 +826,72 @@
       inspector.scrollTop = scroll;
     }
 
+    // ---------- automations ----------
+    function automationLabel(auto) {
+      if (auto.when === 'interval') return `Every ${auto.seconds} seconds`;
+      if (auto.when === 'tableChange') {
+        const table = c.findTable(history.page, auto.table);
+        const what = { any: 'changes', added: 'gets a new record', changed: 'has a record changed', deleted: 'has a record deleted' }[auto.change];
+        return `When ${table ? table.name : 'a data table'} ${what}`;
+      }
+      const popup = c.findPopup(history.page, auto.popup);
+      return `When ${popup ? popup.title || popup.name : 'a popup'} ${auto.when === 'popupOpen' ? 'opens' : 'closes'}`;
+    }
+
+    function renderAutomations() {
+      inspector.appendChild(sectionTitle('Automations'));
+      inspector.appendChild(el('p', 'mtw-pb-field-help', 'Steps that start on their own, without a click.'));
+      inspector.appendChild(stepsSummary('When the page opens, do', 'page', history.page.onOpen || []));
+      (history.page.automations || []).forEach(auto => {
+        const card = el('div', 'mtw-pb-card-item mtw-pb-automation');
+        card.dataset.automationId = auto.id;
+        const head = el('div', 'mtw-pb-card-head');
+        head.append(el('strong', '', automationLabel(auto)),
+          iconButton('mtw-pb-tool-btn mtw-pb-card-delete', 'delete', 'Delete this automation', () => commit(c.removeAutomation(history.page, auto.id))));
+        card.appendChild(head);
+        const fields = [];
+        if (auto.when === 'interval') fields.push({ key: 'seconds', label: 'Every (seconds, 5 or more)', type: 'number', min: 5, max: 3600 });
+        if (auto.when === 'tableChange') {
+          fields.push({ key: 'table', label: 'Data table', type: 'table' });
+          fields.push({ key: 'change', label: 'When', type: 'select', options: [['added', 'A record is added'], ['changed', 'A record is changed'], ['deleted', 'A record is deleted'], ['any', 'Any of those']] });
+        }
+        if (auto.when === 'popupOpen' || auto.when === 'popupClose') fields.push({ key: 'popup', label: 'Popup', type: 'popup' });
+        fields.forEach(field => {
+          card.appendChild(fieldControl(field, auto[field.key], value => {
+            const next = c.updateAutomation(history.page, auto.id, { [field.key]: value });
+            if (field.type === 'number') commit(next, undefined, `${auto.id}:${field.key}`);
+            else commit(next);
+          }));
+        });
+        card.appendChild(stepsSummary('Then do', `auto:${auto.id}`, auto.steps));
+        inspector.appendChild(card);
+      });
+      const add = selectOf('', [['', '+ Add an automation...']].concat(Object.entries(c.AUTOMATIONS).map(([key, def]) => [key, def.label])), '');
+      add.className = 'mtw-pb-add-step mtw-pb-add-automation';
+      add.setAttribute('aria-label', 'Add an automation');
+      add.addEventListener('change', () => {
+        if (!add.value) return;
+        const options = add.value === 'tableChange' ? { table: ((history.page.tables || [])[0] || {}).id || '' }
+          : add.value.startsWith('popup') ? { popup: (c.pagePopups(history.page)[0] || {}).name || '' } : {};
+        const result = attempt(() => c.addAutomation(history.page, add.value, options));
+        if (result) commit(result.page);
+      });
+      inspector.appendChild(add);
+    }
+
+    // Opens (making if needed) a popup's "when it opens/closes" automation.
+    function popupAutomation(popup, kind) {
+      const when = kind === 'open' ? 'popupOpen' : 'popupClose';
+      let auto = (history.page.automations || []).find(a => a.when === when && a.popup === popup.name);
+      if (!auto) {
+        const result = attempt(() => c.addAutomation(history.page, when, { popup: popup.name }));
+        if (!result) return;
+        commit(result.page);
+        auto = { id: result.id };
+      }
+      openLogic(`auto:${auto.id}`);
+    }
+
     function renderPopupInspector(popup) {
       inspector.appendChild(el('h3', '', 'Popup'));
       inspector.appendChild(el('p', 'mtw-pb-muted', 'Build it like a page: drag sections and blocks in. Buttons open it with "Opens a popup"; it closes with its X, Esc, a click outside, or a Close a popup step.'));
@@ -846,6 +920,9 @@
       const used = c.pageElements(history.page).filter(item => item.block.props.popup === popup.name || item.block.props.formPopup === popup.name)
         .map(item => item.name);
       inspector.appendChild(el('p', 'mtw-pb-field-help', used.length ? `Opened by: ${used.join(', ')}.` : 'No button opens it yet.'));
+      inspector.appendChild(sectionTitle('Automations'));
+      inspector.appendChild(button('mtw-pb-btn mtw-pb-btn-light mtw-pb-popup-open-steps', 'Steps when it opens', 'Runs each time this popup opens', () => popupAutomation(popup, 'open')));
+      inspector.appendChild(button('mtw-pb-btn mtw-pb-btn-light mtw-pb-popup-close-steps', 'Steps when it closes', 'Runs each time this popup closes', () => popupAutomation(popup, 'close')));
       inspector.appendChild(button('mtw-pb-btn mtw-pb-btn-light mtw-pb-canvas-back', '\u2190 Back to the page', 'Edit the page', () => openCanvas(null)));
       const remove = button('mtw-pb-btn mtw-pb-btn-light mtw-pb-delete-table mtw-pb-delete-popup', 'Delete popup', `Delete ${popup.title || popup.name}`, () => {
         if (remove.dataset.armed === 'true') {
@@ -871,7 +948,7 @@
         el('p', 'mtw-pb-muted', 'Shortcuts: Ctrl+Z undo, Ctrl+Shift+Z redo, Ctrl+D duplicate, Delete removes, Alt+Up/Down moves, Esc deselects, Ctrl+S saves a draft.'),
         el('p', 'mtw-pb-muted', `${c.countBlocks(page)} blocks in ${page.sections.length} sections, ${(page.tables || []).length} data tables.`)
       );
-      inspector.appendChild(stepsSummary('When the page opens, do', 'page', history.page.onOpen || []));
+      renderAutomations();
     }
 
     function renderBlockInspector(page, blockId) {
@@ -1332,6 +1409,16 @@
     // ---------- When -> Do steps ----------
     // A step list owner: 'page' (When the page opens) or 'block:<id>'.
     function scopeFor(key) {
+      if (key.startsWith('auto:')) {
+        const autoId = key.slice('auto:'.length);
+        const auto = (history.page.automations || []).find(a => a.id === autoId);
+        return {
+          key,
+          recordTable: auto && auto.when === 'tableChange' ? auto.table : '',
+          get: () => ((history.page.automations || []).find(a => a.id === autoId) || { steps: [] }).steps,
+          set: (list, coalesce) => commit(c.updateAutomation(history.page, autoId, { steps: list }), undefined, coalesce)
+        };
+      }
       if (key.startsWith('part:')) {
         const [, blockId, partId] = key.split(':');
         const owner = c.findBlock(history.page, blockId);
@@ -1631,6 +1718,16 @@
       if (key === 'page') {
         title = 'This page';
         trigger = 'When the page opens';
+      } else if (key.startsWith('auto:')) {
+        const auto = (history.page.automations || []).find(a => a.id === key.slice(5));
+        if (!auto) {
+          state.logic = null;
+          logic.hidden = true;
+          overlay.classList.remove('has-logic');
+          return;
+        }
+        title = 'Automation';
+        trigger = automationLabel(auto);
       } else if (key.startsWith('part:')) {
         const [, blockId, partId] = key.split(':');
         const owner = c.findBlock(history.page, blockId);
@@ -2215,6 +2312,7 @@
       }
       cleanupDrag();
       cleanupListDrag();
+      if (state.previewRuntime) state.previewRuntime.dispose();
       if (state.shared && root.MTW_PAGE_RUNTIME) root.MTW_PAGE_RUNTIME.disposeShared(state.shared);
       document.removeEventListener('keydown', onKey, true);
       overlay.remove();

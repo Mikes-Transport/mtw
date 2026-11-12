@@ -1407,3 +1407,129 @@ test('every block type has a steps list in the builder', async () => {
   editor.close(true);
   dom.window.close();
 });
+
+test('automations: table changes, popup open/close, every N seconds, typing', async () => {
+  const page = {
+    tables: [{ id: 't-jobs', name: 'Jobs', fields: [{ key: 'customer', label: 'Customer', type: 'text' }] }],
+    automations: [
+      { when: 'tableChange', table: 't-jobs', change: 'added', steps: [{ type: 'message', text: 'New job for {record.customer}' }] },
+      { when: 'tableChange', table: 't-jobs', change: 'deleted', steps: [{ type: 'setText', target: 'last', value: 'Removed {record.customer}' }] },
+      { when: 'popupOpen', popup: 'box', steps: [{ type: 'setText', target: 'state', value: 'open' }] },
+      { when: 'popupClose', popup: 'box', steps: [{ type: 'setText', target: 'state', value: 'closed' }] },
+      { when: 'interval', seconds: 7, steps: [{ type: 'setText', target: 'tick', value: 'ticked' }] }
+    ],
+    sections: [{ layout: '1', columns: [{ blocks: [
+      { type: 'heading', name: 'state', props: { text: 'idle' } },
+      { type: 'heading', name: 'last', props: { text: '' } },
+      { type: 'heading', name: 'tick', props: { text: '' } },
+      { type: 'button', name: 'open', props: { label: 'Open', popup: 'box' } },
+      { type: 'input', name: 'q', props: { label: 'Search', trigger: 'typing', actions: [{ type: 'setText', target: 'echo', value: 'You typed {q}' }] } },
+      { type: 'heading', name: 'echo', props: { text: '' } }
+    ] }] }],
+    popups: [{ name: 'box', title: 'Box', sections: [{ layout: '1', columns: [{ blocks: [{ type: 'text', props: { text: 'Hi' } }] }] }] }]
+  };
+  const db = store({ ...TOOLS, 'dashboard-tool-pages': { jobs: { published: page } },
+    'dashboard-data-jobs-t-jobs': { old: { customer: 'Existing', _createdAt: 1 } } });
+  const { dom, window, document } = host({ db });
+  const intervals = [];
+  const realSetInterval = window.setInterval.bind(window);
+  window.setInterval = (fn, ms) => { intervals.push({ fn, ms }); return realSetInterval(() => {}, 1e9); };
+  await waitFor(window, () => document.querySelector('.custom-dashboard-tool-jobs-panel [data-name="state"]'));
+  const panel = document.querySelector('.custom-dashboard-tool-jobs-panel');
+  const text = name => panel.querySelector(`[data-name="${name}"]`).textContent;
+  await tick(window);
+  // Records that were already there don't count as "added".
+  assert.doesNotMatch(panel.querySelector('.mtw-pb-toasts').textContent, /Existing/);
+  // Someone adds a record (e.g. from another screen): the automation runs with it.
+  await window.MTW.addDoc(window.MTW.collection(window.MTW.db, 'dashboard-data-jobs-t-jobs'), { customer: 'Smith', _createdAt: 2 });
+  await waitFor(window, () => /New job for Smith/.test(panel.querySelector('.mtw-pb-toasts').textContent));
+  await window.MTW.deleteDoc(window.MTW.doc(window.MTW.db, 'dashboard-data-jobs-t-jobs', 'old'));
+  await waitFor(window, () => text('last') === 'Removed Existing');
+  // Popup open / close.
+  panel.querySelector('[data-name="open"] button').click();
+  await waitFor(window, () => text('state') === 'open');
+  panel.querySelector('.mtw-pb-popup[data-popup="box"] .mtw-pb-popup-close').click();
+  await waitFor(window, () => text('state') === 'closed');
+  // Every 7 seconds (the timer is captured; run it once).
+  const timer = intervals.find(item => item.ms === 7000);
+  assert.ok(timer, 'interval set for 7 seconds');
+  timer.fn();
+  await waitFor(window, () => text('tick') === 'ticked');
+  // Typing trigger: runs after a short pause, without leaving the box.
+  const q = panel.querySelector('[data-name="q"] .mtw-pb-control');
+  q.value = 'tyres';
+  q.dispatchEvent(new window.Event('input', { bubbles: true }));
+  await waitFor(window, () => text('echo') === 'You typed tyres');
+  dom.window.close();
+});
+
+test('editable fields: dropdowns in records lists and on cards save in place; managers-only respected', async () => {
+  const page = {
+    tables: [{ id: 't-jobs', name: 'Jobs', fields: [
+      { key: 'customer', label: 'Customer', type: 'text' }, { key: 'status', label: 'Status', type: 'choice', options: 'Open\nDone' }] }],
+    sections: [{ layout: '1', columns: [{ blocks: [
+      { type: 'records', name: 'list', props: { table: 't-jobs', editable: ['status'], editBy: 'everyone', search: 'no' } },
+      { type: 'cards', name: 'cards', props: { source: 'table', table: 't-jobs', editBy: 'managers',
+        design: { parts: [{ type: 'field', field: 'customer' }, { type: 'field', field: 'status', editable: 'yes' }], style: {} } } }
+    ] }] }]
+  };
+  for (const role of ['Stores', 'Managers']) {
+    const db = store({ ...TOOLS, 'dashboard-tool-pages': { jobs: { published: page } },
+      'dashboard-data-jobs-t-jobs': { a: { customer: 'Smith', status: 'Open', _createdAt: 1 } } });
+    const { dom, window, document } = host({ role, db });
+    await waitFor(window, () => document.querySelector('.custom-dashboard-tool-jobs-panel [data-name="list"] tbody tr'));
+    const panel = document.querySelector('.custom-dashboard-tool-jobs-panel');
+    const rowSelect = panel.querySelector('[data-name="list"] tbody select.mtw-pb-inline-edit');
+    assert.ok(rowSelect, 'status is a dropdown in the list');
+    assert.deepEqual([...rowSelect.options].map(o => o.value), ['', 'Open', 'Done']);
+    const cardSelect = panel.querySelector('[data-name="cards"] select.mtw-pb-inline-edit');
+    assert.equal(Boolean(cardSelect), role === 'Managers', 'card field editable by managers only');
+    rowSelect.value = 'Done';
+    rowSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+    await waitFor(window, () => db.data['dashboard-data-jobs-t-jobs'].a.status === 'Done');
+    assert.equal(db.data['dashboard-data-jobs-t-jobs'].a._updatedBy, role);
+    if (role === 'Managers') {
+      await waitFor(window, () => panel.querySelector('[data-name="cards"] select.mtw-pb-inline-edit').value === 'Done');
+      const sel = panel.querySelector('[data-name="cards"] select.mtw-pb-inline-edit');
+      sel.value = 'Open';
+      sel.dispatchEvent(new window.Event('change', { bubbles: true }));
+      await waitFor(window, () => db.data['dashboard-data-jobs-t-jobs'].a.status === 'Open');
+    } else {
+      assert.match(panel.querySelector('[data-name="cards"]').textContent, /Open|Done/);
+    }
+    dom.window.close();
+  }
+});
+
+test('builder: add automations and popup open/close steps', async () => {
+  const db = store({ ...TOOLS, 'dashboard-tool-pages': { jobs: { draft: BOARD_PAGE } } });
+  const { dom, window, document } = host({ db });
+  await waitFor(window, () => typeof window.MTW_OPEN_PAGE_BUILDER === 'function');
+  const editor = await window.MTW_OPEN_PAGE_BUILDER('jobs');
+  await editor.loaded;
+  const ui = editor.element;
+  const inspector = ui.querySelector('.mtw-pb-inspector');
+  editor.select(null);
+  const add = inspector.querySelector('.mtw-pb-add-automation');
+  add.value = 'tableChange';
+  add.dispatchEvent(new window.Event('change', { bubbles: true }));
+  assert.equal(editor.page.automations[0].when, 'tableChange');
+  assert.equal(editor.page.automations[0].table, 't-jobs', 'defaults to the first table');
+  assert.match(inspector.querySelector('.mtw-pb-automation strong').textContent, /When Jobs gets a new record/);
+  const autoId = editor.page.automations[0].id;
+  inspector.querySelector('.mtw-pb-automation .mtw-pb-edit-steps').click();
+  const logic = ui.querySelector('.mtw-pb-logic');
+  assert.match(logic.querySelector('.mtw-pb-logic-trigger').textContent, /When Jobs gets a new record/);
+  editor.dropStep({ kind: 'newStep', type: 'message', scope: `auto:${autoId}` }, [], 0);
+  assert.equal(editor.page.automations[0].steps[0].type, 'message');
+  assert.ok([...logic.querySelectorAll('.mtw-pb-token option')].some(o => o.value === '{record.customer}'), 'the changed record is offered');
+  editor.closeSteps();
+  // Popup inspector: steps when it opens.
+  ui.querySelector('.mtw-pb-tab[data-tab="popups"]').click();
+  ui.querySelector('.mtw-pb-popup-item').click();
+  inspector.querySelector('.mtw-pb-popup-open-steps').click();
+  assert.equal(editor.page.automations[1].when, 'popupOpen');
+  assert.equal(logic.hidden, false);
+  editor.close(true);
+  dom.window.close();
+});
