@@ -1515,3 +1515,26 @@ body:has(.db-main-wrapper) {
 .mtw-dashboard-shell .db-heading-list[data-type="breadcrumb"] {
   display: none !important;
 }
+
+/* Second-hand stock: Add Item button (same look as Refresh). */
+.second-hand-add-button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 20px;
+  border: 1px solid #b8b8b8;
+  border-radius: 5px;
+  font-family: Inter, sans-serif;
+  cursor: pointer;
+}
+
+.second-hand-add-button:hover,
+.second-hand-add-button:focus-visible {
+  background-color: #fff;
+}
+
+.second-hand-add-button .add-icon-sh {
+  display: flex;
+  width: 20px;
+  color: #646464;
+}
