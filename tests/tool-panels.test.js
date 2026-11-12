@@ -389,3 +389,23 @@ test('barcode Date and QTY sizes change the label on every sheet, up and down', 
   }
   dom.window.close();
 });
+
+test('second-hand stock has an Add Item button that opens an empty Add Item form', async () => {
+  const { dom, window, document } = await boot('');
+  try {
+  runToolScripts(window);
+  document.querySelector('.db-list-toolcard[data-select="secondhand-tool"]').click();
+  await waitFor(window, () => document.querySelector('.second-hand-add-button'));
+  const header = document.querySelector('.second-panel-header-button-wrapper');
+  assert.equal(header.firstElementChild.className, 'second-hand-add-button');
+  const modal = document.querySelector('.second-hand-overlay');
+  document.querySelector('[name="code"]').value = 'leftover';
+  document.querySelector('.second-hand-add-button').click();
+  assert.equal(modal.style.display, 'flex');
+  assert.equal(modal.querySelector('.overlay-header-wrapper .h2-text').textContent, 'Add Item');
+  assert.equal(document.querySelector('[name="code"]').value, '');
+  await new Promise(resolve => window.setTimeout(resolve, 100));
+  } finally {
+    dom.window.close();
+  }
+});

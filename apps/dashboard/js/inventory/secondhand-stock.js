@@ -327,6 +327,8 @@ const { db, $, $$, collection, getDocs, doc, addDoc, updateDoc, deleteDoc } = wi
           if (!x) return;
 
           editing = x.id;
+          const title = modal?.querySelector('.overlay-header-wrapper .h2-text');
+          if (title) title.textContent = 'Edit Item';
 
           [
             'code',
@@ -417,14 +419,22 @@ const { db, $, $$, collection, getDocs, doc, addDoc, updateDoc, deleteDoc } = wi
     }
   );
 
-  addBtn?.addEventListener(
-    'click',
-    () => {
-      editing = null;
-      form?.reset();
-      openModal();
+  const modalTitle = modal?.querySelector('.overlay-header-wrapper .h2-text');
+  const startAdd = () => {
+    editing = null;
+    // .second-hand-edit-form is Webflow's wrapper div; reset the <form> inside it.
+    const formEl = form?.tagName === 'FORM' ? form : form?.querySelector('form');
+    formEl?.reset();
+    if (modalTitle) modalTitle.textContent = 'Add Item';
+    openModal();
+  };
+  addBtn?.addEventListener('click', startAdd);
+  addBtn?.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      startAdd();
     }
-  );
+  });
 
   imp?.addEventListener(
     'click',
