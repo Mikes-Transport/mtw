@@ -349,3 +349,43 @@ test('barcode cards get the Edit hover pill, and the edit panel keeps its scroll
   await new Promise(resolve => window.setTimeout(resolve, 300));
   dom.window.close();
 });
+
+test('barcode Date and QTY sizes change the label on every sheet, up and down', async () => {
+  const { dom, window, document } = await boot('');
+  runToolScripts(window);
+  document.querySelector('.db-list-toolcard[data-select="barcodes"]').click();
+  await waitFor(window, () => document.querySelector('[data-barcode-template]') && document.querySelector('.barcode-add-card-button'));
+  const tick = () => new Promise(resolve => window.setTimeout(resolve, 30));
+  const sizeInput = label => [...document.querySelector('.barcode-edit-panel').querySelectorAll('.barcode-control-row')]
+    .find(row => row.querySelector('.barcode-control-label')?.textContent === label).querySelector('input');
+  const set = async (label, value) => {
+    const input = sizeInput(label);
+    input.value = String(value);
+    input.dispatchEvent(new window.Event('input'));
+    await tick();
+  };
+  for (const template of ['standard', 'medium', 'large', 'xlarge']) {
+    document.querySelector('#barcode-drop').click();
+    document.querySelector(`[data-barcode-template="${template}"]`).click();
+    await tick();
+    document.querySelector('.barcode-add-card-button').click();
+    await waitFor(window, () => document.querySelector('.barcode-edit-panel'));
+    for (const box of document.querySelectorAll('.barcode-edit-panel input[type="checkbox"]')) {
+      if (/^\s*(Date|QTY)\s*$/i.test(box.closest('label, div').textContent) && !box.checked) box.click();
+    }
+    await tick();
+    const card = document.querySelector('.barcode-edit-panel') && document.querySelectorAll('.barcode-card');
+    const last = card[card.length - 1];
+    const sizes = () => [...last.querySelectorAll('.barcode-extra-heading, .barcode-extra-subtext')]
+      .map(el => parseFloat(el.style.fontSize));
+    assert.equal(sizes().length, 4, `${template}: date and qty shown`);
+    for (const [label, index] of [['Date Heading Size', 0], ['Date Subtext Size', 1], ['QTY Heading Size', 2], ['QTY Subtext Size', 3]]) {
+      await set(label, 60);
+      const smaller = sizes()[index];
+      await set(label, 100);
+      const bigger = sizes()[index];
+      assert.ok(bigger > smaller, `${template} ${label}: 60 -> ${smaller}px, 100 -> ${bigger}px`);
+    }
+  }
+  dom.window.close();
+});

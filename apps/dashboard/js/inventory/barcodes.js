@@ -3003,6 +3003,25 @@ return text;
 
 }
 
+// Date/QTY text size on the label. Small label sheets scale the setting down (the
+// original factors), but nothing caps the result any more: the old caps (xlarge 8px/6px,
+// compact large 20px/10px) meant most settings, and bigger defaults, changed nothing.
+// Cards saved at the old 40/18 sizes look exactly as before.
+const EXTRA_FONT_SCALE = {
+xlarge: { heading: 0.2, subtext: 0.35 },
+compact: { heading: 0.5, subtext: 0.55 }
+};
+
+function extraFontSize(card, compactExtras, part, size) {
+const scale =
+card.template === 'xlarge'
+? EXTRA_FONT_SCALE.xlarge[part]
+: compactExtras
+? EXTRA_FONT_SCALE.compact[part]
+: 1;
+return Math.max(1, Math.round(size * scale * 10) / 10);
+}
+
 function renderBarcodeExtraFields(
 card,
 outputRow
@@ -3076,17 +3095,8 @@ heading.textContent =
 const headingSize =
 Number(card.dateHeadingSize) ||
 DEFAULTS.dateHeadingSize;
-const headingScale =
-card.template === 'xlarge'
-? 0.2
-: compactExtras
-? 0.5
-: 1;
 heading.style.fontSize =
-Math.min(
-headingSize * headingScale,
-card.template === 'xlarge' ? 8 : compactExtras ? 20 : headingSize
-) +
+extraFontSize(card, compactExtras, 'heading', headingSize) +
 'px';
 
 const subtext =
@@ -3105,17 +3115,8 @@ card.date
 const subtextSize =
 Number(card.dateSubtextSize) ||
 DEFAULTS.dateSubtextSize;
-const subtextScale =
-card.template === 'xlarge'
-? 0.35
-: compactExtras
-? 0.55
-: 1;
 subtext.style.fontSize =
-Math.min(
-subtextSize * subtextScale,
-card.template === 'xlarge' ? 6 : compactExtras ? 10 : subtextSize
-) +
+extraFontSize(card, compactExtras, 'subtext', subtextSize) +
 'px';
 
 field.append(
@@ -3158,17 +3159,8 @@ heading.textContent =
 const headingSize =
 Number(card.qtyHeadingSize) ||
 DEFAULTS.qtyHeadingSize;
-const headingScale =
-card.template === 'xlarge'
-? 0.2
-: compactExtras
-? 0.5
-: 1;
 heading.style.fontSize =
-Math.min(
-headingSize * headingScale,
-card.template === 'xlarge' ? 8 : compactExtras ? 20 : headingSize
-) +
+extraFontSize(card, compactExtras, 'heading', headingSize) +
 'px';
 
 const subtext =
@@ -3195,17 +3187,8 @@ card.manualQty
 const subtextSize =
 Number(card.qtySubtextSize) ||
 DEFAULTS.qtySubtextSize;
-const subtextScale =
-card.template === 'xlarge'
-? 0.35
-: compactExtras
-? 0.55
-: 1;
 subtext.style.fontSize =
-Math.min(
-subtextSize * subtextScale,
-card.template === 'xlarge' ? 6 : compactExtras ? 10 : subtextSize
-) +
+extraFontSize(card, compactExtras, 'subtext', subtextSize) +
 'px';
 
 field.append(
