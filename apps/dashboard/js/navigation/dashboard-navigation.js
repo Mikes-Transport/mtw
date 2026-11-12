@@ -21,9 +21,15 @@
   const DASHBOARD_THEME_URL = new URL('styles/admin-dashboard.css', BASE_URL).href;
   const DEVELOPER_TOOLS_URL = new URL('js/access/developer-tools.js', BASE_URL).href;
   const DASHBOARD_SHELL_URL = new URL('js/navigation/dashboard-shell.js', BASE_URL).href;
+  const PAGE_BUILDER_CSS_URL = new URL('styles/page-builder.css', BASE_URL).href;
+  const PAGE_SCRIPTS = {
+    core: new URL('js/builder/page-core.js', BASE_URL).href,
+    render: new URL('js/builder/page-render.js', BASE_URL).href,
+    builder: new URL('js/builder/page-builder.js', BASE_URL).href
+  };
 
   // Bump on each release so the live page can be checked for the version it runs.
-  const NAVIGATION_BUILD = '2026-11-12.24';
+  const NAVIGATION_BUILD = '2026-11-13.25';
 
   const TOOLS = {
     'activity-logs': { panel: '.activity-logs-panel', name: 'Activity Logs', roles: ['Managers'] },
@@ -459,16 +465,99 @@
       panel.style.display = 'none';
       panels.appendChild(panel);
     }
-    panel.replaceChildren();
-    const description = String(toolSettings[id]?.description || '');
-    if (description) {
-      const note = document.createElement('p');
-      note.textContent = description;
-      panel.appendChild(note);
+    // Manager Tools fills its own panel; other custom items show their built page.
+    if (id === 'developer-tools') panel.replaceChildren();
+    else renderCustomPanel(panel, id);
+  }
+
+  // ---------- custom tool pages (drag-and-drop page builder) ----------
+
+  const loadedScripts = {};
+  function loadScript(url, flag) {
+    if (!loadedScripts[url]) {
+      loadedScripts[url] = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = url;
+        script.async = false;
+        if (flag) script.dataset[flag] = 'true';
+        script.onload = () => resolve();
+        script.onerror = () => {
+          delete loadedScripts[url];
+          reject(new Error(`Could not load ${url}`));
+        };
+        document.head.appendChild(script);
+      });
     }
-    const help = document.createElement('p');
-    help.textContent = 'This navigation item is not connected to a tool yet.';
-    panel.appendChild(help);
+    return loadedScripts[url];
+  }
+
+  function loadPageRenderer() {
+    if (window.MTW_PAGE_RENDER && window.MTW_PAGE_CORE) return Promise.resolve();
+    if (!document.querySelector('link[data-mtw-page-builder-css]')) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.dataset.mtwPageBuilderCss = 'true';
+      link.href = PAGE_BUILDER_CSS_URL;
+      document.head.appendChild(link);
+    }
+    return Promise.all([
+      window.MTW_PAGE_CORE ? null : loadScript(PAGE_SCRIPTS.core, 'mtwPageCore'),
+      window.MTW_PAGE_RENDER ? null : loadScript(PAGE_SCRIPTS.render, 'mtwPageRender')
+    ]);
+  }
+
+  async function openPageBuilder(id, name) {
+    if (!isManager(sessionStorage.getItem('mtw_admin_name'))) throw new Error('Only Managers can edit pages.');
+    await loadPageRenderer();
+    if (!window.MTW_PAGE_BUILDER) await loadScript(PAGE_SCRIPTS.builder, 'mtwPageBuilder');
+    return window.MTW_PAGE_BUILDER.open(id, name || (TOOLS[id] && TOOLS[id].name) || id);
+  }
+
+  const pageMounts = {};
+  function renderCustomPanel(panel, id) {
+    if (pageMounts[id]) {
+      pageMounts[id]();
+      delete pageMounts[id];
+    }
+    panel.replaceChildren();
+    if (isManager(sessionStorage.getItem('mtw_admin_name')) && !shareMode()) {
+      const bar = document.createElement('div');
+      bar.className = 'mtw-pb-panel-bar';
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'mtw-pb-edit-page';
+      edit.textContent = 'Edit page';
+      edit.addEventListener('click', () => {
+        openPageBuilder(id).catch(error => console.error('[dashboard] page builder:', error));
+      });
+      bar.appendChild(edit);
+      panel.appendChild(bar);
+    }
+    const content = document.createElement('div');
+    content.className = 'mtw-pb-panel-content';
+    panel.appendChild(content);
+    const placeholder = () => {
+      const nodes = [];
+      const description = String(toolSettings[id]?.description || '');
+      if (description) {
+        const note = document.createElement('p');
+        note.textContent = description;
+        nodes.push(note);
+      }
+      const help = document.createElement('p');
+      help.textContent = isManager(sessionStorage.getItem('mtw_admin_name'))
+        ? 'This page is empty. Press Edit page to build it with drag and drop.'
+        : 'This page has not been set up yet.';
+      nodes.push(help);
+      return nodes;
+    };
+    content.replaceChildren(...placeholder());
+    loadPageRenderer()
+      .then(() => {
+        if (!content.isConnected && !panel.contains(content)) return;
+        pageMounts[id] = window.MTW_PAGE_RENDER.mount(content, id, placeholder);
+      })
+      .catch(error => console.error('[dashboard] custom tool page:', error));
   }
 
   function applyToolSettings(snapshot) {
@@ -581,6 +670,7 @@
       });
 
     window.MTW_TOOL_REGISTRY = TOOLS;
+    window.MTW_OPEN_PAGE_BUILDER = openPageBuilder;
     window.MTW_APPLY_TOOL_SETTINGS = applyToolSettings;
     applyToolSettings({});
     createCustomCard('developer-tools', 'Manager Tools');
