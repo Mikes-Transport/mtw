@@ -236,3 +236,32 @@ test('step lists: add, nest in If branches, move between lists, update, remove',
   const clean = core.sanitizeActions([{ type: 'eval', code: 'x' }, { type: 'show', target: 'Bad Name!' }]);
   assert.deepEqual(clean.map(s => [s.type, s.target]), [['show', '']]);
 });
+
+test('CSV: parse quotes and line breaks, build safe CSV, match columns', () => {
+  const rows = core.parseCsv('﻿Order number,"Notes, extra"\r\n1001,"Said ""hi""\nthen left"\n\n1002,\n');
+  assert.deepEqual(rows, [['Order number', 'Notes, extra'], ['1001', 'Said "hi"\nthen left'], ['1002', '']]);
+  assert.equal(core.toCsv([['a', '=SUM(A1)', 'x,y'], ['"q"', '', '-1']]), 'a,\'=SUM(A1),"x,y"\r\n"""q""",,\'-1');
+  const table = { fields: [{ key: 'order_number', label: 'Order number' }, { key: 'notes', label: 'Notes' }] };
+  assert.deepEqual(core.matchColumns(['ORDER NUMBER', 'notes', 'Other'], table), ['order_number', 'notes', null]);
+});
+
+test('popups: sections become named popups; names are shared with elements and renames follow', () => {
+  let { page, id } = core.addSection(core.createPage(), '1');
+  page = core.updateSection(page, id, { popup: true, title: 'Add job' });
+  let r = core.insertBlock(page, 'button', page.sections[0].columns[0].id);
+  page = core.updateBlock(r.page, r.id, { props: { actions: [{ type: 'openPopup', target: 'popup_1' }, { type: 'if', left: 'record.status', op: 'notEmpty' }] } });
+  assert.deepEqual(core.pagePopups(page).map(p => [p.name, p.title]), [['popup_1', 'Add job']]);
+  assert.match(core.renameBlock(page, r.id, 'popup_1').error, /already called/);
+  page = core.renameBlock(page, id, 'add_job').page;
+  const steps = core.findBlock(page, r.id).block.props.actions;
+  assert.equal(steps[0].target, 'add_job');
+  assert.equal(steps[1].left, 'record.status', 'record fields are valid If values');
+  const again = core.sanitizePage(page);
+  assert.equal(again.sections[0].popup, true);
+  assert.equal(again.sections[0].name, 'add_job');
+  const copy = core.duplicateSection(again, id);
+  assert.notEqual(core.findSection(copy.page, copy.id).section.name, 'add_job');
+  page = core.updateSection(page, id, { popup: false });
+  assert.equal(page.sections[0].popup, undefined);
+  assert.equal(page.sections[0].name, undefined);
+});
