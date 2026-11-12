@@ -111,6 +111,7 @@
     }
 
     Object.values(elements).forEach(block => {
+      if (block.hidden) state.hidden.add(block.name);
       if (block.type === 'input') {
         const spec = inputSpec(block);
         let start = tokens(block.props.defaultValue);

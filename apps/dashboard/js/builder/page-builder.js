@@ -162,6 +162,7 @@
       drag: null,
       listDrag: null,
       paletteTab: 'blocks',
+      logic: null, // { scope: 'page' | 'block:<id>' } while the steps editor is open
       inspectorKey: '',
       shared: root.MTW_PAGE_RUNTIME ? root.MTW_PAGE_RUNTIME.createShared() : null,
       confirmClose: false
@@ -188,7 +189,10 @@
     });
     const previewBtn = button('mtw-pb-btn', 'Preview', 'Preview without editing handles', () => {
       state.preview = !state.preview;
-      if (state.preview) state.selected = null;
+      if (state.preview) {
+        state.selected = null;
+        state.logic = null;
+      }
       renderAll();
     });
     const saveBtn = button('mtw-pb-btn', 'Save draft', 'Save without changing what people see', () => save(false));
@@ -207,7 +211,10 @@
     const frame = el('div', 'mtw-pb-frame');
     stage.appendChild(frame);
     const inspector = el('aside', 'mtw-pb-inspector', null, { 'aria-label': 'Settings' });
-    body.append(palette, stage, inspector);
+    // Steps editor: a wide panel over the page and settings while open.
+    const logic = el('section', 'mtw-pb-logic', null, { 'aria-label': 'Steps editor' });
+    logic.hidden = true;
+    body.append(palette, stage, inspector, logic);
     overlay.append(top, confirmBar, body);
 
     const ghost = el('div', 'mtw-pb-ghost');
@@ -695,8 +702,7 @@
         el('p', 'mtw-pb-muted', 'Shortcuts: Ctrl+Z undo, Ctrl+Shift+Z redo, Ctrl+D duplicate, Delete removes, Alt+Up/Down moves, Esc deselects, Ctrl+S saves a draft.'),
         el('p', 'mtw-pb-muted', `${c.countBlocks(page)} blocks in ${page.sections.length} sections, ${(page.tables || []).length} data tables.`)
       );
-      inspector.appendChild(sectionTitle('When the page opens, do'));
-      inspector.appendChild(stepsEditor('page', () => history.page.onOpen || [], list => c.updatePageActions(history.page, list)));
+      inspector.appendChild(stepsSummary('When the page opens, do', 'page', history.page.onOpen || []));
     }
 
     function renderBlockInspector(page, blockId) {
@@ -726,6 +732,12 @@
       });
       nameWrap.append(nameInput, el('p', 'mtw-pb-field-help', 'Steps use this name, and text can show its value as {name}.'), nameError);
       inspector.appendChild(nameWrap);
+      const hiddenLabel = el('label', 'mtw-pb-check mtw-pb-hidden-start');
+      const hiddenCheck = el('input', '', null, { type: 'checkbox' });
+      hiddenCheck.checked = block.hidden === true;
+      hiddenCheck.addEventListener('change', () => commit(c.updateBlock(history.page, blockId, { hidden: hiddenCheck.checked })));
+      hiddenLabel.append(hiddenCheck, document.createTextNode(' Hidden at start (until a step shows it)'));
+      inspector.appendChild(hiddenLabel);
 
       const props = block.props;
       const contentFields = def.fields.filter(field => visible(field, props));
@@ -742,12 +754,7 @@
       }
       if (contentFields.some(field => field.type === 'grid')) renderGridEditor(blockId);
       const actionsField = contentFields.find(field => field.type === 'actions');
-      if (actionsField) {
-        inspector.appendChild(sectionTitle(actionsField.label));
-        inspector.appendChild(stepsEditor(`block:${blockId}`,
-          () => (c.findBlock(history.page, blockId) || { block: { props: { actions: [] } } }).block.props.actions,
-          list => c.updateBlock(history.page, blockId, { props: { actions: list } })));
-      }
+      if (actionsField) inspector.appendChild(stepsSummary(actionsField.label, `block:${blockId}`, props.actions || []));
 
       inspector.appendChild(sectionTitle('Look'));
       c.STYLE_FIELDS.forEach(field => {
@@ -914,32 +921,153 @@
     }
 
     // ---------- When -> Do steps ----------
-    const stepScopes = {};
+    // A step list owner: 'page' (When the page opens) or 'block:<id>'.
+    function scopeFor(key) {
+      if (key === 'page') {
+        return {
+          key,
+          get: () => history.page.onOpen || [],
+          set: (list, coalesce) => commit(c.updatePageActions(history.page, list), undefined, coalesce)
+        };
+      }
+      const blockId = key.slice('block:'.length);
+      return {
+        key,
+        get: () => {
+          const found = c.findBlock(history.page, blockId);
+          return found && Array.isArray(found.block.props.actions) ? found.block.props.actions : [];
+        },
+        set: (list, coalesce) => commit(c.updateBlock(history.page, blockId, { props: { actions: list } }), undefined, coalesce)
+      };
+    }
 
-    function stepsEditor(scopeKey, getRoot, makePage) {
-      const scope = { key: scopeKey, get: getRoot, set: (list, coalesce) => commit(makePage(list), undefined, coalesce) };
-      stepScopes[scopeKey] = scope;
-      const wrap = el('div', 'mtw-pb-steps-editor');
-      const tiles = el('div', 'mtw-pb-step-tiles');
-      tiles.appendChild(el('p', 'mtw-pb-field-help', 'Drag a step into the list, or click to add it at the end.'));
-      Object.entries(c.ACTIONS).forEach(([type, def]) => {
-        const tile = el('div', 'mtw-pb-step-tile', def.label, { role: 'button', tabindex: '0', title: def.description });
-        tile.dataset.stepType = type;
-        tile.addEventListener('pointerdown', event => startListDrag(event, {
-          group: `steps:${scopeKey}`, label: def.label, newStep: true, tap: () => dropStep({ kind: 'newStep', type, scope: scopeKey }, [], null),
-          onDrop: (container, index) => dropStep({ kind: 'newStep', type, scope: scopeKey }, JSON.parse(container.dataset.path), index)
-        }));
-        tile.addEventListener('keydown', event => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            dropStep({ kind: 'newStep', type, scope: scopeKey }, [], null);
+    function stepLine(step) {
+      const def = c.ACTIONS[step.type];
+      const target = step.target || step.left || '';
+      const table = step.table ? (c.findTable(history.page, step.table) || {}).name : '';
+      return `${def.label}${target ? `: ${target}` : table ? `: ${table}` : ''}`;
+    }
+
+    // Nested outline of a step list: If steps show their Then / Else underneath.
+    function outline(list, budget) {
+      const ol = el('ol', 'mtw-pb-steps-outline');
+      list.forEach(step => {
+        if (budget.left <= 0) return;
+        budget.left -= 1;
+        const li = el('li', '', stepLine(step));
+        ['then', 'else'].forEach(branch => {
+          if (step[branch] && step[branch].length && budget.left > 0) {
+            const sub = el('div', 'mtw-pb-outline-branch');
+            sub.appendChild(el('span', 'mtw-pb-outline-label', branch === 'then' ? 'Then' : 'Else'));
+            sub.appendChild(outline(step[branch], budget));
+            li.appendChild(sub);
           }
         });
-        tiles.appendChild(tile);
+        ol.appendChild(li);
       });
-      wrap.appendChild(tiles);
-      wrap.appendChild(stepList(scope, getRoot(), [], 0));
-      return wrap;
+      return ol;
+    }
+
+    function stepsSummary(title, scopeKey, list) {
+      const box = el('div', 'mtw-pb-steps-summary');
+      box.appendChild(sectionTitle(title));
+      const count = c.steps.count(list);
+      if (!count) box.appendChild(el('p', 'mtw-pb-muted', 'No steps yet.'));
+      else {
+        const budget = { left: 10 };
+        const tree = outline(list, budget);
+        tree.classList.add('mtw-pb-outline-root');
+        box.appendChild(tree);
+        if (count > 10) box.appendChild(el('p', 'mtw-pb-muted', `...and ${count - 10} more`));
+      }
+      box.appendChild(button('mtw-pb-btn mtw-pb-btn-primary-dark mtw-pb-edit-steps', count ? `Edit steps (${count})` : 'Add steps',
+        'Open the steps editor', () => openLogic(scopeKey)));
+      return box;
+    }
+
+    function openLogic(scopeKey) {
+      state.logic = { scope: scopeKey };
+      renderLogic();
+      const first = logic.querySelector('.mtw-pb-logic-done');
+      if (first) first.focus();
+    }
+
+    function closeLogic() {
+      state.logic = null;
+      renderLogic();
+      renderInspector();
+    }
+
+    function renderLogic() {
+      const open = Boolean(state.logic) && !state.preview;
+      logic.hidden = !open;
+      overlay.classList.toggle('has-logic', open);
+      if (!open) {
+        logic.replaceChildren();
+        return;
+      }
+      const key = state.logic.scope;
+      let title;
+      let trigger;
+      if (key === 'page') {
+        title = 'This page';
+        trigger = 'When the page opens';
+      } else {
+        const found = c.findBlock(history.page, key.slice('block:'.length));
+        if (!found) {
+          state.logic = null;
+          logic.hidden = true;
+          overlay.classList.remove('has-logic');
+          return;
+        }
+        const def = c.BLOCKS[found.block.type];
+        title = `${def.label}: ${found.block.props.label || found.block.name}`;
+        trigger = found.block.type === 'input' ? 'When it changes' : 'When it is clicked';
+      }
+      const scroll = logic.querySelector('.mtw-pb-logic-list') ? logic.querySelector('.mtw-pb-logic-list').scrollTop : 0;
+      const head = el('header', 'mtw-pb-logic-head');
+      const titles = el('div');
+      titles.append(el('span', 'mtw-pb-top-kicker', 'Steps'), el('strong', '', `${title}`), el('span', 'mtw-pb-logic-trigger', `${trigger}, do these in order:`));
+      head.append(titles, button('mtw-pb-btn mtw-pb-btn-primary-dark mtw-pb-logic-done', 'Done', 'Back to the page', () => closeLogic()));
+      const content = el('div', 'mtw-pb-logic-body');
+      const editor = stepsEditor(key);
+      content.append(editor.palette, editor.list);
+      logic.replaceChildren(head, content);
+      editor.list.scrollTop = scroll;
+    }
+
+    function stepsEditor(scopeKey) {
+      const scope = scopeFor(scopeKey);
+      const tiles = el('aside', 'mtw-pb-logic-palette');
+      tiles.appendChild(el('p', 'mtw-pb-field-help', 'Drag a step into the list (or into an If\'s Then / Else), or click to add it at the end.'));
+      const groups = {};
+      Object.entries(c.ACTIONS).forEach(([type, def]) => { (groups[def.group] = groups[def.group] || []).push([type, def]); });
+      Object.entries(groups).forEach(([group, items]) => {
+        tiles.appendChild(sectionTitle(group));
+        const wrap = el('div', 'mtw-pb-step-tiles');
+        items.forEach(([type, def]) => wrap.appendChild(stepTile(scopeKey, type, def)));
+        tiles.appendChild(wrap);
+      });
+      const list = el('div', 'mtw-pb-logic-list');
+      list.appendChild(stepList(scope, scope.get(), [], 0));
+      return { palette: tiles, list };
+    }
+
+    function stepTile(scopeKey, type, def) {
+      const tile = el('div', 'mtw-pb-step-tile', null, { role: 'button', tabindex: '0', title: def.description });
+      tile.dataset.stepType = type;
+      tile.append(el('strong', '', def.label), el('span', '', def.description));
+      tile.addEventListener('pointerdown', event => startListDrag(event, {
+        group: `steps:${scopeKey}`, label: def.label, newStep: true, tap: () => dropStep({ kind: 'newStep', type, scope: scopeKey }, [], null),
+        onDrop: (container, index) => dropStep({ kind: 'newStep', type, scope: scopeKey }, JSON.parse(container.dataset.path), index)
+      }));
+      tile.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          dropStep({ kind: 'newStep', type, scope: scopeKey }, [], null);
+        }
+      });
+      return tile;
     }
 
     function stepList(scope, list, path, depth) {
@@ -969,6 +1097,7 @@
         }),
         () => scope.set(c.steps.remove(scope.get(), step.id)), `Delete step ${def.label}`));
       const body = el('div', 'mtw-pb-step-body');
+      body.appendChild(el('p', 'mtw-pb-step-desc', def.description));
       def.fields.filter(field => field.type !== 'steps' && visible(field, step)).forEach(field => {
         body.appendChild(fieldControl(field, step[field.key], value => {
           const next = c.steps.update(scope.get(), step.id, { [field.key]: value });
@@ -989,8 +1118,7 @@
 
     // Adds a new step or moves one. path: the list ([] = top, [ifId, 'then'], ...).
     function dropStep(item, path, index) {
-      const scope = stepScopes[item.scope];
-      if (!scope) return;
+      const scope = scopeFor(item.scope);
       const root = scope.get();
       if (item.kind === 'newStep') {
         const result = attempt(() => c.steps.add(root, path, item.type, index === null ? undefined : index));
@@ -1016,7 +1144,7 @@
       ghost.hidden = true;
       const under = document.elementFromPoint ? document.elementFromPoint(x, y) : null;
       ghost.hidden = false;
-      if (!under || !inspector.contains(under)) return null;
+      if (!under || !(inspector.contains(under) || logic.contains(under))) return null;
       let container = under.closest(`[data-drop-group="${group}"]`);
       if (!container) {
         // Over a list's "Add a step" box or padding: use the list it belongs to.
@@ -1048,9 +1176,10 @@
       }
       event.preventDefault();
       ghost.style.transform = `translate(${event.clientX + 12}px, ${event.clientY + 12}px)`;
-      const box = inspector.getBoundingClientRect();
-      if (event.clientY < box.top + 40) inspector.scrollTop -= 12;
-      else if (event.clientY > box.bottom - 40) inspector.scrollTop += 12;
+      const scroller = state.logic ? logic.querySelector('.mtw-pb-logic-list') || inspector : inspector;
+      const box = scroller.getBoundingClientRect();
+      if (event.clientY < box.top + 40) scroller.scrollTop -= 12;
+      else if (event.clientY > box.bottom - 40) scroller.scrollTop += 12;
       drag.target = listTarget(event.clientX, event.clientY, drag.info.group);
       if (!drag.target) {
         dropLine.remove();
@@ -1117,6 +1246,7 @@
       renderTop();
       renderCanvas();
       if (!keepInspector) renderInspector();
+      if (!keepInspector) renderLogic();
       if (state.paletteTab === 'data') buildPalette();
     }
 
@@ -1341,6 +1471,7 @@
       const sel = state.selected;
       if (event.key === 'Escape') {
         if (state.drag) cancelDrag();
+        else if (state.logic) closeLogic();
         else if (sel) select(null);
         else editor.close();
         return;
@@ -1470,6 +1601,8 @@
     });
     this.drop = drop;
     this.dropStep = (item, path, index) => dropStep(item, path, index);
+    this.openSteps = scopeKey => openLogic(scopeKey);
+    this.closeSteps = () => closeLogic();
     this.select = select;
     this.save = save;
     this.loaded = null;

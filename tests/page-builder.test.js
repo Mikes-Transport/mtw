@@ -482,7 +482,14 @@ test('builder: data table editor, form shortcut, element names, step drag target
   editor.dropStep({ kind: 'newStep', type: 'if', scope: `block:${saveBtn.id}` }, [], 0);
   const ifStep = c => c.page.sections[0].columns[0].blocks.find(b => b.id === saveBtn.id).props.actions[0];
   assert.equal(ifStep(editor).type, 'if');
-  const leftSelect = inspector.querySelector('.mtw-pb-step-if [data-field="left"] select');
+  // The right panel shows a summary; the steps themselves open in the wide Steps panel.
+  assert.match(inspector.querySelector('.mtw-pb-steps-outline').textContent, /If \/ then \/ else/);
+  inspector.querySelector('.mtw-pb-edit-steps').click();
+  const logic = ui.querySelector('.mtw-pb-logic');
+  assert.equal(logic.hidden, false);
+  assert.match(logic.querySelector('.mtw-pb-logic-trigger').textContent, /When it is clicked/);
+  assert.ok(logic.querySelector('.mtw-pb-step-tile[data-step-type="clear"] span').textContent.includes('form is ready'), 'steps explain themselves');
+  const leftSelect = logic.querySelector('.mtw-pb-step-if [data-field="left"] select');
   assert.ok([...leftSelect.options].some(o => o.value === firstInput.name), 'If can pick any named element');
   leftSelect.value = firstInput.name;
   leftSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
@@ -493,7 +500,9 @@ test('builder: data table editor, form shortcut, element names, step drag target
   const messageId = editor.page.sections[0].columns[0].blocks.find(b => b.id === saveBtn.id).props.actions[2].id;
   editor.dropStep({ kind: 'step', id: messageId, scope: `block:${saveBtn.id}` }, [ifStep(editor).id, 'else'], 0);
   assert.equal(ifStep(editor).else[0].type, 'message');
-  assert.equal(inspector.querySelectorAll('.mtw-pb-step').length, 5, 'if, stop, message, save, clear cards');
+  assert.equal(logic.querySelectorAll('.mtw-pb-step').length, 5, 'if, stop, message, save, clear cards');
+  logic.querySelector('.mtw-pb-logic-done').click();
+  assert.equal(logic.hidden, true);
 
   editor.select({ kind: 'block', id: firstInput.id });
   const nameInput = inspector.querySelector('[data-field="name"] input');
@@ -502,13 +511,22 @@ test('builder: data table editor, form shortcut, element names, step drag target
   assert.equal(ifStep(editor).left, 'customer');
   // Token picker inserts {name}.
   editor.select({ kind: 'block', id: saveBtn.id });
-  const msgInput = inspector.querySelector('.mtw-pb-step-message [data-field="text"] input');
+  editor.openSteps(`block:${saveBtn.id}`);
+  const msgInput = logic.querySelector('.mtw-pb-step-message [data-field="text"] input');
   msgInput.value = 'Hi ';
   msgInput.setSelectionRange(3, 3);
-  const picker = inspector.querySelector('.mtw-pb-step-message .mtw-pb-token');
+  const picker = logic.querySelector('.mtw-pb-step-message .mtw-pb-token');
   picker.value = '{customer}';
   picker.dispatchEvent(new window.Event('change', { bubbles: true }));
   assert.equal(ifStep(editor).else[0].text, 'Hi {customer}');
+  editor.closeSteps();
+
+  // Hidden at start: ticked in the right panel, faded with a tag in the editor.
+  editor.select({ kind: 'block', id: firstInput.id });
+  const hide = inspector.querySelector('.mtw-pb-hidden-start input');
+  hide.click();
+  assert.equal(editor.page.sections[0].columns[0].blocks.find(b => b.id === firstInput.id).hidden, true);
+  assert.ok(ui.querySelector(`.mtw-pb-frame .mtw-pb-item[data-block-id="${firstInput.id}"]`).classList.contains('is-start-hidden'));
 
   // Table block: column and row cards.
   ui.querySelector('.mtw-pb-tab[data-tab="blocks"]').click();
@@ -540,5 +558,26 @@ test('builder: data table editor, form shortcut, element names, step drag target
   assert.equal(db.data['dashboard-tool-pages'].jobs.published.tables[0].fields.length, 3);
   editor.close(true);
   assert.deepEqual(errors.filter(e => !/stylesheet|Could not parse CSS/i.test(e)), []);
+  dom.window.close();
+});
+
+test('hidden at start and middle-aligned sections on a published page', async () => {
+  const page = {
+    sections: [{
+      layout: '1-1', style: { valign: 'center' },
+      columns: [
+        { blocks: [{ type: 'notice', name: 'done_note', hidden: true, props: { text: 'Done!' } }] },
+        { blocks: [{ type: 'button', name: 'go', props: { label: 'Go', actions: [{ type: 'show', target: 'done_note' }] } }] }
+      ]
+    }]
+  };
+  const db = store({ ...TOOLS, 'dashboard-tool-pages': { jobs: { published: page } } });
+  const { dom, window, document } = host({ db });
+  await waitFor(window, () => document.querySelector('.custom-dashboard-tool-jobs-panel [data-name="go"]'));
+  const panel = document.querySelector('.custom-dashboard-tool-jobs-panel');
+  assert.equal(panel.querySelector('[data-name="done_note"]').style.display, 'none');
+  assert.equal(panel.querySelector('.mtw-pb-row').dataset.valign, 'center');
+  panel.querySelector('[data-name="go"] button').click();
+  await waitFor(window, () => panel.querySelector('[data-name="done_note"]').style.display !== 'none');
   dom.window.close();
 });
