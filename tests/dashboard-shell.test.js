@@ -22,7 +22,8 @@ class RepoLoader extends ResourceLoader {
     if (!file.startsWith(REPO_ROOT) || !fs.existsSync(file)) {
       return Promise.reject(new Error('404 ' + url));
     }
-    return Promise.resolve(fs.readFileSync(file));
+    // jsdom aborts in-flight loads when a test page closes.
+    return Object.assign(Promise.resolve(fs.readFileSync(file)), { abort() {} });
   }
 }
 
