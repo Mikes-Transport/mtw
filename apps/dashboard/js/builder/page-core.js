@@ -187,12 +187,12 @@
   // Steps refer to elements by their element name; text can use {element_name}.
   const ACTIONS = Object.freeze({
     save: {
-      label: 'Save inputs to a table', description: 'Adds a record from the inputs saved into that table.',
+      group: 'Data', label: 'Save inputs to a table', description: 'Adds a record from the inputs saved into that table.',
       defaults: { table: '' },
       fields: [{ key: 'table', label: 'Data table', type: 'table' }]
     },
     message: {
-      label: 'Show a message', description: 'A short message at the top of the page.',
+      group: 'Messages', label: 'Show a message', description: 'A short message at the top of the page.',
       defaults: { text: 'Saved.', tone: 'success' },
       fields: [
         { key: 'text', label: 'Message', type: 'text', tokens: true },
@@ -200,17 +200,17 @@
       ]
     },
     confirm: {
-      label: 'Ask to confirm', description: 'Stops here unless they press Yes.',
+      group: 'Messages', label: 'Ask to confirm', description: 'Stops here unless they press Yes.',
       defaults: { text: 'Are you sure?' },
       fields: [{ key: 'text', label: 'Question', type: 'text', tokens: true }]
     },
     clear: {
-      label: 'Clear inputs', description: 'Empties every input on the page.',
+      group: 'Elements', label: 'Clear inputs', description: 'Empties every input on the page, e.g. after saving so the form is ready for the next one.',
       defaults: {},
       fields: []
     },
     setValue: {
-      label: 'Set an input', description: 'Fills an input with a value.',
+      group: 'Elements', label: 'Set an input', description: 'Fills an input with a value.',
       defaults: { target: '', value: '{today}' },
       fields: [
         { key: 'target', label: 'Input', type: 'input' },
@@ -218,7 +218,7 @@
       ]
     },
     setText: {
-      label: 'Set an element\'s text', description: 'Changes a heading, text, tile number, notice or button label.',
+      group: 'Elements', label: 'Set an element\'s text', description: 'Changes a heading, text, tile number, notice or button label.',
       defaults: { target: '', value: '' },
       fields: [
         { key: 'target', label: 'Element', type: 'element' },
@@ -226,17 +226,17 @@
       ]
     },
     show: {
-      label: 'Show an element', description: 'Makes a hidden element visible.',
+      group: 'Elements', label: 'Show an element', description: 'Makes a hidden element visible.',
       defaults: { target: '' },
       fields: [{ key: 'target', label: 'Element', type: 'element' }]
     },
     hide: {
-      label: 'Hide an element', description: 'Hides an element until it is shown again.',
+      group: 'Elements', label: 'Hide an element', description: 'Hides an element until it is shown again.',
       defaults: { target: '' },
       fields: [{ key: 'target', label: 'Element', type: 'element' }]
     },
     if: {
-      label: 'If / then / else', description: 'Runs Then or Else depending on a value.',
+      group: 'Logic', label: 'If / then / else', description: 'Runs Then or Else depending on a value.',
       defaults: { left: '', op: 'equals', right: '', then: [], else: [] },
       fields: [
         { key: 'left', label: 'If', type: 'element' },
@@ -247,17 +247,17 @@
       ]
     },
     stop: {
-      label: 'Stop', description: 'Stops running the remaining steps.',
+      group: 'Logic', label: 'Stop', description: 'Stops running the remaining steps.',
       defaults: {},
       fields: []
     },
     openTool: {
-      label: 'Open a dashboard tool', description: 'Switches to another tool.',
+      group: 'Go to', label: 'Open a dashboard tool', description: 'Switches to another tool.',
       defaults: { tool: '' },
       fields: [{ key: 'tool', label: 'Tool', type: 'tool' }]
     },
     openUrl: {
-      label: 'Open a web address', description: 'Goes to a page or opens it in a new tab.',
+      group: 'Go to', label: 'Open a web address', description: 'Goes to a page or opens it in a new tab.',
       defaults: { url: '', newTab: 'yes' },
       fields: [
         { key: 'url', label: 'Web address', type: 'url' },
@@ -893,13 +893,15 @@
               : typeof legacyName === 'string' && KEY_RE.test(legacyName) ? legacyName : '';
             if (!name || names.has(name)) name = freeName(page, rawBlock.type, names);
             names.add(name);
-            blocks.push({
+            const block = {
               id: uniqueId(rawBlock.id, 'b'),
               type: rawBlock.type,
               name,
               props: sanitizeProps(rawBlock.type, rawBlock.props),
               style: sanitizeStyle(rawBlock.style)
-            });
+            };
+            if (rawBlock.hidden === true) block.hidden = true;
+            blocks.push(block);
           });
           return { id: uniqueId(rawColumn.id, 'c'), blocks };
         })
@@ -1021,6 +1023,10 @@
     const block = found.block;
     if (changes.props) block.props = sanitizeProps(block.type, { ...block.props, ...changes.props });
     if (changes.style) block.style = sanitizeStyle({ ...block.style, ...changes.style });
+    if (changes.hidden !== undefined) {
+      if (changes.hidden === true) block.hidden = true;
+      else delete block.hidden;
+    }
     return next;
   }
 

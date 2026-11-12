@@ -336,6 +336,7 @@
     node.dataset.blockId = block.id;
     if (block.name) node.dataset.name = block.name;
     if (!options.editing && rt && block.name && rt.isHidden(block.name)) node.style.display = 'none';
+    if (options.editing && block.hidden) node.classList.add('is-start-hidden');
     applyStyle(node, block.style);
     return node;
   }
@@ -348,7 +349,10 @@
     const row = el(doc, 'div', 'mtw-pb-row');
     row.style.gridTemplateColumns = core().LAYOUTS[section.layout].map(part => `minmax(0, ${part}fr)`).join(' ');
     if (section.style.gap !== undefined) row.style.gap = `${section.style.gap}px`;
-    if (section.style.valign) row.style.alignItems = section.style.valign;
+    if (section.style.valign) {
+      row.style.alignItems = section.style.valign;
+      row.dataset.valign = section.style.valign;
+    }
     section.columns.forEach(column => {
       const col = el(doc, 'div', 'mtw-pb-col');
       col.dataset.columnId = column.id;
@@ -363,6 +367,7 @@
         const item = el(doc, 'div', 'mtw-pb-item');
         item.dataset.blockId = block.id;
         item.dataset.blockType = block.type;
+        if (block.hidden) item.classList.add('is-start-hidden');
         delete node.dataset.blockId;
         item.appendChild(node);
         col.appendChild(item);
