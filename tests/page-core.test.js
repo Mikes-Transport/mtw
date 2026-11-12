@@ -48,10 +48,11 @@ test('duplicate, update and remove blocks', () => {
   ({ page, id: copy } = core.duplicateBlock(page, id));
   assert.notEqual(copy, id);
   assert.equal(page.sections[0].columns[0].blocks.length, 2);
-  page = core.updateBlock(page, copy, { props: { label: 'Go', url: 'javascript:alert(1)' }, style: { color: 'red; x', align: 'center' } });
+  page = core.updateBlock(page, copy, { props: { label: 'Go', actions: [{ type: 'openUrl', url: 'javascript:alert(1)' }] }, style: { color: 'red; x', align: 'center' } });
   const block = core.findBlock(page, copy).block;
   assert.equal(block.props.label, 'Go');
-  assert.equal(block.props.url, '', 'unsafe URL dropped');
+  assert.equal(block.props.actions[0].url, '', 'unsafe URL dropped');
+  assert.notEqual(block.name, core.findBlock(page, id).block.name, 'copies get their own element name');
   assert.deepEqual(block.style, { align: 'center' }, 'bad colour dropped');
   page = core.removeBlock(page, id);
   assert.equal(page.sections[0].columns[0].blocks.length, 1);
@@ -99,7 +100,7 @@ test('sanitizePage drops unknown blocks, bad values and duplicate ids', () => {
             { id: 'b-one', type: 'image', props: { src: 'data:image/png;base64,xx', height: '50' } },
             { id: 'b-two', type: 'script', props: {} },
             { id: 'b-three', type: 'embed', props: { url: 'http://example.com' } },
-            { id: 'b-four', type: 'button', props: { action: 'tool', tool: 'barcodes', url: '/products' } }
+            { id: 'b-four', type: 'button', props: { action: 'link', url: '/products', newTab: 'yes' } }
           ]
         }, { id: 'c-extra', blocks: [{ type: 'text' }] }]
       },
@@ -119,8 +120,8 @@ test('sanitizePage drops unknown blocks, bad values and duplicate ids', () => {
   assert.equal(blocks[1].props.src, '');
   assert.equal(blocks[1].props.height, 50);
   assert.equal(blocks[2].props.url, '', 'embeds need https');
-  assert.equal(blocks[3].props.tool, 'barcodes');
-  assert.equal(blocks[3].props.url, '/products');
+  assert.deepEqual(blocks[3].props.actions.map(step => [step.type, step.url, step.newTab]), [['openUrl', '/products', 'yes']], 'old buttons become steps');
+  assert.deepEqual(blocks.map(block => block.name), ['heading_1', 'image_1', 'embed_1', 'button_1']);
   assert.equal(core.sanitizePage(null).sections.length, 0);
 });
 
@@ -145,4 +146,93 @@ test('table and list helpers', () => {
   assert.equal(core.safeUrl('//evil.com'), '');
   assert.equal(core.safeUrl('/admin'), '/admin');
   assert.equal(core.safeUrl('https://mtw.co.nz/x?y=1'), 'https://mtw.co.nz/x?y=1');
+});
+
+test('tables: structured columns and rows; older pipe text converts', () => {
+  let { page, id } = core.insertBlock(core.createPage(), 'table');
+  let props = core.findBlock(page, id).block.props;
+  assert.deepEqual(props.columns.map(col => col.label), ['Name', 'Role', 'Phone']);
+  props = core.grid.addColumn(props, 'Email');
+  const email = props.columns[3].id;
+  props = core.grid.addRow(props);
+  const row = props.rows[1].id;
+  props = core.grid.setCell(props, row, email, 'jo@mtw.co.nz');
+  props = core.grid.setHeading(props, email, 'E-mail');
+  props = core.grid.moveColumn(props, email, 0);
+  props = core.grid.moveRow(props, row, 0);
+  page = core.updateBlock(page, id, { props });
+  let saved = core.findBlock(core.sanitizePage(page), id).block.props;
+  assert.deepEqual(saved.columns.map(col => col.label), ['E-mail', 'Name', 'Role', 'Phone']);
+  assert.equal(saved.rows[0].cells[email], 'jo@mtw.co.nz');
+  assert.equal(saved.rows[1].cells[email], '', 'every row gets the new column');
+  props = core.grid.removeColumn(saved, email);
+  assert.equal(props.rows[0].cells[email], undefined);
+  assert.equal(core.grid.removeRow(props, row).rows.length, 1);
+
+  const legacy = core.sanitizePage({ sections: [{ columns: [{ blocks: [{ type: 'table', props: { rows: 'Name | Role\nSam | Stores\nJo | Counter', header: 'yes' } }] }] }] });
+  const t = legacy.sections[0].columns[0].blocks[0].props;
+  assert.deepEqual(t.columns.map(col => col.label), ['Name', 'Role']);
+  assert.deepEqual(t.rows.map(r => t.columns.map(col => r.cells[col.id])), [['Sam', 'Stores'], ['Jo', 'Counter']]);
+});
+
+test('data tables and fields keep stable keys', () => {
+  let { page, id } = core.addTable(core.createPage(), 'Vehicle checks');
+  let key;
+  ({ page, key } = core.addField(page, id, 'Rego number', 'text'));
+  assert.equal(key, 'rego_number');
+  ({ page, key: key } = core.addField(page, id, 'Rego number', 'number'));
+  assert.equal(key, 'rego_number_2');
+  page = core.updateField(page, id, 'rego_number', { label: 'Rego', required: true, type: 'choice', options: 'A\nB' });
+  const field = core.findTable(page, id).fields.find(f => f.key === 'rego_number');
+  assert.deepEqual({ ...field }, { key: 'rego_number', label: 'Rego', type: 'choice', required: true, options: 'A\nB' });
+  page = core.moveField(page, id, 'rego_number', 0);
+  assert.equal(core.findTable(page, id).fields[0].key, 'rego_number');
+  page = core.removeField(page, id, 'rego_number_2');
+  assert.equal(core.sanitizePage(page).tables[0].fields.length, 3);
+  assert.equal(core.dataCollection('jobs', id), `dashboard-data-jobs-${id}`);
+  assert.equal(core.removeTable(page, id).tables.length, 0);
+});
+
+test('element names: automatic, unique, renameable', () => {
+  let page = core.createPage();
+  let a;
+  let b;
+  ({ page, id: a } = core.insertBlock(page, 'input'));
+  ({ page, id: b } = core.insertBlock(page, 'input', page.sections[0].columns[0].id));
+  assert.deepEqual(core.pageElements(page).map(e => e.name), ['input_1', 'input_2']);
+  let r = core.renameBlock(page, a, 'order_number');
+  assert.equal(r.error, null);
+  page = r.page;
+  assert.match(core.renameBlock(page, b, 'order_number').error, /already called/);
+  assert.match(core.renameBlock(page, b, '9 bad name').error, /letter/);
+  const dup = core.sanitizePage({ sections: [{ columns: [{ blocks: [{ type: 'text', name: 'x' }, { type: 'text', name: 'x' }] }] }] });
+  assert.deepEqual(dup.sections[0].columns[0].blocks.map(block => block.name), ['x', 'text_1']);
+});
+
+test('step lists: add, nest in If branches, move between lists, update, remove', () => {
+  let list = [];
+  let r = core.steps.add(list, [], 'if');
+  list = r.list;
+  const ifId = r.id;
+  list = core.steps.update(list, ifId, { left: 'status', op: 'equals', right: 'Urgent' });
+  r = core.steps.add(list, [ifId, 'then'], 'message');
+  list = r.list;
+  const msg = r.id;
+  r = core.steps.add(list, [], 'clear');
+  list = r.list;
+  const clear = r.id;
+  list = core.steps.move(list, clear, [ifId, 'else'], 0);
+  assert.deepEqual(list.map(s => s.type), ['if']);
+  assert.deepEqual(list[0].else.map(s => s.type), ['clear']);
+  assert.strictEqual(core.steps.move(list, ifId, [ifId, 'then'], 0), list, 'an If cannot go inside itself');
+  list = core.steps.update(list, msg, { text: 'Rush {order_number}' });
+  assert.equal(core.steps.find(list, msg).step.text, 'Rush {order_number}');
+  list = core.steps.move(list, msg, [], 1);
+  assert.deepEqual(list.map(s => s.type), ['if', 'message']);
+  list = core.steps.remove(list, clear);
+  assert.equal(core.steps.count(list), 2);
+  assert.deepEqual(core.sanitizeActions(list), list);
+  // Unknown types and bad targets are dropped/cleared.
+  const clean = core.sanitizeActions([{ type: 'eval', code: 'x' }, { type: 'show', target: 'Bad Name!' }]);
+  assert.deepEqual(clean.map(s => [s.type, s.target]), [['show', '']]);
 });
