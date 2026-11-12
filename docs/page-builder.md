@@ -38,7 +38,16 @@ renameable. Steps choose elements from a list by name, and any step text can sho
 value with `{order_number}` (the **Insert value** picker adds it). Also `{user}`,
 `{today}`, `{now}`. Renaming an element updates the steps that use it.
 
+## Hidden at start
+
+Tick **Hidden at start** under an element's name to hide it when the page opens (it
+shows faded with a tag in the builder). A **Show an element** step reveals it.
+
 ## When -> Do steps
+
+The right panel shows a short outline of an element's steps; **Edit steps** opens the
+full-width Steps panel (step types on the left, grouped, each with a one-line
+description; the list on the right). **Done** or Esc goes back to the page.
 
 - **When**: a button is clicked, an input changes, or the page opens (select nothing on
   the page to edit that list).
