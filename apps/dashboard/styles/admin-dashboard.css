@@ -1538,3 +1538,18 @@ body:has(.db-main-wrapper) {
   width: 20px;
   color: #646464;
 }
+
+/* Manager Tools: delete a custom navigation item */
+.developer-tool-delete { color: #b92b27 !important; border-color: #e3b9b7 !important; }
+.developer-tool-delete:hover { background: #fdeeee !important; }
+.developer-tool-delete-confirm {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid #f3c4c2;
+  border-radius: 10px;
+  background: #fdf3f2;
+  color: #7d1d19;
+}
+.developer-tool-delete-confirm p { margin: 4px 0 10px; }
+.developer-tool-delete-records { display: flex; gap: 6px; align-items: flex-start; font-size: 13px; }
+.developer-tool-delete-yes { background: #b92b27 !important; border-color: #b92b27 !important; color: #fff !important; }

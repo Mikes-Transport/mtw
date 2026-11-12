@@ -114,6 +114,12 @@
       });
       buttons.appendChild(disableButton);
     }
+    if (!isNew && settings.custom === true) {
+      const deleteButton = node('button', 'developer-tool-delete', 'Delete item');
+      deleteButton.type = 'button';
+      deleteButton.addEventListener('click', () => showDeleteConfirm(panel, form, id, nameInput.value.trim() || settings.name || id));
+      buttons.appendChild(deleteButton);
+    }
     form.appendChild(buttons);
 
     form.addEventListener('submit', async event => {
@@ -163,6 +169,104 @@
     });
 
     panel.appendChild(form);
+  }
+
+  // ---------- deleting a custom navigation item ----------
+  const PAGES = 'dashboard-tool-pages';
+
+  // The data tables a custom item's page uses (draft and published), with record counts.
+  async function savedRecords(api, id) {
+    const tables = {};
+    try {
+      const snap = await api.getDoc(api.doc(api.db, PAGES, id));
+      const data = snap && snap.exists() ? snap.data() : {};
+      [data.draft, data.published].forEach(page => {
+        (page && Array.isArray(page.tables) ? page.tables : []).forEach(table => {
+          if (table && typeof table.id === 'string' && /^[a-z]{1,3}-[a-z0-9]{1,36}$/.test(table.id)) tables[table.id] = table.name || table.id;
+        });
+      });
+    } catch (error) {
+      return { tables: [], total: 0, error };
+    }
+    const list = [];
+    let total = 0;
+    for (const [tableId, name] of Object.entries(tables)) {
+      const collection = `dashboard-data-${id}-${tableId}`;
+      const ids = [];
+      try {
+        const snap = await api.getDocs(api.collection(api.db, collection));
+        snap.forEach(item => ids.push(item.id));
+      } catch (error) {
+        /* unreadable: treated as empty */
+      }
+      total += ids.length;
+      list.push({ tableId, name, collection, ids });
+    }
+    return { tables: list, total };
+  }
+
+  function showDeleteConfirm(panel, form, id, name) {
+    const api = window.MTW || {};
+    form.querySelectorAll('.developer-tool-delete-confirm').forEach(box => box.remove());
+    const box = node('div', 'developer-tool-delete-confirm');
+    box.setAttribute('role', 'alertdialog');
+    box.appendChild(node('strong', '', `Delete "${name}"?`));
+    box.appendChild(node('p', '', 'It is removed from the navigation for everyone and its page is deleted. This can\'t be undone.'));
+    const recordsLabel = node('label', 'developer-tool-delete-records');
+    const recordsCheck = node('input');
+    recordsCheck.type = 'checkbox';
+    recordsCheck.disabled = true;
+    const recordsText = node('span', '', ' Checking for saved records...');
+    recordsLabel.append(recordsCheck, recordsText);
+    box.appendChild(recordsLabel);
+    const actions = node('div', 'developer-tool-actions');
+    const confirm = node('button', 'developer-tool-delete-yes', 'Delete');
+    confirm.type = 'button';
+    const cancel = node('button', 'developer-tool-delete-cancel', 'Cancel');
+    cancel.type = 'button';
+    actions.append(confirm, cancel);
+    box.appendChild(actions);
+    form.appendChild(box);
+    cancel.addEventListener('click', () => box.remove());
+
+    let found = { tables: [], total: 0 };
+    const ready = savedRecords(api, id).then(result => {
+      found = result;
+      if (!result.total) {
+        recordsText.textContent = ' No saved records.';
+      } else {
+        recordsCheck.disabled = false;
+        recordsText.textContent = ` Also delete its saved records (${result.total} in ${result.tables.filter(t => t.ids.length).length} table${result.tables.filter(t => t.ids.length).length === 1 ? '' : 's'}). Leave unticked to keep them in Firebase.`;
+      }
+    });
+
+    confirm.addEventListener('click', async () => {
+      confirm.disabled = true;
+      cancel.disabled = true;
+      try {
+        await ready;
+        if (!api.db || typeof api.deleteDoc !== 'function' || typeof api.doc !== 'function') {
+          throw new Error('Dashboard database is unavailable.');
+        }
+        if (recordsCheck.checked) {
+          for (const table of found.tables) {
+            for (const recordId of table.ids) await api.deleteDoc(api.doc(api.db, table.collection, recordId));
+          }
+        }
+        await api.deleteDoc(api.doc(api.db, PAGES, id));
+        await api.deleteDoc(api.doc(api.db, 'dashboard-tools', id));
+        const updated = { ...getCurrentSettings() };
+        delete updated[id];
+        if (typeof window.MTW_APPLY_TOOL_SETTINGS === 'function') window.MTW_APPLY_TOOL_SETTINGS(updated);
+        render(panel);
+        showStatus(panel, `Deleted "${name}"${recordsCheck.checked && found.total ? ` and ${found.total} saved records` : ''}.`, false);
+      } catch (error) {
+        console.error('[dashboard] could not delete navigation item:', error);
+        confirm.disabled = false;
+        cancel.disabled = false;
+        showStatus(panel, `Could not delete: ${error.message || 'unknown error'}`, true);
+      }
+    });
   }
 
   function render(panel) {

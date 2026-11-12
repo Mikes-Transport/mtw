@@ -30,7 +30,7 @@
   };
 
   // Bump on each release so the live page can be checked for the version it runs.
-  const NAVIGATION_BUILD = '2026-11-13.32';
+  const NAVIGATION_BUILD = '2026-11-13.33';
 
   const TOOLS = {
     'activity-logs': { panel: '.activity-logs-panel', name: 'Activity Logs', roles: ['Managers'] },
@@ -579,6 +579,22 @@
         updateCardName(card, tool.name);
         setCardVisible(card, tool.enabled !== false && canShowTool(id, tool));
       }
+    });
+
+    // Custom items that were deleted: remove their card, panel and live page.
+    Object.entries(TOOLS).forEach(([id, tool]) => {
+      if (!tool.custom || (toolSettings[id] && toolSettings[id].custom === true)) return;
+      if (pageMounts[id]) {
+        pageMounts[id]();
+        delete pageMounts[id];
+      }
+      const card = $(`.db-list-toolcard[data-select="${id}"]`);
+      const panel = $(`.custom-dashboard-tool-${id}-panel`);
+      const wasOpen = panel && panel.style.display !== 'none' && panel.style.display !== '';
+      if (card) card.remove();
+      if (panel) panel.remove();
+      delete TOOLS[id];
+      if (wasOpen && typeof window.openDBTool === 'function') window.openDBTool('developer-tools');
     });
 
     Object.entries(toolSettings).forEach(([id, settings]) => {

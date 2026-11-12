@@ -1230,3 +1230,41 @@ test('image fields: web address input, checked on save, shown on cards', async (
   assert.equal(panel.querySelector('.mtw-pb-record-card img').getAttribute('src'), 'https://example.com/tyre.jpg');
   dom.window.close();
 });
+
+test('Manager Tools: delete a custom item (asks first; records kept unless ticked); built-ins cannot be deleted', async () => {
+  for (const alsoRecords of [false, true]) {
+    const db = store({
+      ...TOOLS,
+      'dashboard-tool-pages': { jobs: { draft: JOBS_PAGE, published: JOBS_PAGE } },
+      'dashboard-data-jobs-t-jobs': { a: { order_number: '1' }, b: { order_number: '2' } }
+    });
+    const { dom, window, document } = host({ db });
+    await waitFor(window, () => document.querySelector('.db-list-toolcard[data-select="jobs"]') &&
+      document.querySelector('.developer-tools-panel .developer-tool-row'));
+    document.querySelector('.db-list-toolcard[data-select="developer-tools"]').click();
+    const rows = () => [...document.querySelectorAll('.developer-tools-panel .developer-tool-row')];
+    rows().find(row => !row.textContent.startsWith('Jobs')).click();
+    assert.equal(document.querySelector('.developer-tool-delete'), null, 'no delete for built-in tools');
+    document.querySelector('#exit-btn').click();
+    rows().find(row => row.textContent.startsWith('Jobs')).click();
+    document.querySelector('.developer-tool-delete').click();
+    const box = document.querySelector('.developer-tool-delete-confirm');
+    assert.match(box.textContent, /Delete "Jobs"\?/);
+    await waitFor(window, () => /2 in 1 table/.test(box.textContent));
+    // Cancel does nothing.
+    box.querySelector('.developer-tool-delete-cancel').click();
+    assert.ok(db.data['dashboard-tools'].jobs);
+    document.querySelector('.developer-tool-delete').click();
+    const again = document.querySelector('.developer-tool-delete-confirm');
+    await waitFor(window, () => !again.querySelector('input[type="checkbox"]').disabled);
+    if (alsoRecords) again.querySelector('input[type="checkbox"]').click();
+    again.querySelector('.developer-tool-delete-yes').click();
+    await waitFor(window, () => !db.data['dashboard-tools'].jobs);
+    assert.equal(db.data['dashboard-tool-pages'].jobs, undefined, 'page deleted');
+    assert.equal(Object.keys(db.data['dashboard-data-jobs-t-jobs']).length, alsoRecords ? 0 : 2);
+    await waitFor(window, () => !document.querySelector('.db-list-toolcard[data-select="jobs"]'));
+    assert.equal(document.querySelector('.custom-dashboard-tool-jobs-panel'), null);
+    assert.match(document.querySelector('.developer-tools-status').textContent, /Deleted "Jobs"/);
+    dom.window.close();
+  }
+});
