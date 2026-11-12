@@ -24,12 +24,13 @@
   const PAGE_BUILDER_CSS_URL = new URL('styles/page-builder.css', BASE_URL).href;
   const PAGE_SCRIPTS = {
     core: new URL('js/builder/page-core.js', BASE_URL).href,
+    runtime: new URL('js/builder/page-runtime.js', BASE_URL).href,
     render: new URL('js/builder/page-render.js', BASE_URL).href,
     builder: new URL('js/builder/page-builder.js', BASE_URL).href
   };
 
   // Bump on each release so the live page can be checked for the version it runs.
-  const NAVIGATION_BUILD = '2026-11-13.25';
+  const NAVIGATION_BUILD = '2026-11-13.26';
 
   const TOOLS = {
     'activity-logs': { panel: '.activity-logs-panel', name: 'Activity Logs', roles: ['Managers'] },
@@ -492,7 +493,7 @@
   }
 
   function loadPageRenderer() {
-    if (window.MTW_PAGE_RENDER && window.MTW_PAGE_CORE) return Promise.resolve();
+    if (window.MTW_PAGE_RENDER && window.MTW_PAGE_CORE && window.MTW_PAGE_RUNTIME) return Promise.resolve();
     if (!document.querySelector('link[data-mtw-page-builder-css]')) {
       const link = document.createElement('link');
       link.rel = 'stylesheet';
@@ -502,6 +503,7 @@
     }
     return Promise.all([
       window.MTW_PAGE_CORE ? null : loadScript(PAGE_SCRIPTS.core, 'mtwPageCore'),
+      window.MTW_PAGE_RUNTIME ? null : loadScript(PAGE_SCRIPTS.runtime, 'mtwPageRuntime'),
       window.MTW_PAGE_RENDER ? null : loadScript(PAGE_SCRIPTS.render, 'mtwPageRender')
     ]);
   }

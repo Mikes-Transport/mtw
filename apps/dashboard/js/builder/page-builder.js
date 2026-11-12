@@ -92,7 +92,11 @@
     up: 'M12 19V5M6 11l6-6 6 6',
     down: 'M12 5v14M6 13l6 6 6-6',
     duplicate: 'M9 9h11v11H9zM5 15H4V4h11v1',
-    delete: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3'
+    delete: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
+    input: 'M3 7h18v10H3zM7 11v2',
+    records: 'M4 5h16M4 10h16M4 15h16M4 20h10',
+    database: 'M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
+    plus: 'M12 5v14M5 12h14'
   };
 
   function icon(name) {
@@ -156,6 +160,10 @@
       stored: {},
       lastEdit: null,
       drag: null,
+      listDrag: null,
+      paletteTab: 'blocks',
+      inspectorKey: '',
+      shared: root.MTW_PAGE_RUNTIME ? root.MTW_PAGE_RUNTIME.createShared() : null,
       confirmClose: false
     };
     const history = c.createHistory(c.createPage());
@@ -210,6 +218,22 @@
     // ---------- palette ----------
     function buildPalette() {
       palette.replaceChildren();
+      const tabs = el('div', 'mtw-pb-tabs', null, { role: 'tablist' });
+      [['blocks', 'Blocks'], ['data', 'Data']].forEach(([id, label]) => {
+        const tab = button('mtw-pb-tab', label, null, () => {
+          state.paletteTab = id;
+          buildPalette();
+        });
+        tab.dataset.tab = id;
+        tab.setAttribute('role', 'tab');
+        tab.setAttribute('aria-selected', String(state.paletteTab === id));
+        tabs.appendChild(tab);
+      });
+      palette.appendChild(tabs);
+      if (state.paletteTab === 'data') {
+        buildDataTab();
+        return;
+      }
       palette.appendChild(el('p', 'mtw-pb-palette-hint', 'Drag onto the page, or click to add.'));
       palette.appendChild(el('h4', 'mtw-pb-group', 'Sections'));
       const layouts = el('div', 'mtw-pb-tiles');
@@ -258,6 +282,29 @@
         });
         palette.appendChild(tiles);
       });
+    }
+
+    function buildDataTab() {
+      palette.appendChild(el('p', 'mtw-pb-palette-hint', 'Data tables keep what people enter. Point inputs at a table\'s fields, then give a button a "Save inputs to a table" step.'));
+      const list = el('div', 'mtw-pb-table-list');
+      (history.page.tables || []).forEach(table => {
+        const item = button('mtw-pb-table-item', null, `Edit ${table.name}`, () => select({ kind: 'table', id: table.id }));
+        item.dataset.tableId = table.id;
+        const glyph = el('span', 'mtw-pb-tile-icon');
+        glyph.appendChild(icon('database'));
+        const text = el('span');
+        text.append(el('strong', '', table.name), el('span', '', `${table.fields.length} field${table.fields.length === 1 ? '' : 's'}`));
+        item.append(glyph, text);
+        if (state.selected && state.selected.kind === 'table' && state.selected.id === table.id) item.classList.add('is-selected');
+        list.appendChild(item);
+      });
+      if (!(history.page.tables || []).length) list.appendChild(el('p', 'mtw-pb-muted', 'No data tables yet.'));
+      palette.appendChild(list);
+      const add = button('mtw-pb-btn mtw-pb-btn-light mtw-pb-add-table', '+ New data table', 'Add a data table', () => {
+        const result = attempt(() => c.addTable(history.page, `Table ${(history.page.tables || []).length + 1}`));
+        if (result) commit(result.page, { kind: 'table', id: result.id });
+      });
+      palette.appendChild(add);
     }
 
     // ---------- editing helpers ----------
@@ -355,7 +402,8 @@
     function dropStaleSelection() {
       const sel = state.selected;
       if (!sel) return;
-      const exists = sel.kind === 'block' ? c.findBlock(history.page, sel.id) : c.findSection(history.page, sel.id);
+      const exists = sel.kind === 'block' ? c.findBlock(history.page, sel.id)
+        : sel.kind === 'table' ? c.findTable(history.page, sel.id) : c.findSection(history.page, sel.id);
       if (!exists) state.selected = null;
     }
 
@@ -387,7 +435,9 @@
       frame.dataset.device = state.device;
       devices.querySelectorAll('[data-device]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.device === state.device)));
       const page = history.page;
-      const node = renderer().render(page, { editing: !state.preview });
+      const node = renderer().render(page, {
+        editing: !state.preview, toolId, user, isManager: true, shared: state.shared
+      });
       frame.replaceChildren(node);
       if (state.preview) return;
 
@@ -449,28 +499,114 @@
     }
 
     // ---------- inspector ----------
-    function fieldControl(field, value, onChange) {
+    function tokenPicker(input) {
+      const picker = el('select', 'mtw-pb-token', null, { 'aria-label': 'Insert a value', title: 'Insert a value' });
+      const first = el('option', '', 'Insert value');
+      first.value = '';
+      picker.appendChild(first);
+      const group = (label, items) => {
+        if (!items.length) return;
+        const g = el('optgroup');
+        g.label = label;
+        items.forEach(([value, text]) => {
+          const option = el('option', '', text);
+          option.value = value;
+          g.appendChild(option);
+        });
+        picker.appendChild(g);
+      };
+      group('Page elements', c.pageElements(history.page).map(item => [`{${item.name}}`, `${item.name} (${item.label})`]));
+      group('Other', [['{user}', 'Signed-in role'], ['{today}', 'Today\'s date'], ['{now}', 'Time now']]);
+      picker.addEventListener('change', () => {
+        if (!picker.value) return;
+        const text = picker.value;
+        const start = typeof input.selectionStart === 'number' ? input.selectionStart : input.value.length;
+        const end = typeof input.selectionEnd === 'number' ? input.selectionEnd : input.value.length;
+        input.value = input.value.slice(0, start) + text + input.value.slice(end);
+        picker.value = '';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.focus();
+      });
+      return picker;
+    }
+
+    function selectOf(id, options, value) {
+      const input = el('select', '', null, { id });
+      options.forEach(entry => {
+        if (entry.group) {
+          const g = el('optgroup');
+          g.label = entry.group;
+          entry.options.forEach(([v, label]) => {
+            const option = el('option', '', label);
+            option.value = v;
+            g.appendChild(option);
+          });
+          input.appendChild(g);
+          return;
+        }
+        const option = el('option', '', entry[1]);
+        option.value = entry[0];
+        input.appendChild(option);
+      });
+      input.value = value === undefined || value === null ? '' : String(value);
+      return input;
+    }
+
+    function fieldControl(field, value, onChange, ctx) {
+      const context = ctx || {};
       const id = `mtw-pb-f-${field.key}-${Math.random().toString(36).slice(2, 7)}`;
       const wrap = el('div', 'mtw-pb-field');
       wrap.dataset.field = field.key;
       wrap.appendChild(el('label', '', field.label, { for: id }));
       let input;
+      const page = history.page;
       if (field.type === 'textarea') {
         input = el('textarea', '', null, { id, rows: '4' });
         input.value = value || '';
-      } else if (field.type === 'select' || field.type === 'tool') {
-        input = el('select', '', null, { id });
-        const options = field.type === 'tool'
-          ? [['', 'Choose a tool']].concat(Object.entries(root.MTW_TOOL_REGISTRY || {})
-            .filter(([toolKey]) => toolKey !== toolId)
-            .map(([toolKey, tool]) => [toolKey, tool.name || toolKey]))
-          : field.options;
-        options.forEach(([optionValue, label]) => {
-          const option = el('option', '', label);
-          option.value = optionValue;
-          input.appendChild(option);
-        });
-        input.value = value === undefined || value === null ? '' : String(value);
+      } else if (field.type === 'select') {
+        input = selectOf(id, field.options, value);
+      } else if (field.type === 'tool') {
+        input = selectOf(id, [['', 'Choose a tool']].concat(Object.entries(root.MTW_TOOL_REGISTRY || {})
+          .filter(([toolKey]) => toolKey !== toolId)
+          .map(([toolKey, tool]) => [toolKey, tool.name || toolKey])), value);
+      } else if (field.type === 'table') {
+        input = selectOf(id, [['', (page.tables || []).length ? 'Choose a data table' : 'No data tables yet (see the Data tab)']]
+          .concat((page.tables || []).map(table => [table.id, table.name])), value);
+      } else if (field.type === 'bind') {
+        input = selectOf(id, [['', 'Not saved (only used by steps)']].concat((page.tables || []).map(table => ({
+          group: table.name,
+          options: table.fields.map(f => [`${table.id}.${f.key}`, `${table.name}: ${f.label}`])
+        }))), value);
+      } else if (field.type === 'field') {
+        const table = c.findTable(page, context.tableId);
+        input = selectOf(id, [['', 'Any record (count all)']].concat(table ? table.fields.map(f => [f.key, f.label]) : []), value);
+      } else if (field.type === 'element' || field.type === 'input') {
+        const items = c.pageElements(page).filter(item => field.type === 'element' || item.type === 'input');
+        input = selectOf(id, [['', items.length ? 'Choose an element' : 'Nothing on the page yet']]
+          .concat(items.map(item => [item.name, `${item.name} (${item.label})`])), value);
+      } else if (field.type === 'fieldpick') {
+        const table = c.findTable(page, context.tableId);
+        const box = el('div', 'mtw-pb-checks', null, { id });
+        if (!table) box.appendChild(el('p', 'mtw-pb-muted', 'Pick a data table first.'));
+        else {
+          const chosen = Array.isArray(value) ? value.slice() : [];
+          table.fields.forEach(f => {
+            const label = el('label', 'mtw-pb-check');
+            const check = el('input', '', null, { type: 'checkbox' });
+            check.checked = chosen.includes(f.key);
+            check.addEventListener('change', () => {
+              const next = table.fields.map(item => item.key).filter(key =>
+                (key === f.key ? check.checked : chosen.includes(key)));
+              chosen.length = 0;
+              chosen.push(...next);
+              onChange(next);
+            });
+            label.append(check, document.createTextNode(` ${f.label}`));
+            box.appendChild(label);
+          });
+        }
+        wrap.appendChild(box);
+        return wrap;
       } else if (field.type === 'color') {
         input = el('div', 'mtw-pb-color');
         const swatch = el('input', '', null, { type: 'color', 'aria-label': `${field.label} picker` });
@@ -509,77 +645,447 @@
         if (field.type === 'url') input.placeholder = 'https://';
         input.value = value === undefined || value === null ? '' : String(value);
       }
+      const isSelect = input.tagName === 'SELECT';
       const read = () => (field.type === 'number' ? (input.value === '' ? undefined : Number(input.value)) : input.value);
-      input.addEventListener(field.type === 'select' || field.type === 'tool' ? 'change' : 'input', () => onChange(read()));
-      wrap.appendChild(input);
+      input.addEventListener(isSelect ? 'change' : 'input', () => onChange(read()));
+      if (field.tokens && !isSelect) {
+        const row = el('div', 'mtw-pb-token-row');
+        row.append(input, tokenPicker(input));
+        wrap.appendChild(row);
+      } else {
+        wrap.appendChild(input);
+      }
       return wrap;
     }
 
     function visible(field, props) {
-      return !field.when || Object.entries(field.when).every(([key, value]) => props[key] === value);
+      return !field.when || Object.entries(field.when).every(([key, value]) =>
+        (Array.isArray(value) ? value.includes(props[key]) : props[key] === value));
+    }
+
+    // Field types whose change can show or hide other fields, or change pickers.
+    const RESHAPES = ['select', 'table', 'bind'];
+
+    function sectionTitle(text) {
+      return el('h4', 'mtw-pb-group', text);
     }
 
     function renderInspector() {
+      const key = state.selected ? `${state.selected.kind}:${state.selected.id}` : state.preview ? 'preview' : 'page';
+      const scroll = key === state.inspectorKey ? inspector.scrollTop : 0;
+      state.inspectorKey = key;
       inspector.replaceChildren();
       const sel = state.selected;
       const page = history.page;
       if (state.preview) {
-        inspector.append(el('h3', '', 'Preview'), el('p', 'mtw-pb-muted', 'This is how the page looks to people using the tool. Press Edit to keep editing.'));
+        inspector.append(el('h3', '', 'Preview'), el('p', 'mtw-pb-muted', 'This is how the page looks to people using the tool. Inputs and buttons work here but nothing is saved. Press Edit to keep editing.'));
         return;
       }
-      if (!sel) {
-        inspector.append(
-          el('h3', '', 'Page'),
-          el('p', 'mtw-pb-muted', 'Click a block or a section on the page to change it.'),
-          el('p', 'mtw-pb-muted', 'Blocks use the dashboard\'s global CSS. Add your own class names under Look to use other global styles.'),
-          el('p', 'mtw-pb-muted', 'Shortcuts: Ctrl+Z undo, Ctrl+Shift+Z redo, Ctrl+D duplicate, Delete removes, Alt+Up/Down moves, Esc deselects, Ctrl+S saves a draft.')
-        );
-        inspector.appendChild(el('p', 'mtw-pb-muted', `${c.countBlocks(page)} blocks in ${page.sections.length} sections.`));
-        return;
-      }
-      if (sel.kind === 'block') {
-        const found = c.findBlock(page, sel.id);
-        if (!found) return;
-        const def = c.BLOCKS[found.block.type];
-        inspector.appendChild(el('h3', '', def.label));
-        if (def.fields.length) {
-          inspector.appendChild(el('h4', 'mtw-pb-group', 'Content'));
-          def.fields.filter(field => visible(field, found.block.props)).forEach(field => {
-            inspector.appendChild(fieldControl(field, found.block.props[field.key], value => {
-              const next = c.updateBlock(history.page, sel.id, { props: { [field.key]: value } });
-              commit(next, undefined, `${sel.id}:p:${field.key}`);
-              if (field.type === 'select' && def.fields.some(other => other.when && other.when[field.key] !== undefined)) renderInspector();
-            }));
-          });
+      if (!sel) renderPageInspector(page);
+      else if (sel.kind === 'block') renderBlockInspector(page, sel.id);
+      else if (sel.kind === 'section') renderSectionInspector(page, sel.id);
+      else if (sel.kind === 'table') renderTableInspector(page, sel.id);
+      inspector.scrollTop = scroll;
+    }
+
+    function renderPageInspector(page) {
+      inspector.append(
+        el('h3', '', 'Page'),
+        el('p', 'mtw-pb-muted', 'Click a block or a section on the page to change it. Every block has an element name that steps use to read or change it.'),
+        el('p', 'mtw-pb-muted', 'Shortcuts: Ctrl+Z undo, Ctrl+Shift+Z redo, Ctrl+D duplicate, Delete removes, Alt+Up/Down moves, Esc deselects, Ctrl+S saves a draft.'),
+        el('p', 'mtw-pb-muted', `${c.countBlocks(page)} blocks in ${page.sections.length} sections, ${(page.tables || []).length} data tables.`)
+      );
+      inspector.appendChild(sectionTitle('When the page opens, do'));
+      inspector.appendChild(stepsEditor('page', () => history.page.onOpen || [], list => c.updatePageActions(history.page, list)));
+    }
+
+    function renderBlockInspector(page, blockId) {
+      const found = c.findBlock(page, blockId);
+      if (!found) return;
+      const block = found.block;
+      const def = c.BLOCKS[block.type];
+      inspector.appendChild(el('h3', '', def.label));
+
+      // Element name
+      const nameWrap = el('div', 'mtw-pb-field mtw-pb-name-field');
+      nameWrap.dataset.field = 'name';
+      const nameId = `mtw-pb-name-${block.id}`;
+      nameWrap.appendChild(el('label', '', 'Element name', { for: nameId }));
+      const nameInput = el('input', '', null, { id: nameId, type: 'text', spellcheck: 'false' });
+      nameInput.value = block.name || '';
+      const nameError = el('p', 'mtw-pb-field-error');
+      nameInput.addEventListener('change', () => {
+        const result = c.renameBlock(history.page, blockId, nameInput.value);
+        if (result.error) {
+          nameError.textContent = result.error;
+          nameInput.value = c.findBlock(history.page, blockId).block.name;
+          return;
         }
-        inspector.appendChild(el('h4', 'mtw-pb-group', 'Look'));
-        c.STYLE_FIELDS.forEach(field => {
-          inspector.appendChild(fieldControl(field, found.block.style[field.key], value => {
-            const next = c.updateBlock(history.page, sel.id, { style: { [field.key]: value === undefined ? '' : value } });
-            commit(next, undefined, `${sel.id}:s:${field.key}`);
-          }));
+        nameError.textContent = '';
+        commit(result.page);
+      });
+      nameWrap.append(nameInput, el('p', 'mtw-pb-field-help', 'Steps use this name, and text can show its value as {name}.'), nameError);
+      inspector.appendChild(nameWrap);
+
+      const props = block.props;
+      const contentFields = def.fields.filter(field => visible(field, props));
+      const plain = contentFields.filter(field => !['grid', 'actions'].includes(field.type));
+      if (plain.length) {
+        inspector.appendChild(sectionTitle('Content'));
+        plain.forEach(field => {
+          inspector.appendChild(fieldControl(field, props[field.key], value => {
+            const next = c.updateBlock(history.page, blockId, { props: { [field.key]: value } });
+            if (RESHAPES.includes(field.type) || field.type === 'fieldpick') commit(next);
+            else commit(next, undefined, `${blockId}:p:${field.key}`);
+          }, { tableId: props.table }));
         });
-        inspector.appendChild(itemActions('block', sel.id));
-      } else {
-        const found = c.findSection(page, sel.id);
-        if (!found) return;
-        inspector.appendChild(el('h3', '', 'Section'));
-        c.SECTION_FIELDS.forEach(field => {
-          const value = field.key === 'layout' ? found.section.layout : found.section.style[field.key];
-          inspector.appendChild(fieldControl(field, value, next => {
-            const changes = field.key === 'layout' ? { layout: next } : { style: { [field.key]: next === undefined ? '' : next } };
-            commit(c.updateSection(history.page, sel.id, changes), undefined, `${sel.id}:x:${field.key}`);
-          }));
-        });
-        inspector.appendChild(el('h4', 'mtw-pb-group', 'Look'));
-        c.STYLE_FIELDS.filter(field => !['fontSize', 'fontWeight'].includes(field.key)).forEach(field => {
-          inspector.appendChild(fieldControl(field, found.section.style[field.key], value => {
-            commit(c.updateSection(history.page, sel.id, { style: { [field.key]: value === undefined ? '' : value } }),
-              undefined, `${sel.id}:s:${field.key}`);
-          }));
-        });
-        inspector.appendChild(itemActions('section', sel.id));
       }
+      if (contentFields.some(field => field.type === 'grid')) renderGridEditor(blockId);
+      const actionsField = contentFields.find(field => field.type === 'actions');
+      if (actionsField) {
+        inspector.appendChild(sectionTitle(actionsField.label));
+        inspector.appendChild(stepsEditor(`block:${blockId}`,
+          () => (c.findBlock(history.page, blockId) || { block: { props: { actions: [] } } }).block.props.actions,
+          list => c.updateBlock(history.page, blockId, { props: { actions: list } })));
+      }
+
+      inspector.appendChild(sectionTitle('Look'));
+      c.STYLE_FIELDS.forEach(field => {
+        inspector.appendChild(fieldControl(field, block.style[field.key], value => {
+          const next = c.updateBlock(history.page, blockId, { style: { [field.key]: value === undefined ? '' : value } });
+          commit(next, undefined, `${blockId}:s:${field.key}`);
+        }));
+      });
+      inspector.appendChild(itemActions('block', blockId));
+    }
+
+    function renderSectionInspector(page, sectionId) {
+      const found = c.findSection(page, sectionId);
+      if (!found) return;
+      inspector.appendChild(el('h3', '', 'Section'));
+      c.SECTION_FIELDS.forEach(field => {
+        const value = field.key === 'layout' ? found.section.layout : found.section.style[field.key];
+        inspector.appendChild(fieldControl(field, value, next => {
+          const changes = field.key === 'layout' ? { layout: next } : { style: { [field.key]: next === undefined ? '' : next } };
+          commit(c.updateSection(history.page, sectionId, changes), undefined, `${sectionId}:x:${field.key}`);
+        }));
+      });
+      inspector.appendChild(sectionTitle('Look'));
+      c.STYLE_FIELDS.filter(field => !['fontSize', 'fontWeight'].includes(field.key)).forEach(field => {
+        inspector.appendChild(fieldControl(field, found.section.style[field.key], value => {
+          commit(c.updateSection(history.page, sectionId, { style: { [field.key]: value === undefined ? '' : value } }),
+            undefined, `${sectionId}:s:${field.key}`);
+        }));
+      });
+      inspector.appendChild(itemActions('section', sectionId));
+    }
+
+    // ---------- table block: column and row cards ----------
+    function cardHeader(title, dragInfo, onDelete, deleteTitle) {
+      const head = el('div', 'mtw-pb-card-head');
+      const handle = el('span', 'mtw-pb-handle mtw-pb-card-handle', null, { title: 'Drag to reorder' });
+      handle.appendChild(icon('drag'));
+      handle.addEventListener('pointerdown', event => startListDrag(event, dragInfo()));
+      head.append(handle, el('strong', '', title));
+      const del = iconButton('mtw-pb-tool-btn mtw-pb-card-delete', 'delete', deleteTitle, onDelete);
+      head.appendChild(del);
+      return head;
+    }
+
+    function renderGridEditor(blockId) {
+      const props = () => c.findBlock(history.page, blockId).block.props;
+      const apply = (fn, coalesce) => {
+        const next = attempt(() => fn(props()));
+        if (next) commit(c.updateBlock(history.page, blockId, { props: next }), undefined, coalesce);
+      };
+      const current = props();
+
+      inspector.appendChild(sectionTitle('Columns'));
+      const cols = el('div', 'mtw-pb-cards', null, { 'data-drop-group': `cols:${blockId}` });
+      current.columns.forEach((col, i) => {
+        const card = el('div', 'mtw-pb-card-item', null, { 'data-drag-item': col.id });
+        card.appendChild(cardHeader(`Column ${i + 1}`,
+          () => ({ group: `cols:${blockId}`, id: col.id, label: col.label || `Column ${i + 1}`, onDrop: (container, index) => apply(p => c.grid.moveColumn(p, col.id, index)) }),
+          () => apply(p => c.grid.removeColumn(p, col.id)), `Delete column ${col.label || i + 1}`));
+        card.appendChild(fieldControl({ key: `heading-${col.id}`, label: 'Heading', type: 'text' }, col.label,
+          value => apply(p => c.grid.setHeading(p, col.id, value), `${blockId}:col:${col.id}`)));
+        cols.appendChild(card);
+      });
+      inspector.appendChild(cols);
+      inspector.appendChild(button('mtw-pb-btn mtw-pb-btn-light mtw-pb-add-col', '+ Add column', 'Add a column', () =>
+        apply(p => c.grid.addColumn(p, `Column ${p.columns.length + 1}`))));
+
+      inspector.appendChild(sectionTitle('Rows'));
+      const rows = el('div', 'mtw-pb-cards', null, { 'data-drop-group': `rows:${blockId}` });
+      current.rows.forEach((row, i) => {
+        const card = el('div', 'mtw-pb-card-item', null, { 'data-drag-item': row.id });
+        card.appendChild(cardHeader(`Row ${i + 1}`,
+          () => ({ group: `rows:${blockId}`, id: row.id, label: `Row ${i + 1}`, onDrop: (container, index) => apply(p => c.grid.moveRow(p, row.id, index)) }),
+          () => apply(p => c.grid.removeRow(p, row.id)), `Delete row ${i + 1}`));
+        if (!current.columns.length) card.appendChild(el('p', 'mtw-pb-muted', 'Add a column first.'));
+        current.columns.forEach((col, j) => {
+          card.appendChild(fieldControl({ key: `cell-${row.id}-${col.id}`, label: col.label || `Column ${j + 1}`, type: 'text' },
+            row.cells[col.id], value => apply(p => c.grid.setCell(p, row.id, col.id, value), `${blockId}:cell:${row.id}:${col.id}`)));
+        });
+        rows.appendChild(card);
+      });
+      inspector.appendChild(rows);
+      inspector.appendChild(button('mtw-pb-btn mtw-pb-btn-light mtw-pb-add-row', '+ Add row', 'Add a row', () =>
+        apply(p => c.grid.addRow(p))));
+    }
+
+    // ---------- data table editor ----------
+    function renderTableInspector(page, tableId) {
+      const table = c.findTable(page, tableId);
+      if (!table) return;
+      inspector.appendChild(el('h3', '', 'Data table'));
+      inspector.appendChild(fieldControl({ key: 'tableName', label: 'Table name', type: 'text' }, table.name,
+        value => commit(c.updateTable(history.page, tableId, { name: value }), undefined, `${tableId}:name`)));
+
+      inspector.appendChild(sectionTitle('Fields'));
+      const list = el('div', 'mtw-pb-cards', null, { 'data-drop-group': `fields:${tableId}` });
+      table.fields.forEach(field => {
+        const card = el('div', 'mtw-pb-card-item', null, { 'data-drag-item': field.key });
+        card.appendChild(cardHeader(field.label || field.key,
+          () => ({ group: `fields:${tableId}`, id: field.key, label: field.label, onDrop: (container, index) => commit(c.moveField(history.page, tableId, field.key, index)) }),
+          () => commit(c.removeField(history.page, tableId, field.key)), `Delete field ${field.label}`));
+        card.appendChild(fieldControl({ key: `label-${field.key}`, label: 'Name', type: 'text' }, field.label,
+          value => commit(c.updateField(history.page, tableId, field.key, { label: value }), undefined, `${tableId}:f:${field.key}:label`)));
+        card.appendChild(fieldControl({ key: `type-${field.key}`, label: 'Type', type: 'select', options: Object.entries(c.FIELD_TYPES) }, field.type,
+          value => commit(c.updateField(history.page, tableId, field.key, { type: value }))));
+        if (field.type === 'choice') {
+          card.appendChild(fieldControl({ key: `options-${field.key}`, label: 'Choices (one per line)', type: 'textarea' }, field.options,
+            value => commit(c.updateField(history.page, tableId, field.key, { options: value }), undefined, `${tableId}:f:${field.key}:options`)));
+        }
+        const req = el('label', 'mtw-pb-check');
+        const check = el('input', '', null, { type: 'checkbox' });
+        check.checked = field.required;
+        check.addEventListener('change', () => commit(c.updateField(history.page, tableId, field.key, { required: check.checked })));
+        req.append(check, document.createTextNode(' Required'));
+        card.append(req, el('p', 'mtw-pb-field-help', `Saved as "${field.key}".`));
+        list.appendChild(card);
+      });
+      inspector.appendChild(list);
+      inspector.appendChild(button('mtw-pb-btn mtw-pb-btn-light mtw-pb-add-field', '+ Add field', 'Add a field', () => {
+        const result = attempt(() => c.addField(history.page, tableId, `Field ${table.fields.length + 1}`, 'text'));
+        if (result && result.key) commit(result.page);
+      }));
+
+      inspector.appendChild(sectionTitle('Shortcuts'));
+      inspector.appendChild(button('mtw-pb-btn mtw-pb-btn-light mtw-pb-make-form', 'Add a form and list for this table',
+        'Adds inputs for every field, a Save button and a records list', () => addFormFor(tableId)));
+      inspector.appendChild(el('p', 'mtw-pb-field-help', `Records are kept in Firestore "${c.dataCollection(toolId, tableId)}". Deleting the table here doesn't delete them.`));
+
+      const remove = button('mtw-pb-btn mtw-pb-btn-light mtw-pb-delete-table', 'Delete table', `Delete ${table.name}`, () => {
+        if (remove.dataset.armed === 'true') commit(c.removeTable(history.page, tableId), null);
+        else {
+          remove.dataset.armed = 'true';
+          remove.textContent = 'Press again to delete';
+        }
+      });
+      inspector.appendChild(remove);
+    }
+
+    // Inputs for every field + a Save button (save, message, clear) + a records list.
+    function addFormFor(tableId) {
+      const table = c.findTable(history.page, tableId);
+      if (!table) return;
+      const result = attempt(() => {
+        let page = history.page;
+        const added = c.addSection(page, '1-1', page.sections.length);
+        page = added.page;
+        const [left, right] = c.findSection(page, added.id).section.columns.map(col => col.id);
+        page = c.insertBlock(page, 'heading', left, 0, { text: `Add to ${table.name}`, level: 'h3' }).page;
+        table.fields.forEach((field, i) => {
+          page = c.insertBlock(page, 'input', left, i + 1, { label: field.label, bind: `${tableId}.${field.key}` }).page;
+        });
+        const saveButton = c.insertBlock(page, 'button', left, table.fields.length + 1, { label: 'Save' });
+        page = saveButton.page;
+        let list = c.steps.add([], [], 'save').list;
+        list = c.steps.update(list, list[0].id, { table: tableId });
+        list = c.steps.add(list, [], 'message').list;
+        list = c.steps.add(list, [], 'clear').list;
+        page = c.updateBlock(page, saveButton.id, { props: { actions: list } });
+        page = c.insertBlock(page, 'heading', right, 0, { text: table.name, level: 'h3' }).page;
+        page = c.insertBlock(page, 'records', right, 1, { table: tableId }).page;
+        return { page, id: saveButton.id };
+      });
+      if (result) commit(result.page, { kind: 'block', id: result.id });
+    }
+
+    // ---------- When -> Do steps ----------
+    const stepScopes = {};
+
+    function stepsEditor(scopeKey, getRoot, makePage) {
+      const scope = { key: scopeKey, get: getRoot, set: (list, coalesce) => commit(makePage(list), undefined, coalesce) };
+      stepScopes[scopeKey] = scope;
+      const wrap = el('div', 'mtw-pb-steps-editor');
+      const tiles = el('div', 'mtw-pb-step-tiles');
+      tiles.appendChild(el('p', 'mtw-pb-field-help', 'Drag a step into the list, or click to add it at the end.'));
+      Object.entries(c.ACTIONS).forEach(([type, def]) => {
+        const tile = el('div', 'mtw-pb-step-tile', def.label, { role: 'button', tabindex: '0', title: def.description });
+        tile.dataset.stepType = type;
+        tile.addEventListener('pointerdown', event => startListDrag(event, {
+          group: `steps:${scopeKey}`, label: def.label, newStep: true, tap: () => dropStep({ kind: 'newStep', type, scope: scopeKey }, [], null),
+          onDrop: (container, index) => dropStep({ kind: 'newStep', type, scope: scopeKey }, JSON.parse(container.dataset.path), index)
+        }));
+        tile.addEventListener('keydown', event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            dropStep({ kind: 'newStep', type, scope: scopeKey }, [], null);
+          }
+        });
+        tiles.appendChild(tile);
+      });
+      wrap.appendChild(tiles);
+      wrap.appendChild(stepList(scope, getRoot(), [], 0));
+      return wrap;
+    }
+
+    function stepList(scope, list, path, depth) {
+      const container = el('div', 'mtw-pb-steps', null, { 'data-drop-group': `steps:${scope.key}` });
+      container.dataset.path = JSON.stringify(path);
+      list.forEach((step, i) => container.appendChild(stepCard(scope, step, i, depth)));
+      if (!list.length) container.appendChild(el('div', 'mtw-pb-steps-empty', path.length ? 'Drop steps here' : 'No steps yet. Drag one in.'));
+      const add = selectOf('', [['', '+ Add a step...']].concat(Object.entries(c.ACTIONS).map(([type, def]) => [type, def.label])), '');
+      add.className = 'mtw-pb-add-step';
+      add.setAttribute('aria-label', 'Add a step');
+      add.addEventListener('change', () => {
+        if (add.value) dropStep({ kind: 'newStep', type: add.value, scope: scope.key }, path, null);
+      });
+      const holder = el('div', 'mtw-pb-steps-wrap');
+      holder.append(container, add);
+      return holder;
+    }
+
+    function stepCard(scope, step, index, depth) {
+      const def = c.ACTIONS[step.type];
+      const card = el('div', `mtw-pb-step mtw-pb-step-${step.type}`, null, { 'data-drag-item': step.id });
+      card.dataset.stepId = step.id;
+      card.appendChild(cardHeader(`${index + 1}. ${def.label}`,
+        () => ({
+          group: `steps:${scope.key}`, id: step.id, label: def.label,
+          onDrop: (container, at) => dropStep({ kind: 'step', id: step.id, scope: scope.key }, JSON.parse(container.dataset.path), at)
+        }),
+        () => scope.set(c.steps.remove(scope.get(), step.id)), `Delete step ${def.label}`));
+      const body = el('div', 'mtw-pb-step-body');
+      def.fields.filter(field => field.type !== 'steps' && visible(field, step)).forEach(field => {
+        body.appendChild(fieldControl(field, step[field.key], value => {
+          const next = c.steps.update(scope.get(), step.id, { [field.key]: value });
+          if (RESHAPES.includes(field.type)) scope.set(next);
+          else scope.set(next, `${scope.key}:${step.id}:${field.key}`);
+        }, { tableId: step.table }));
+      });
+      card.appendChild(body);
+      def.fields.filter(field => field.type === 'steps').forEach(field => {
+        const branch = el('div', `mtw-pb-branch mtw-pb-branch-${field.key}`);
+        branch.appendChild(el('span', 'mtw-pb-branch-label', field.label));
+        const path = (c.steps.find(scope.get(), step.id) || { path: [] }).path.concat(step.id, field.key);
+        branch.appendChild(stepList(scope, step[field.key] || [], path, depth + 1));
+        card.appendChild(branch);
+      });
+      return card;
+    }
+
+    // Adds a new step or moves one. path: the list ([] = top, [ifId, 'then'], ...).
+    function dropStep(item, path, index) {
+      const scope = stepScopes[item.scope];
+      if (!scope) return;
+      const root = scope.get();
+      if (item.kind === 'newStep') {
+        const result = attempt(() => c.steps.add(root, path, item.type, index === null ? undefined : index));
+        if (result && result.id) scope.set(result.list);
+      } else {
+        const next = c.steps.move(root, item.id, path, index);
+        if (next !== root) scope.set(next);
+      }
+    }
+
+    // ---------- drag to reorder inside the inspector (cards and steps) ----------
+    function startListDrag(event, info) {
+      if (event.button > 0) return;
+      event.stopPropagation();
+      event.preventDefault();
+      state.listDrag = { info, x: event.clientX, y: event.clientY, active: false, target: null };
+      document.addEventListener('pointermove', onListMove);
+      document.addEventListener('pointerup', onListUp);
+      document.addEventListener('pointercancel', cleanupListDrag);
+    }
+
+    function listTarget(x, y, group) {
+      ghost.hidden = true;
+      const under = document.elementFromPoint ? document.elementFromPoint(x, y) : null;
+      ghost.hidden = false;
+      if (!under || !inspector.contains(under)) return null;
+      let container = under.closest(`[data-drop-group="${group}"]`);
+      if (!container) {
+        // Over a list's "Add a step" box or padding: use the list it belongs to.
+        const holder = under.closest('.mtw-pb-steps-wrap');
+        container = holder ? holder.querySelector(`:scope > [data-drop-group="${group}"]`) : null;
+      }
+      if (!container) return null;
+      const items = [...container.querySelectorAll(':scope > [data-drag-item]')];
+      let index = items.length;
+      for (let i = 0; i < items.length; i += 1) {
+        const box = items[i].getBoundingClientRect();
+        if (y < box.top + box.height / 2) {
+          index = i;
+          break;
+        }
+      }
+      return { container, index, items };
+    }
+
+    function onListMove(event) {
+      const drag = state.listDrag;
+      if (!drag) return;
+      if (!drag.active) {
+        if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < DRAG_THRESHOLD) return;
+        drag.active = true;
+        overlay.classList.add('is-dragging');
+        ghost.textContent = drag.info.label || 'Move';
+        ghost.hidden = false;
+      }
+      event.preventDefault();
+      ghost.style.transform = `translate(${event.clientX + 12}px, ${event.clientY + 12}px)`;
+      const box = inspector.getBoundingClientRect();
+      if (event.clientY < box.top + 40) inspector.scrollTop -= 12;
+      else if (event.clientY > box.bottom - 40) inspector.scrollTop += 12;
+      drag.target = listTarget(event.clientX, event.clientY, drag.info.group);
+      if (!drag.target) {
+        dropLine.remove();
+        return;
+      }
+      const cBox = drag.target.container.getBoundingClientRect();
+      const before = drag.target.items[drag.target.index];
+      const after = drag.target.items[drag.target.index - 1];
+      const top = before ? before.getBoundingClientRect().top - 5 : after ? after.getBoundingClientRect().bottom + 3 : cBox.top + 4;
+      dropLine.className = 'mtw-pb-drop-line';
+      dropLine.style.top = `${Math.round(top)}px`;
+      dropLine.style.left = `${Math.round(cBox.left)}px`;
+      dropLine.style.width = `${Math.round(cBox.width)}px`;
+      if (!dropLine.isConnected) overlay.appendChild(dropLine);
+    }
+
+    function onListUp() {
+      const drag = state.listDrag;
+      cleanupListDrag();
+      if (!drag) return;
+      if (!drag.active) {
+        if (drag.info.tap) drag.info.tap();
+        return;
+      }
+      if (drag.target && drag.info.onDrop) drag.info.onDrop(drag.target.container, drag.target.index);
+    }
+
+    function cleanupListDrag() {
+      state.listDrag = null;
+      overlay.classList.remove('is-dragging');
+      ghost.hidden = true;
+      dropLine.remove();
+      document.removeEventListener('pointermove', onListMove);
+      document.removeEventListener('pointerup', onListUp);
+      document.removeEventListener('pointercancel', cleanupListDrag);
     }
 
     function itemActions(kind, id) {
@@ -611,6 +1117,7 @@
       renderTop();
       renderCanvas();
       if (!keepInspector) renderInspector();
+      if (state.paletteTab === 'data') buildPalette();
     }
 
     function flash(message, isError) {
@@ -839,6 +1346,7 @@
         return;
       }
       if (!sel) return;
+      if (sel.kind === 'table') return;
       const act = sel.kind === 'block' ? blockAction : sectionAction;
       if (event.key === 'Delete' || event.key === 'Backspace') {
         event.preventDefault();
@@ -907,6 +1415,7 @@
         await api.setDoc(ref(), record);
         state.stored = record;
         state.saved = page;
+        history.replace(page);
         if (publish) state.published = page;
         state.saving = false;
         publishBtn.disabled = false;
@@ -943,6 +1452,8 @@
         return false;
       }
       cleanupDrag();
+      cleanupListDrag();
+      if (state.shared && root.MTW_PAGE_RUNTIME) root.MTW_PAGE_RUNTIME.disposeShared(state.shared);
       document.removeEventListener('keydown', onKey, true);
       overlay.remove();
       document.documentElement.classList.remove('mtw-pb-open');
@@ -958,6 +1469,7 @@
       dirty: { get: () => dirty() }
     });
     this.drop = drop;
+    this.dropStep = (item, path, index) => dropStep(item, path, index);
     this.select = select;
     this.save = save;
     this.loaded = null;
