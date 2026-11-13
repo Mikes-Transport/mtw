@@ -371,6 +371,11 @@ test('timer fields hold still once their stop field is filled in', () => {
   const held = { ...running, done: '2026-11-13', _since_done: now - 600000 };
   assert.equal(rt.fieldMs(field, held, now), 3000000, 'held at when Done was filled in');
   assert.equal(rt.fieldMs(field, held, now + 999999), 3000000, 'and stays there');
+  assert.equal(rt.durationMinutes('3 days'), 4320);
+  assert.equal(rt.durationMinutes('4h'), 240);
+  assert.equal(rt.durationMinutes('Waiting'), null);
+  assert.equal(rt.compareTime(4400, 'greater', '3 days'), true);
+  assert.equal(rt.compareTime(60, 'greater', '3 days'), false);
   assert.equal(core.sanitizeTables([{ name: 'X', fields: [{ key: 'w', type: 'timer', stopField: 'done' }] }])[0].fields[0].stopField, 'done');
   dom.window.close();
 });

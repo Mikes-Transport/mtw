@@ -1547,6 +1547,7 @@ const QUEUE_PAGE = {
         { field: 'wait', op: 'greater', value: '29', background: '#ff0000', target: 'row' },
         { field: 'status', op: 'equals', value: 'Served', color: '#00aa00', target: 'cell' }] } },
     { type: 'table', name: 'typed', props: { colorRules: [{ field: 'k-role', op: 'equals', value: 'Stores', background: '#ffee00' }] } },
+    { type: 'stat', name: 'overdue', props: { label: 'Waiting too long', source: 'count', table: 't-q', filterField: 'wait', filterOp: 'greater', filterValue: '40 min' } },
     { type: 'stat', name: 'last', props: { label: 'Since last served', source: 'timer', timerFrom: 'record', table: 't-q', filterField: 'status', filterValue: 'Served', timerEvent: 'changed' } },
     { type: 'stat', name: 'clock', props: { label: 'Open for', source: 'timer', timerKind: 'stopwatch', timerAuto: 'no',
       colorRules: [{ op: 'greater', value: '-1', background: '#123456' }] } },
@@ -1576,6 +1577,7 @@ test('tables from a data table: add rows, timer column, colour rules; timer tile
   assert.equal(ann.style.background, 'rgb(255, 0, 0)', 'waiting 30+ minutes is red');
   assert.match(ann.querySelector('.mtw-pb-records-timer').textContent, /^45m/);
   assert.equal(bob.querySelector('.mtw-pb-records-timer').textContent, '', 'only counts while Waiting');
+  assert.equal(panel.querySelector('[data-name="overdue"] .mtw-pb-stat-value').textContent, '1', 'counts rows whose timer is over 40 minutes');
   assert.match(panel.querySelector('[data-name="last"] .mtw-pb-stat-value').textContent, /^\d+m/, 'time since Bob was served (falls back to when added)');
   assert.equal(bob.style.color, '', 'cell rule leaves the row alone');
   assert.equal(bob.children[1].style.color, 'rgb(0, 170, 0)', 'only the status cell is green');

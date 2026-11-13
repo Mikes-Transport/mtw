@@ -39,6 +39,22 @@
     return rows.sort((a, b) => (Number(a._createdAt) || 0) - (Number(b._createdAt) || 0));
   }
 
+  // "3 days", "4h", "90 min" -> minutes (null if it isn't a length of time).
+  function durationMinutes(text) {
+    const m = String(text === undefined || text === null ? '' : text).trim().toLowerCase()
+      .match(/^(\d+(?:\.\d+)?)\s*(m|mins?|minutes?|h|hrs?|hours?|d|days?|w|wks?|weeks?)$/);
+    if (!m) return null;
+    const n = Number(m[1]);
+    const unit = m[2][0];
+    return unit === 'w' ? n * 10080 : unit === 'd' ? n * 1440 : unit === 'h' ? n * 60 : n;
+  }
+
+  // Like compare, but "3 days" etc. on the right count as minutes (timer values).
+  function compareTime(left, op, right) {
+    const minutes = durationMinutes(right);
+    return compare(left, op, minutes === null ? right : minutes);
+  }
+
   function compare(left, op, right) {
     const a = left === undefined || left === null ? '' : String(left).trim();
     const b = right === undefined || right === null ? '' : String(right).trim();
@@ -67,7 +83,7 @@
       let v = record ? (rule.field ? record[rule.field] : record.value) : '';
       if (v === true) v = 'Yes';
       if (v === false) v = 'No';
-      if (!compare(v, rule.op, rule.value)) continue;
+      if (!compareTime(v, rule.op, rule.value)) continue;
       if (rule.minutes && rule.field && at - c.sinceOf(record, rule.field) < rule.minutes * 60000) continue;
       return rule;
     }
@@ -271,8 +287,11 @@
     function count(block) {
       const entry = table(block.props.table);
       if (!entry || !entry.loaded) return '';
-      if (!block.props.filterField) return entry.rows.length;
-      return entry.rows.filter(row => compare(row[block.props.filterField], 'equals', tokens(block.props.filterValue))).length;
+      const p = block.props;
+      if (!p.filterField) return entry.rows.length;
+      const want = tokens(p.filterValue);
+      const def = tables[p.table];
+      return entry.rows.filter(row => compareTime(viewRecord(def, row)[p.filterField], p.filterOp || 'equals', want)).length;
     }
 
     // ---------- element values ----------
@@ -740,7 +759,7 @@
           }
           return null;
         case 'if': {
-          const pass = compare(value(step.left, ctx), step.op, tokens(step.right, ctx));
+          const pass = compareTime(value(step.left, ctx), step.op, tokens(step.right, ctx));
           return runList(pass ? step.then : step.else, depth + 1, ctx);
         }
         case 'openTool':
@@ -925,5 +944,5 @@
     if (shared) shared.data = {};
   }
 
-  root.MTW_PAGE_RUNTIME = { create, compare, colorFor, parseWhen, fieldMs, fieldTimerText, viewRecord, disposeShared, clearPreview, createShared: () => ({ data: {} }) };
+  root.MTW_PAGE_RUNTIME = { create, compare, compareTime, durationMinutes, colorFor, parseWhen, fieldMs, fieldTimerText, viewRecord, disposeShared, clearPreview, createShared: () => ({ data: {} }) };
 })(typeof self !== 'undefined' ? self : this);

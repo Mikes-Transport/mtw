@@ -165,7 +165,7 @@
     },
     stat: {
       label: 'Number tile', group: 'Layout',
-      defaults: { label: 'Orders today', source: 'static', value: '24', table: '', filterField: '', filterValue: '', timerFrom: 'open', timerKind: 'since', timerEvent: 'added', timerAt: '', timerAuto: 'yes', timerFormat: 'short', doneText: 'Time is up', colorRules: [], note: '', actions: [] },
+      defaults: { label: 'Orders today', source: 'static', value: '24', table: '', filterField: '', filterOp: 'equals', filterValue: '', timerFrom: 'open', timerKind: 'since', timerEvent: 'added', timerAt: '', timerAuto: 'yes', timerFormat: 'short', doneText: 'Time is up', colorRules: [], note: '', actions: [] },
       fields: [
         { key: 'label', label: 'Label', type: 'text' },
         { key: 'source', label: 'Number comes from', type: 'select', options: [['static', 'What I type'], ['count', 'Count of records in a data table'], ['timer', 'A timer']] },
@@ -177,7 +177,8 @@
         { key: 'value', label: 'Number or value', type: 'text', when: { source: 'static' } },
         { key: 'table', label: 'Data table', type: 'table', when: { source: 'count' } },
         { key: 'filterField', label: 'Only count where', type: 'field', when: { source: 'count' } },
-        { key: 'filterValue', label: 'equals', type: 'text', when: { source: 'count' } },
+        { key: 'filterOp', label: 'is', type: 'select', options: [['equals', 'equal to'], ['notEquals', 'not equal to'], ['contains', 'containing'], ['empty', 'empty'], ['notEmpty', 'not empty'], ['greater', 'more than'], ['less', 'less than']], when: { source: 'count', filterField: '*' } },
+        { key: 'filterValue', label: 'Value (for a timer field: 30 minutes, 4 hours, 3 days)', type: 'text', when: { source: 'count', filterField: '*' } },
         { key: 'table', label: 'Data table', type: 'table', when: { source: 'timer', timerFrom: 'record' } },
         { key: 'filterField', label: 'Only records where', type: 'field', any: 'Any record', when: { source: 'timer', timerFrom: 'record' } },
         { key: 'filterValue', label: 'is', type: 'text', when: { source: 'timer', timerFrom: 'record', filterField: '*' } },

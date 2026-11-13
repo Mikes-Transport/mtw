@@ -42,8 +42,9 @@ columns stack on narrow screens.
   (or **Pick my own colours**), for the whole row or just that cell. Number tiles colour
   by their number. The top rule that matches wins. To colour by time, use a Timer field:
   *If Waiting time is more than 30* → Red.
-- **Number tile**: a typed value, a live count of a table's records (optionally
-  only where a field equals a value), or **a timer** that **Counts from**:
+- **Number tile**: a typed value, a live count of a table's records (optionally only
+  where a field is equal to / more than / ... a value; for a Timer field the value can be
+  `30 minutes`, `4 hours`, `3 days`), or **a timer** that **Counts from**:
   - *When the page opens*: a stopwatch (or only with a **Start a timer** step; **Pause** /
     **Reset** steps too).
   - *When something last happened in a data table*: time since the newest record was

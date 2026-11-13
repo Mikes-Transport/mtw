@@ -794,10 +794,14 @@
         };
         if (p.source === 'count' && override === null) {
           if (rt && rt.tables[p.table]) {
-            rt.watch(p.table, node, entry => {
+            const show = () => {
+              const entry = rt.table(p.table);
               valueNode.textContent = entry.error ? '-' : entry.loaded ? String(rt.count(block)) : '...';
               colour();
-            });
+            };
+            rt.watch(p.table, node, show);
+            const field = rt.tables[p.table].fields.find(f => f.key === p.filterField);
+            if (field && field.type === 'timer') rt.tick(node, show);
           } else valueNode.textContent = '-';
         } else if (p.source === 'timer' && override === null && rt) {
           node.classList.add('is-timer');
