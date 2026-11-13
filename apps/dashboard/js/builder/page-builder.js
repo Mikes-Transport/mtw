@@ -1088,77 +1088,6 @@
       inspector.appendChild(box);
     }
 
-    // "Only show when...": rules checked live; every rule must pass.
-    function renderShowWhen(block) {
-      const blockId = block.id;
-      const wrap = el('div', 'mtw-pb-show-when');
-      const label = el('label', 'mtw-pb-check mtw-pb-show-when-toggle');
-      const check = el('input', '', null, { type: 'checkbox' });
-      check.checked = Boolean(block.showWhen);
-      const tables = history.page.tables || [];
-      const blankWhere = () => ({ field: '', op: 'greater', value: '' });
-      const blankRule = () => ({ table: (tables[0] || {}).id || '', match: 'any', howMany: 2, where: [blankWhere()] });
-      check.addEventListener('change', () => commit(c.updateBlock(history.page, blockId, { showWhen: check.checked ? { rules: [blankRule()] } : null })));
-      label.append(check, document.createTextNode(' Only show when... (checked live, no steps needed)'));
-      wrap.appendChild(label);
-      if (!block.showWhen) {
-        inspector.appendChild(wrap);
-        return;
-      }
-      if (!tables.length) wrap.appendChild(el('p', 'mtw-pb-muted', 'Add a data table first (Data tab).'));
-      const current = () => c.clone((c.findBlock(history.page, blockId) || { block: {} }).block.showWhen || { rules: [] });
-      const save = (fn, coalesce) => {
-        const next = current();
-        fn(next);
-        const page = c.updateBlock(history.page, blockId, { showWhen: next.rules.length ? next : null });
-        if (coalesce) commit(page, undefined, coalesce);
-        else commit(page);
-      };
-      block.showWhen.rules.forEach((rule, ri) => {
-        if (ri) wrap.appendChild(el('span', 'mtw-pb-show-and', 'and also'));
-        const card = el('div', 'mtw-pb-card-item mtw-pb-show-rule');
-        card.dataset.rule = String(ri);
-        const head = el('div', 'mtw-pb-card-head');
-        head.append(el('strong', '', ri ? `Rule ${ri + 1}` : 'Show it when'),
-          iconButton('mtw-pb-tool-btn mtw-pb-card-delete', 'delete', 'Delete this rule', () => save(sw => sw.rules.splice(ri, 1))));
-        card.appendChild(head);
-        const set = (key, value, coalesce) => save(sw => { sw.rules[ri][key] = value; }, coalesce);
-        card.appendChild(fieldControl({ key: 'match', label: 'There is / are', type: 'select', options: [['any', 'At least one row'], ['atLeast', 'At least this many rows'], ['none', 'No rows'], ['all', 'Every row']] },
-          rule.match, value => set('match', value)));
-        if (rule.match === 'atLeast') {
-          card.appendChild(fieldControl({ key: 'howMany', label: 'How many', type: 'number', min: 1, max: 100000 }, rule.howMany,
-            value => set('howMany', value === undefined ? 1 : value, `${blockId}:sw:${ri}:howMany`)));
-        }
-        card.appendChild(fieldControl({ key: 'table', label: 'in', type: 'table' }, rule.table, value => set('table', value)));
-        rule.where.forEach((where, wi) => {
-          const box = el('div', 'mtw-pb-show-where');
-          const setWhere = (key, value, coalesce) => save(sw => { sw.rules[ri].where[wi][key] = value; }, coalesce);
-          box.appendChild(fieldControl({ key: 'field', label: wi ? 'and' : 'where', type: 'field', any: 'Any row' }, where.field,
-            value => setWhere('field', value), { tableId: rule.table }));
-          if (where.field) {
-            box.appendChild(fieldControl({ key: 'op', label: 'is', type: 'select', options: c.OPS }, where.op, value => setWhere('op', value)));
-            if (!['empty', 'notEmpty'].includes(where.op)) {
-              box.appendChild(fieldControl({ key: 'value', label: 'Value (10s, 3 days...)', type: 'text' }, where.value,
-                value => setWhere('value', value, `${blockId}:sw:${ri}:${wi}:value`)));
-            }
-          }
-          if (rule.where.length > 1) {
-            box.appendChild(button('mtw-pb-mini', 'Remove', 'Remove this condition', () => save(sw => sw.rules[ri].where.splice(wi, 1))));
-          }
-          card.appendChild(box);
-        });
-        const actions = el('div', 'mtw-pb-show-actions');
-        if (rule.where.length < 6) actions.appendChild(button('mtw-pb-btn mtw-pb-btn-light mtw-pb-show-add-where', '+ And the row...', 'Add another condition for the same row', () => save(sw => sw.rules[ri].where.push(blankWhere()))));
-        card.appendChild(actions);
-        wrap.appendChild(card);
-      });
-      if (block.showWhen.rules.length < 6) {
-        wrap.appendChild(button('mtw-pb-btn mtw-pb-btn-light mtw-pb-show-add-rule', '+ And also...', 'Add another rule that must also be true', () => save(sw => sw.rules.push(blankRule()))));
-      }
-      wrap.appendChild(el('p', 'mtw-pb-field-help', 'Shows by itself while all of this is true and hides when it isn\'t, e.g. at least one row where Day/Hr is more than 10s and Completed is empty. Show / Hide steps don\'t change it.'));
-      inspector.appendChild(wrap);
-    }
-
     function renderBlockInspector(page, blockId) {
       const found = c.findBlock(page, blockId);
       if (!found) return;
@@ -1192,7 +1121,6 @@
       hiddenCheck.addEventListener('change', () => commit(c.updateBlock(history.page, blockId, { hidden: hiddenCheck.checked })));
       hiddenLabel.append(hiddenCheck, document.createTextNode(' Hidden at start (until a step shows it)'));
       inspector.appendChild(hiddenLabel);
-      renderShowWhen(block);
 
       const props = block.props;
       const contentFields = def.fields.filter(field => visible(field, props));

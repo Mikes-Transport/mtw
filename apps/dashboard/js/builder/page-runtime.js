@@ -647,6 +647,8 @@
     // ---------- running steps ----------
     const STOP = { stop: true };
 
+    const loops = new Map(); // repeat step id -> interval
+
     async function runList(list, depth, ctx) {
       for (const step of list || []) {
         if (state.disposed) return STOP;
@@ -807,6 +809,15 @@
             refresh(step.target);
           }
           return null;
+        case 'repeat': {
+          // Started once per step (running the same list again doesn't add another loop).
+          if (!loops.has(step.id) && !opts.editing) {
+            loops.set(step.id, root.setInterval(() => {
+              if (!state.disposed) run(step.then, ctx);
+            }, Math.max(1, step.seconds) * 1000));
+          }
+          return runList(step.then, depth + 1, ctx);
+        }
         case 'ifRows': {
           const def = tables[step.table];
           if (!def) return runList(step.else, depth + 1, ctx);
@@ -940,6 +951,8 @@
     function dispose() {
       timers.forEach(id => root.clearInterval(id));
       if (tickId !== null) root.clearInterval(tickId);
+      loops.forEach(id => root.clearInterval(id));
+      loops.clear();
       tickers.clear();
       unwatchers.forEach(fn => fn());
       state.disposed = true;

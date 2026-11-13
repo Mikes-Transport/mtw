@@ -354,6 +354,14 @@
         { key: 'else', label: 'Else', type: 'steps' }
       ]
     },
+    repeat: {
+      group: 'Logic', label: 'Keep checking (repeat)', description: 'Runs the steps inside now, then again every few seconds while the tool is open, so Ifs inside keep up with timers and data. Put your Ifs inside in the order you want.',
+      defaults: { seconds: 5, then: [] },
+      fields: [
+        { key: 'seconds', label: 'Every (seconds)', type: 'number', min: 1, max: 3600 },
+        { key: 'then', label: 'Repeat these', type: 'steps' }
+      ]
+    },
     stop: {
       group: 'Logic', label: 'Stop', description: 'Stops running the remaining steps.',
       defaults: {},
@@ -1134,7 +1142,7 @@
     add(root, path, type, index) {
       if (!ACTIONS[type]) throw new Error(`Unknown step: ${type}`);
       if (steps.count(root) >= LIMITS.steps) throw new Error('A list can run at most 60 steps.');
-      if ((type === 'if' || type === 'ifRows') && path.length / 2 >= MAX_DEPTH - 1) throw new Error('Ifs can be nested at most 3 deep.');
+      if (['if', 'ifRows', 'repeat'].includes(type) && path.length / 2 >= MAX_DEPTH - 1) throw new Error('Ifs can be nested at most 3 deep.');
       const list = steps.get(root, path);
       if (!list) return { list: root, id: null };
       const step = sanitizeStep({ type, ...clone(ACTIONS[type].defaults) }, 1, { left: 1, ids: new Set() });

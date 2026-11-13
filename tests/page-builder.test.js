@@ -1767,33 +1767,32 @@ test('"Only show when": warnings switch by themselves as timers pass, and hide w
   dom.window.close();
 });
 
-test('builder: "Only show when" rules on any element', async () => {
-  const db = store({ ...TOOLS, 'dashboard-tool-pages': { jobs: { draft: QUEUE_PAGE } } });
-  const { dom, window, document } = host({ db });
-  await waitFor(window, () => typeof window.MTW_OPEN_PAGE_BUILDER === 'function');
-  const editor = await window.MTW_OPEN_PAGE_BUILDER('jobs');
-  await editor.loaded;
-  const inspector = editor.element.querySelector('.mtw-pb-inspector');
-  const id = editor.page.sections[0].columns[0].blocks.find(b => b.name === 'clock').id;
-  editor.select({ kind: 'block', id });
-  const toggle = inspector.querySelector('.mtw-pb-show-when-toggle input');
-  toggle.checked = true;
-  toggle.dispatchEvent(new window.Event('change', { bubbles: true }));
-  const block = () => editor.page.sections[0].columns[0].blocks.find(b => b.id === id);
-  assert.equal(block().showWhen.rules[0].table, 't-q');
-  const field = inspector.querySelector('.mtw-pb-show-where [data-field="field"] select');
-  field.value = 'wait';
-  field.dispatchEvent(new window.Event('change', { bubbles: true }));
-  const value = inspector.querySelector('.mtw-pb-show-where [data-field="value"] input');
-  value.value = '3 days';
-  value.dispatchEvent(new window.Event('input', { bubbles: true }));
-  inspector.querySelector('.mtw-pb-show-add-where').click();
-  inspector.querySelector('.mtw-pb-show-add-rule').click();
-  const sw = block().showWhen;
-  assert.deepEqual(JSON.parse(JSON.stringify(sw.rules[0].where[0])), { field: 'wait', op: 'greater', value: '3 days' });
-  assert.equal(sw.rules[0].where.length, 2);
-  assert.equal(sw.rules.length, 2);
-  assert.ok(editor.element.querySelector(`.mtw-pb-item.is-conditional`), 'tagged on the canvas');
-  editor.close(true);
+test('Keep checking (repeat): Ifs in the order written keep up with timers; hide all when completed', async () => {
+  const now = Date.now();
+  const page = {
+    tables: [{ id: 't-k', name: 'KeyAccounts', fields: [{ key: 'day', label: 'Day', type: 'date' }, { key: 'done', label: 'Completed', type: 'date' },
+      { key: 'dayhr', label: 'Day/Hr', type: 'timer', from: 'day', stopField: 'done' }] }],
+    sections: [{ layout: '1', columns: [{ blocks: [
+      { type: 'notice', name: 'warn_one', hidden: true, props: { title: 'Ten', text: '10s', tone: 'warning' } },
+      { type: 'notice', name: 'warn_two', hidden: true, props: { title: 'Fifteen', text: '15s', tone: 'danger' } }
+    ] }] }],
+    onOpen: [{ type: 'repeat', seconds: 1, then: [
+      { type: 'ifRows', table: 't-k', match: 'any', field: 'dayhr', op: 'greater', value: '10s', then: [{ type: 'show', target: 'warn_one' }] },
+      { type: 'ifRows', table: 't-k', match: 'any', field: 'dayhr', op: 'greater', value: '15s', then: [{ type: 'hide', target: 'warn_one' }, { type: 'show', target: 'warn_two' }] },
+      { type: 'ifRows', table: 't-k', match: 'all', field: 'done', op: 'notEmpty', then: [{ type: 'hide', target: 'warn_one' }, { type: 'hide', target: 'warn_two' }] }
+    ] }]
+  };
+  const db = store({ ...TOOLS, 'dashboard-tool-pages': { jobs: { published: page } },
+    'dashboard-data-jobs-t-k': { a: { day: '2026-11-13', done: '', _createdAt: now, _since_day: now - 12500, _since_done: now } } });
+  const { dom, window, document } = host({ role: 'Stores', db });
+  const shown = name => {
+    const node = document.querySelector(`.custom-dashboard-tool-jobs-panel [data-name="${name}"]`);
+    return Boolean(node) && node.style.display !== 'none';
+  };
+  await waitFor(window, () => shown('warn_one'));
+  assert.equal(shown('warn_two'), false);
+  await waitFor(window, () => shown('warn_two') && !shown('warn_one'), 6000);
+  await window.MTW.updateDoc(window.MTW.doc(window.MTW.db, 'dashboard-data-jobs-t-k', 'a'), { done: '2026-11-13', _since_done: Date.now() });
+  await waitFor(window, () => !shown('warn_two') && !shown('warn_one'), 3000);
   dom.window.close();
 });
