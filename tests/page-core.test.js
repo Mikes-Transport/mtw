@@ -374,6 +374,14 @@ test('timer fields hold still once their stop field is filled in', () => {
   assert.equal(rt.durationMinutes('3 days'), 4320);
   assert.equal(rt.durationMinutes('4h'), 240);
   assert.equal(rt.durationMinutes('Waiting'), null);
+  assert.equal(rt.durationMinutes('10s'), 10 / 60);
+  assert.equal(rt.durationMinutes('10 seconds'), 10 / 60);
+  const def = { fields: [{ key: 'w', type: 'timer', from: 'start', fromMode: 'changed' }, { key: 'day', type: 'date' }] };
+  const row = { start: 'x', _since_start: now - 20000, day: '2000-01-01' };
+  assert.equal(rt.matchField(def, row, 'w', 'greater', '10s', now), true, 'a 20 second timer is more than 10s');
+  assert.equal(rt.matchField(def, row, 'w', 'greater', '30 seconds', now), false);
+  assert.equal(rt.matchField(def, row, 'day', 'greater', '3 days', now), true, 'a date field vs a length of time: how long ago');
+  assert.equal(rt.matchField(def, { day: '2999-01-01' }, 'day', 'greater', '3 days', now), false);
   assert.equal(rt.compareTime(4400, 'greater', '3 days'), true);
   assert.equal(rt.compareTime(60, 'greater', '3 days'), false);
   assert.equal(core.sanitizeTables([{ name: 'X', fields: [{ key: 'w', type: 'timer', stopField: 'done' }] }])[0].fields[0].stopField, 'done');

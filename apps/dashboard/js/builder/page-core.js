@@ -178,7 +178,7 @@
         { key: 'table', label: 'Data table', type: 'table', when: { source: 'count' } },
         { key: 'filterField', label: 'Only count where', type: 'field', when: { source: 'count' } },
         { key: 'filterOp', label: 'is', type: 'select', options: [['equals', 'equal to'], ['notEquals', 'not equal to'], ['contains', 'containing'], ['empty', 'empty'], ['notEmpty', 'not empty'], ['greater', 'more than'], ['less', 'less than']], when: { source: 'count', filterField: '*' } },
-        { key: 'filterValue', label: 'Value (for a timer field: 30 minutes, 4 hours, 3 days)', type: 'text', when: { source: 'count', filterField: '*' } },
+        { key: 'filterValue', label: 'Value (for a timer or date field: 10 seconds, 30 minutes, 4 hours, 3 days)', type: 'text', when: { source: 'count', filterField: '*' } },
         { key: 'table', label: 'Data table', type: 'table', when: { source: 'timer', timerFrom: 'record' } },
         { key: 'filterField', label: 'Only records where', type: 'field', any: 'Any record', when: { source: 'timer', timerFrom: 'record' } },
         { key: 'filterValue', label: 'is', type: 'text', when: { source: 'timer', timerFrom: 'record', filterField: '*' } },
@@ -349,7 +349,7 @@
         { key: 'howMany', label: 'How many', type: 'number', min: 1, max: 100000, when: { match: 'atLeast' } },
         { key: 'field', label: 'has', type: 'field', any: 'Anything (just count rows)' },
         { key: 'op', label: 'that is', type: 'select', options: OPS, when: { field: '*' } },
-        { key: 'value', label: 'Value (for a timer: 30 minutes, 4 hours, 3 days)', type: 'text', tokens: true, when: { field: '*' } },
+        { key: 'value', label: 'Value (for a timer or date field: 10 seconds, 30 minutes, 4 hours, 3 days)', type: 'text', tokens: true, when: { field: '*' } },
         { key: 'then', label: 'Then', type: 'steps' },
         { key: 'else', label: 'Else', type: 'steps' }
       ]

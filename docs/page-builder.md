@@ -44,7 +44,8 @@ columns stack on narrow screens.
   *If Waiting time is more than 30* → Red.
 - **Number tile**: a typed value, a live count of a table's records (optionally only
   where a field is equal to / more than / ... a value; for a Timer field the value can be
-  `30 minutes`, `4 hours`, `3 days`), or **a timer** that **Counts from**:
+  `10 seconds`, `30 minutes`, `4 hours`, `3 days`; a date field against a length of time
+  means "that long ago", e.g. Pickup more than 3 days), or **a timer** that **Counts from**:
   - *When the page opens*: a stopwatch (or only with a **Start a timer** step; **Pause** /
     **Reset** steps too).
   - *When something last happened in a data table*: time since the newest record was

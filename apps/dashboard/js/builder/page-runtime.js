@@ -42,11 +42,11 @@
   // "3 days", "4h", "90 min" -> minutes (null if it isn't a length of time).
   function durationMinutes(text) {
     const m = String(text === undefined || text === null ? '' : text).trim().toLowerCase()
-      .match(/^(\d+(?:\.\d+)?)\s*(m|mins?|minutes?|h|hrs?|hours?|d|days?|w|wks?|weeks?)$/);
+      .match(/^(\d+(?:\.\d+)?)\s*(s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?|d|days?|w|wks?|weeks?)$/);
     if (!m) return null;
     const n = Number(m[1]);
     const unit = m[2][0];
-    return unit === 'w' ? n * 10080 : unit === 'd' ? n * 1440 : unit === 'h' ? n * 60 : n;
+    return unit === 'w' ? n * 10080 : unit === 'd' ? n * 1440 : unit === 'h' ? n * 60 : unit === 's' ? n / 60 : n;
   }
 
   // Like compare, but "3 days" etc. on the right count as minutes (timer values).
@@ -75,19 +75,43 @@
 
   // The first colour rule that matches a record (rules: see core sanitizeColorRules).
   // A rule with minutes also needs the field to have had its value that long.
-  function colorFor(rules, record, now) {
+  // def: the record's data table, so Timer and date fields compare as times.
+  function colorFor(rules, record, now, def) {
     const c = core();
     const at = now || Date.now();
     for (const rule of rules || []) {
       if (!rule || (!rule.background && !rule.color)) continue;
-      let v = record ? (rule.field ? record[rule.field] : record.value) : '';
-      if (v === true) v = 'Yes';
-      if (v === false) v = 'No';
-      if (!compareTime(v, rule.op, rule.value)) continue;
+      if (def && rule.field) {
+        if (!matchField(def, record, rule.field, rule.op, rule.value, at)) continue;
+      } else {
+        let v = record ? (rule.field ? record[rule.field] : record.value) : '';
+        if (v === true) v = 'Yes';
+        if (v === false) v = 'No';
+        if (!compareTime(v, rule.op, rule.value)) continue;
+      }
       if (rule.minutes && rule.field && at - c.sinceOf(record, rule.field) < rule.minutes * 60000) continue;
       return rule;
     }
     return null;
+  }
+
+  // One field of a record against a value. Timer fields compare as time (exactly, so
+  // "10 seconds" works); a date field against "3 days" etc. means "that long ago".
+  function matchField(def, record, key, op, raw, now) {
+    if (!record) return false;
+    const field = def && def.fields.find(f => f.key === key);
+    const minutes = durationMinutes(raw);
+    let v = record[key];
+    if (field && field.type === 'timer') {
+      const ms = fieldMs(field, record, now);
+      v = Number.isFinite(ms) ? ms / 60000 : '';
+    } else if (minutes !== null && field && field.type === 'date') {
+      const when = parseWhen(v);
+      v = Number.isFinite(when) ? ((now || Date.now()) - when) / 60000 : '';
+    }
+    if (v === true) v = 'Yes';
+    if (v === false) v = 'No';
+    return compare(v, op, minutes === null ? raw : minutes);
   }
 
   // A Timer field's time for a record, in ms (NaN while it isn't counting).
@@ -291,7 +315,7 @@
       if (!p.filterField) return entry.rows.length;
       const want = tokens(p.filterValue);
       const def = tables[p.table];
-      return entry.rows.filter(row => compareTime(viewRecord(def, row)[p.filterField], p.filterOp || 'equals', want)).length;
+      return entry.rows.filter(row => matchField(def, row, p.filterField, p.filterOp || 'equals', want)).length;
     }
 
     // ---------- element values ----------
@@ -767,7 +791,7 @@
           if (!entry.loaded) await Promise.race([entry.ready, new Promise(resolve => root.setTimeout(resolve, 8000))]);
           const rows = entry.rows.filter(row => !row._preview || opts.dryRun);
           const want = tokens(step.value, ctx);
-          const hits = step.field ? rows.filter(row => compareTime(viewRecord(def, row)[step.field], step.op, want)) : rows;
+          const hits = step.field ? rows.filter(row => matchField(def, row, step.field, step.op, want)) : rows;
           const pass = step.match === 'none' ? hits.length === 0
             : step.match === 'all' ? rows.length > 0 && hits.length === rows.length
               : step.match === 'atLeast' ? hits.length >= step.howMany : hits.length > 0;
@@ -960,5 +984,5 @@
     if (shared) shared.data = {};
   }
 
-  root.MTW_PAGE_RUNTIME = { create, compare, compareTime, durationMinutes, colorFor, parseWhen, fieldMs, fieldTimerText, viewRecord, disposeShared, clearPreview, createShared: () => ({ data: {} }) };
+  root.MTW_PAGE_RUNTIME = { create, matchField, compare, compareTime, durationMinutes, colorFor, parseWhen, fieldMs, fieldTimerText, viewRecord, disposeShared, clearPreview, createShared: () => ({ data: {} }) };
 })(typeof self !== 'undefined' ? self : this);

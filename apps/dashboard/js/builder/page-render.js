@@ -139,15 +139,21 @@
   // Rules with "for at least N minutes" are checked again every second.
   // def: the record's data table (Timer fields are compared as minutes).
   function usesTime(rules, def) {
-    return (rules || []).some(rule => rule.minutes
-      || (def && def.fields.some(f => f.type === 'timer' && f.key === rule.field)));
+    return (rules || []).some(rule => rule.minutes || timeField(def, rule.field, rule.value));
+  }
+
+  // True when comparing this field changes as time passes (a timer, or a date vs "3 days").
+  function timeField(def, key, value) {
+    const field = def && def.fields.find(f => f.key === key);
+    if (!field) return false;
+    return field.type === 'timer' || (field.type === 'date' && runtimeLib() && runtimeLib().durationMinutes(value) !== null);
   }
 
   function colourRow(tr, cells, rules, record, rt, def) {
     if (!rules || !rules.length || !runtimeLib()) return;
     let last = null;
     const apply = () => {
-      const rule = runtimeLib().colorFor(rules, runtimeLib().viewRecord(def, record));
+      const rule = runtimeLib().colorFor(rules, record, null, def);
       const id = rule ? rule.id : '';
       if (id === last) return;
       last = id;
@@ -641,7 +647,7 @@
         applyCardStyle(card, p.design.style);
         if (p.colorRules && p.colorRules.length && runtimeLib()) {
           const colour = () => {
-            const rule = runtimeLib().colorFor(p.colorRules, runtimeLib().viewRecord(def, row));
+            const rule = runtimeLib().colorFor(p.colorRules, row, null, def);
             if (rule && rule.background) card.style.background = rule.background;
             else if (p.design.style && p.design.style.background) card.style.background = p.design.style.background;
             else card.style.background = '';
@@ -800,8 +806,7 @@
               colour();
             };
             rt.watch(p.table, node, show);
-            const field = rt.tables[p.table].fields.find(f => f.key === p.filterField);
-            if (field && field.type === 'timer') rt.tick(node, show);
+            if (timeField(rt.tables[p.table], p.filterField, p.filterValue)) rt.tick(node, show);
           } else valueNode.textContent = '-';
         } else if (p.source === 'timer' && override === null && rt) {
           node.classList.add('is-timer');
