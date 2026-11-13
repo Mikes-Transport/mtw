@@ -1179,3 +1179,55 @@ button.mtw-pb-record-card:hover { border-color: #9a9893; box-shadow: 0 4px 14px 
   font-weight: 700;
 }
 .has-ink .mtw-pb-inline-edit { color: inherit; font-weight: 600; }
+
+/* inspector groups */
+.mtw-pb-group-box { border-top: 1px solid var(--mtw-line, #e3e3df); }
+.mtw-pb-group-box:last-of-type { border-bottom: 1px solid var(--mtw-line, #e3e3df); }
+.mtw-pb-group-box > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 2px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+.mtw-pb-group-box > summary::-webkit-details-marker { display: none; }
+.mtw-pb-group-box > summary::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+  opacity: 0.6;
+}
+.mtw-pb-group-box[open] > summary::before { transform: rotate(45deg); }
+.mtw-pb-group-box > summary:hover { color: var(--mtw-accent, #2563eb); }
+.mtw-pb-group-body { padding: 0 0 14px; }
+.mtw-pb-group-body > .mtw-pb-group:first-child { margin-top: 0; }
+
+/* colour rules */
+.mtw-pb-colour-rule { display: grid; gap: 8px; }
+.mtw-pb-colour-rule .mtw-pb-card-head { gap: 8px; }
+.mtw-pb-colour-says { flex: 1; font-size: 13px; font-weight: 600; }
+.mtw-pb-colour-swatch { width: auto; padding: 0 7px; white-space: nowrap; }
+.mtw-pb-colour-when { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.mtw-pb-colour-when > [data-field="field"] { grid-column: 1 / -1; }
+.mtw-pb-colour-when .mtw-pb-field { margin: 0; }
+.mtw-pb-colour-pick { margin: 0; }
+.mtw-pb-colour-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.mtw-pb-colour-preset {
+  padding: 5px 11px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 999px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.mtw-pb-colour-preset.is-on { box-shadow: 0 0 0 2px var(--mtw-ink, #242424); }
+.mtw-pb-colour-custom > summary { font-size: 12.5px; cursor: pointer; color: var(--mtw-muted, #777774); }
+.mtw-pb-colour-custom[open] > summary { margin-bottom: 6px; }

@@ -137,11 +137,17 @@
 
   // Colours a row (or one cell of it) by the first matching rule. cells: key -> td.
   // Rules with "for at least N minutes" are checked again every second.
-  function colourRow(tr, cells, rules, record, rt) {
+  // def: the record's data table (Timer fields are compared as minutes).
+  function usesTime(rules, def) {
+    return (rules || []).some(rule => rule.minutes
+      || (def && def.fields.some(f => f.type === 'timer' && f.key === rule.field)));
+  }
+
+  function colourRow(tr, cells, rules, record, rt, def) {
     if (!rules || !rules.length || !runtimeLib()) return;
     let last = null;
     const apply = () => {
-      const rule = runtimeLib().colorFor(rules, record);
+      const rule = runtimeLib().colorFor(rules, runtimeLib().viewRecord(def, record));
       const id = rule ? rule.id : '';
       if (id === last) return;
       last = id;
@@ -151,14 +157,17 @@
       if (rule.target === 'cell' && cells[rule.field]) paint(cells[rule.field], rule);
       else paint(tr, rule);
     };
-    if (rt && rules.some(rule => rule.minutes)) rt.tick(tr, apply);
+    if (rt && usesTime(rules, def)) rt.tick(tr, apply);
     else apply();
   }
 
-  function sinceCell(doc, td, record, key, rt) {
-    const show = () => { td.textContent = core().formatDuration(Date.now() - core().sinceOf(record, key)); };
-    if (rt) rt.tick(td, show);
+  // A Timer field's value, ticking.
+  function timerInto(node, field, record, rt) {
+    const show = () => { node.textContent = runtimeLib() ? runtimeLib().fieldTimerText(field, record) : ''; };
+    node.classList.add('is-timer');
+    if (rt) rt.tick(node, show);
     else show();
+    return node;
   }
 
   function renderRecords(doc, block, options) {
@@ -186,8 +195,6 @@
     if (p.header === 'no') thead.hidden = true;
     const head = thead.insertRow();
     fields.forEach(field => head.appendChild(el(doc, 'th', '', field.label)));
-    const timerField = p.timerField ? def.fields.find(f => f.key === p.timerField) : null;
-    if (timerField) head.appendChild(el(doc, 'th', 'mtw-pb-records-timer', p.timerLabel || `Time at this ${timerField.label.toLowerCase()}`));
     head.appendChild(el(doc, 'th', 'mtw-pb-records-when', 'Added'));
     const canDelete = canDeleteRows(p, options);
     const clickable = !options.editing && p.actions && p.actions.length;
@@ -263,19 +270,15 @@
         const cells = {};
         fields.forEach(field => {
           let td;
-          if (editableKeys.includes(field.key) || fresh.has(row._id)) {
+          if (field.type === 'timer') td = timerInto(el(doc, 'td', 'mtw-pb-records-timer'), field, row, rt);
+          else if (editableKeys.includes(field.key) || fresh.has(row._id)) {
             td = el(doc, 'td', 'mtw-pb-edit-cell');
             td.appendChild(editableControl(doc, field, row, p.table, options));
           } else td = el(doc, 'td', '', fmt(row[field.key], field.type));
           cells[field.key] = td;
           tr.appendChild(td);
         });
-        if (timerField) {
-          const td = el(doc, 'td', 'mtw-pb-records-timer');
-          sinceCell(doc, td, row, timerField.key, rt);
-          tr.appendChild(td);
-        }
-        colourRow(tr, cells, p.colorRules, row, rt);
+        colourRow(tr, cells, p.colorRules, row, rt, def);
         if (fresh.has(row._id)) tr.classList.add('is-new-row');
         if (focusId && row._id === focusId) {
           focusId = null;
@@ -437,7 +440,10 @@
             node.appendChild(el(doc, 'span', 'mtw-pb-card-field-label', part.showLabel === 'before' ? `${field.label}: ` : field.label));
             if (part.showLabel === 'above') node.classList.add('is-label-above');
           }
-          if (part.editable === 'yes' && field && more.table && (more.preview || more.canEdit)) {
+          if (field && field.type === 'timer') {
+            node.appendChild(timerInto(el(doc, 'span', 'mtw-pb-card-field-value'), field, record, more.preview ? null : rt));
+            if (more.preview && !node.lastChild.textContent) node.lastChild.textContent = '12m 5s';
+          } else if (part.editable === 'yes' && field && more.table && (more.preview || more.canEdit)) {
             node.appendChild(editableControl(doc, field, record, more.table, { runtime: more.preview ? null : rt, editing: more.editing || more.preview, ui: more.ui }));
             node.classList.add('is-editable');
           } else {
@@ -452,13 +458,6 @@
           const text = part.field ? value : (rt ? rt.tokens(part.text, { record }) : part.text);
           if (!text) return;
           node = el(doc, 'span', `mtw-pb-card-part mtw-pb-badge mtw-pb-badge-${part.tone}`, text);
-          break;
-        }
-        case 'timer': {
-          node = el(doc, 'div', 'mtw-pb-card-part mtw-pb-card-timer');
-          const words = part.text ? `${part.text} ` : '';
-          if (more.preview || !rt) node.textContent = `${words}12m 5s`;
-          else rt.tick(node, () => { node.textContent = `${words}${core().formatDuration(Date.now() - core().sinceOf(record, part.field || '_createdAt'))}`; });
           break;
         }
         case 'meta': {
@@ -642,14 +641,14 @@
         applyCardStyle(card, p.design.style);
         if (p.colorRules && p.colorRules.length && runtimeLib()) {
           const colour = () => {
-            const rule = runtimeLib().colorFor(p.colorRules, row);
+            const rule = runtimeLib().colorFor(p.colorRules, runtimeLib().viewRecord(def, row));
             if (rule && rule.background) card.style.background = rule.background;
             else if (p.design.style && p.design.style.background) card.style.background = p.design.style.background;
             else card.style.background = '';
             card.style.color = rule && rule.color ? rule.color : '';
             card.classList.toggle('is-coloured', Boolean(rule));
           };
-          if (p.colorRules.some(rule => rule.minutes)) rt.tick(card, colour);
+          if (usesTime(p.colorRules, def)) rt.tick(card, colour);
           else colour();
         }
         if (p.design.parts.length) {
@@ -690,7 +689,7 @@
         if (extras.length) {
           const dl = el(doc, 'dl', 'mtw-pb-record-card-fields');
           extras.forEach(f => {
-            dl.append(el(doc, 'dt', '', f.label), el(doc, 'dd', '', fmt(row[f.key], f.type) || '-'));
+            dl.append(el(doc, 'dt', '', f.label), f.type === 'timer' ? timerInto(el(doc, 'dd'), f, row, rt) : el(doc, 'dd', '', fmt(row[f.key], f.type) || '-'));
           });
           card.appendChild(dl);
         }
@@ -802,10 +801,12 @@
           } else valueNode.textContent = '-';
         } else if (p.source === 'timer' && override === null && rt) {
           node.classList.add('is-timer');
-          rt.tick(node, () => {
+          const show = () => {
             valueNode.textContent = rt.timerText(block.name);
             colour();
-          });
+          };
+          rt.tick(node, show);
+          if (p.timerFrom === 'record' && rt.tables[p.table]) rt.watch(p.table, node, show);
         } else if (p.source === 'timer' && override === null) {
           valueNode.textContent = '0s';
         } else colour();

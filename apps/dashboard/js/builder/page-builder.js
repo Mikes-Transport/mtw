@@ -166,6 +166,7 @@
       canvas: null, // a popup id while editing that popup, else null (the page)
       logic: null, // { scope: 'page' | 'block:<id>' } while the steps editor is open
       inspectorKey: '',
+      openGroups: {}, // inspector group open / closed, by block type and group
       shared: root.MTW_PAGE_RUNTIME ? root.MTW_PAGE_RUNTIME.createShared() : null,
       confirmClose: false
     };
@@ -692,7 +693,7 @@
       } else if (field.type === 'bind') {
         input = selectOf(id, [['', 'Not saved (only used by steps)']].concat((page.tables || []).map(table => ({
           group: table.name,
-          options: table.fields.map(f => [`${table.id}.${f.key}`, `${table.name}: ${f.label}`])
+          options: table.fields.filter(f => f.type !== 'timer').map(f => [`${table.id}.${f.key}`, `${table.name}: ${f.label}`])
         }))), value);
       } else if (field.type === 'field') {
         const table = c.findTable(page, context.tableId);
@@ -718,7 +719,7 @@
         });
       } else if (field.type === 'timer') {
         const items = c.pageElements(page).filter(item => item.type === 'stat' && item.block.props.source === 'timer'
-          && (field.kind ? item.block.props.timerKind === field.kind : item.block.props.timerKind === 'stopwatch'));
+          && (field.kind ? item.block.props.timerFrom === 'date' && item.block.props.timerKind === field.kind : item.block.props.timerFrom === 'open'));
         input = selectOf(id, [['', items.length ? 'Choose a timer' : field.kind ? 'No countdown tiles yet' : 'No stopwatch tiles yet (Number tile > A timer)']]
           .concat(items.map(item => [item.name, `${item.name} (${item.block.props.label || 'Timer'})`])), value);
       } else if (field.type === 'element' || field.type === 'input') {
@@ -893,7 +894,7 @@
       add.setAttribute('aria-label', 'Add an automation');
       add.addEventListener('change', () => {
         if (!add.value) return;
-        const timers = c.pageElements(history.page).filter(item => item.type === 'stat' && item.block.props.source === 'timer' && item.block.props.timerKind === 'until');
+        const timers = c.pageElements(history.page).filter(item => item.type === 'stat' && item.block.props.source === 'timer' && item.block.props.timerFrom === 'date' && item.block.props.timerKind === 'until');
         const options = add.value === 'tableChange' || add.value === 'recordTimer' ? { table: ((history.page.tables || [])[0] || {}).id || '' }
           : add.value === 'timerDone' ? { target: (timers[0] || {}).name || '' }
           : add.value.startsWith('popup') ? { popup: (c.pagePopups(history.page)[0] || {}).name || '' } : {};
@@ -975,20 +976,40 @@
       renderAutomations();
     }
 
+    // A fold-away group in the inspector. fill() appends to the inspector; what it adds
+    // is moved into the group. Open / closed is remembered per block type.
+    function groupBox(key, title, openByDefault, fill) {
+      const box = el('details', 'mtw-pb-group-box');
+      box.dataset.group = title;
+      box.open = state.openGroups[key] === undefined ? openByDefault : state.openGroups[key];
+      box.appendChild(el('summary', '', title));
+      box.addEventListener('toggle', () => { state.openGroups[key] = box.open; });
+      const body = el('div', 'mtw-pb-group-body');
+      const before = inspector.children.length;
+      fill();
+      [...inspector.children].slice(before).forEach(node => body.appendChild(node));
+      box.appendChild(body);
+      return box;
+    }
+
     // Colour rules: "When [field] is [value] (for N minutes), colour the row / cell".
     function renderColourRules(blockId) {
       const block = c.findBlock(history.page, blockId).block;
       const props = block.props;
       const box = el('div', 'mtw-pb-colour-rules');
-      box.appendChild(sectionTitle('Colours'));
+      if (!c.BLOCKS[block.type].fields.some(field => field.group)) box.appendChild(sectionTitle('Colours'));
       const dataBacked = block.type !== 'stat' && !(block.type === 'table' && props.source !== 'table');
       const table = dataBacked ? c.findTable(history.page, props.table) : null;
       const columns = block.type === 'stat' ? []
-        : table ? table.fields.map(f => [f.key, f.label])
+        : table ? table.fields.map(f => [f.key, f.type === 'timer' ? `${f.label} (minutes)` : f.label])
           : block.type === 'table' ? props.columns.map(col => [col.id, col.label || 'Untitled']) : [];
+      const thing = block.type === 'stat' ? 'this tile' : block.type === 'cards' ? 'a card' : 'a row';
       box.appendChild(el('p', 'mtw-pb-field-help', block.type === 'stat'
-        ? 'Colour the tile by its number (timers count in minutes). The first rule that matches wins.'
-        : `Colour a ${block.type === 'cards' ? 'card' : 'row'} by its values. The first rule that matches wins.`));
+        ? 'Each rule says: if the number is X, colour this tile. Timers count in minutes, e.g. "more than 30". The top rule that matches wins.'
+        : `Each rule says: if a column has a value, colour ${thing}. E.g. "If Status is equal to Waiting, colour it Red". The top rule that matches wins.`));
+      if (table && block.type !== 'stat') {
+        box.appendChild(el('p', 'mtw-pb-field-help', 'To colour by time, add a Timer field to the data table (e.g. "Waiting time", counting while Status is Waiting), then: If Waiting time is more than 30.'));
+      }
       if (dataBacked && !table) {
         box.appendChild(el('p', 'mtw-pb-muted', 'Pick a data table first.'));
         inspector.appendChild(box);
@@ -1002,40 +1023,66 @@
       };
       const latest = () => (c.findBlock(history.page, blockId) || { block: { props: {} } }).block.props.colorRules || [];
       const change = (ruleId, changes, coalesce) => save(latest().map(rule => (rule.id === ruleId ? { ...rule, ...changes } : rule)), coalesce);
+      const PRESETS = [['Red', '#fdecea', '#9b1c1c'], ['Amber', '#fff4e5', '#8a4b00'], ['Green', '#e7f6ec', '#0a7a3d'],
+        ['Blue', '#e8f0fe', '#1d4ed8'], ['Grey', '#f0f0ee', '#444441']];
       rules.forEach((rule, index) => {
         const card = el('div', 'mtw-pb-card-item mtw-pb-colour-rule');
         card.dataset.ruleId = rule.id;
+        const columnName = (columns.find(([key]) => key === rule.field) || [null, block.type === 'stat' ? 'the number' : 'a column'])[1];
+        const opName = (c.OPS.find(([key]) => key === rule.op) || [null, ''])[1];
         const head = el('div', 'mtw-pb-card-head');
-        const swatch = el('span', 'mtw-pb-colour-swatch', 'Aa');
-        swatch.style.background = rule.background || 'transparent';
-        swatch.style.color = rule.color || '';
-        head.append(swatch, el('strong', '', `Rule ${index + 1}`),
-          iconButton('mtw-pb-tool-btn mtw-pb-card-delete', 'delete', 'Delete this colour rule', () => save(latest().filter(item => item.id !== rule.id))));
+        const chip = el('span', 'mtw-pb-colour-swatch', `Rule ${index + 1}`);
+        chip.style.background = rule.background || 'transparent';
+        chip.style.color = rule.color || '';
+        head.append(chip, el('span', 'mtw-pb-colour-says',
+          `If ${columnName} is ${opName}${['empty', 'notEmpty'].includes(rule.op) ? '' : ` ${rule.value || '...'}`}`),
+        iconButton('mtw-pb-tool-btn mtw-pb-card-delete', 'delete', 'Delete this colour rule', () => save(latest().filter(item => item.id !== rule.id))));
         card.appendChild(head);
-        const fields = [];
-        if (block.type !== 'stat') fields.push({ key: 'field', label: 'When', type: 'rulefield' });
-        fields.push({ key: 'op', label: block.type === 'stat' ? 'When the number is' : 'is', type: 'select', options: c.OPS });
-        if (!['empty', 'notEmpty'].includes(rule.op)) fields.push({ key: 'value', label: 'Value', type: 'text' });
-        if (table) fields.push({ key: 'minutes', label: 'And has been that for at least (minutes, 0 = straight away)', type: 'number', min: 0, max: 525600 });
-        fields.push({ key: 'background', label: 'Background', type: 'color' });
-        fields.push({ key: 'color', label: 'Text colour', type: 'color' });
-        if (block.type !== 'stat' && block.type !== 'cards') fields.push({ key: 'target', label: 'Colour', type: 'select', options: [['row', 'The whole row'], ['cell', 'Just that cell']] });
-        fields.forEach(field => {
-          if (field.type === 'rulefield') {
-            card.appendChild(fieldControl({ key: 'field', label: 'When', type: 'select', options: [['', 'Choose a column']].concat(columns) }, rule.field,
-              value => change(rule.id, { field: value })));
-            return;
-          }
-          card.appendChild(fieldControl(field, rule[field.key], value => {
-            if (field.type === 'select') change(rule.id, { [field.key]: value });
-            else change(rule.id, { [field.key]: value === undefined ? 0 : value }, `${blockId}:rule:${rule.id}:${field.key}`);
-          }));
+        const line = el('div', 'mtw-pb-colour-when');
+        if (block.type !== 'stat') {
+          line.appendChild(fieldControl({ key: 'field', label: 'If', type: 'select', options: [['', 'Choose a column']].concat(columns) }, rule.field,
+            value => change(rule.id, { field: value })));
+        }
+        line.appendChild(fieldControl({ key: 'op', label: block.type === 'stat' ? 'If the number is' : 'is', type: 'select', options: c.OPS }, rule.op,
+          value => change(rule.id, { op: value })));
+        if (!['empty', 'notEmpty'].includes(rule.op)) {
+          line.appendChild(fieldControl({ key: 'value', label: 'Value', type: 'text' }, rule.value,
+            value => change(rule.id, { value }, `${blockId}:rule:${rule.id}:value`)));
+        }
+        card.appendChild(line);
+        const paint = el('div', 'mtw-pb-field mtw-pb-colour-pick');
+        paint.appendChild(el('label', '', 'Colour it'));
+        const swatches = el('div', 'mtw-pb-colour-presets');
+        PRESETS.forEach(([name, background, color]) => {
+          const pick = button('mtw-pb-colour-preset', name, `Colour it ${name.toLowerCase()}`, () => change(rule.id, { background, color }));
+          pick.style.background = background;
+          pick.style.color = color;
+          pick.dataset.preset = name.toLowerCase();
+          if (rule.background === background && rule.color === color) pick.classList.add('is-on');
+          swatches.appendChild(pick);
         });
+        paint.appendChild(swatches);
+        card.appendChild(paint);
+        const custom = el('details', 'mtw-pb-colour-custom');
+        custom.appendChild(el('summary', '', 'Pick my own colours'));
+        custom.appendChild(fieldControl({ key: 'background', label: 'Background', type: 'color' }, rule.background,
+          value => change(rule.id, { background: value }, `${blockId}:rule:${rule.id}:background`)));
+        custom.appendChild(fieldControl({ key: 'color', label: 'Text colour', type: 'color' }, rule.color,
+          value => change(rule.id, { color: value }, `${blockId}:rule:${rule.id}:color`)));
+        card.appendChild(custom);
+        if (block.type !== 'stat' && block.type !== 'cards') {
+          card.appendChild(fieldControl({ key: 'target', label: 'What gets coloured', type: 'select', options: [['row', 'The whole row'], ['cell', `Just the ${columnName} cell`]] }, rule.target,
+            value => change(rule.id, { target: value })));
+        }
+        if (rule.minutes) {
+          card.appendChild(fieldControl({ key: 'minutes', label: 'And has been that for at least (minutes)', type: 'number', min: 0, max: 525600 }, rule.minutes,
+            value => change(rule.id, { minutes: value === undefined ? 0 : value }, `${blockId}:rule:${rule.id}:minutes`)));
+        }
         box.appendChild(card);
       });
       if (rules.length < 12) {
         box.appendChild(button('mtw-pb-btn mtw-pb-add-colour-rule', '+ Add a colour rule', 'Add a colour rule', () => save(latest().concat({
-          field: (columns[0] || [''])[0], op: 'equals', value: '', background: '#fdecea', color: '', target: 'row'
+          field: (columns[0] || [''])[0], op: 'equals', value: '', background: '#fdecea', color: '#9b1c1c', target: 'row'
         }))));
       }
       inspector.appendChild(box);
@@ -1077,57 +1124,70 @@
 
       const props = block.props;
       const contentFields = def.fields.filter(field => visible(field, props));
-      const plain = contentFields.filter(field => !['grid', 'actions', 'cardlist', 'cardfields', 'carddesign', 'colorrules'].includes(field.type));
-      if (plain.length) {
-        inspector.appendChild(sectionTitle('Content'));
-        plain.forEach(field => {
-          inspector.appendChild(fieldControl(field, props[field.key], value => {
-            if (block.type === 'cards' && field.key === 'formPopup' && props.source === 'added') {
-              const before = c.findBlock(history.page, blockId).block.props.formPopup;
-              let page = c.updateBlock(history.page, blockId, { props: { formPopup: value } });
-              // Buttons that opened the old form popup now open the new one.
-              c.pageElements(page).filter(item => item.type === 'button' && before && item.block.props.popup === before)
-                .forEach(item => { page = c.updateBlock(page, item.block.id, { props: { popup: value } }); });
-              if (value) page = syncForm(page, props.table, value);
-              commit(page);
-              return;
-            }
-            if (block.type === 'cards' && field.key === 'source' && value === 'added' &&
-                !c.findTable(history.page, c.findBlock(history.page, blockId).block.props.table)) {
-              setupAddedCards(blockId);
-              return;
-            }
-            const next = c.updateBlock(history.page, blockId, { props: { [field.key]: value } });
-            if (RESHAPES.includes(field.type) || field.type === 'fieldpick') commit(next);
-            else commit(next, undefined, `${blockId}:p:${field.key}`);
-          }, { tableId: props.table }));
-        });
+      const SPECIAL = ['grid', 'actions', 'cardlist', 'cardfields', 'carddesign', 'colorrules'];
+      const renderPlain = field => {
+        inspector.appendChild(fieldControl(field, props[field.key], value => {
+          if (block.type === 'cards' && field.key === 'formPopup' && props.source === 'added') {
+            const before = c.findBlock(history.page, blockId).block.props.formPopup;
+            let page = c.updateBlock(history.page, blockId, { props: { formPopup: value } });
+            // Buttons that opened the old form popup now open the new one.
+            c.pageElements(page).filter(item => item.type === 'button' && before && item.block.props.popup === before)
+              .forEach(item => { page = c.updateBlock(page, item.block.id, { props: { popup: value } }); });
+            if (value) page = syncForm(page, props.table, value);
+            commit(page);
+            return;
+          }
+          if (block.type === 'cards' && field.key === 'source' && value === 'added' &&
+              !c.findTable(history.page, c.findBlock(history.page, blockId).block.props.table)) {
+            setupAddedCards(blockId);
+            return;
+          }
+          const next = c.updateBlock(history.page, blockId, { props: { [field.key]: value } });
+          if (RESHAPES.includes(field.type) || field.type === 'fieldpick') commit(next);
+          else commit(next, undefined, `${blockId}:p:${field.key}`);
+        }, { tableId: props.table }));
+      };
+      const renderSpecial = field => {
+        if (field.type === 'grid') renderGridEditor(blockId);
+        if (field.type === 'cardlist') renderCardItemsEditor(blockId);
+        if (field.type === 'cardfields') renderCardFieldsEditor(blockId);
+        if (field.type === 'colorrules') renderColourRules(blockId);
+        if (field.type === 'carddesign') {
+          const design = props.design || { parts: [] };
+          const box = el('div', 'mtw-pb-steps-summary');
+          box.appendChild(sectionTitle('Card design'));
+          box.appendChild(el('p', 'mtw-pb-muted', design.parts.length
+            ? `${design.parts.length} part${design.parts.length === 1 ? '' : 's'}: ${design.parts.map(part => c.CARD_PARTS[part.type].label).join(', ')}.`
+            : 'Using the standard card look.'));
+          box.appendChild(button('mtw-pb-btn mtw-pb-btn-primary-dark mtw-pb-design-cards', 'Design cards', 'Open the card designer',
+            () => openDesigner(blockId)));
+          inspector.appendChild(box);
+        }
+      };
+      const render = field => (SPECIAL.includes(field.type) ? renderSpecial(field) : renderPlain(field));
+      const groupOf = field => (field.type === 'actions' ? '' : field.group || (field.type === 'colorrules' ? 'Colours' : ''));
+      const grouped = contentFields.some(field => field.group);
+      const loose = contentFields.filter(field => field.type !== 'actions' && (!grouped || !groupOf(field)));
+      if (loose.some(field => !SPECIAL.includes(field.type))) inspector.appendChild(sectionTitle('Content'));
+      loose.forEach(render);
+      if (grouped) {
+        const order = [];
+        contentFields.forEach(field => { if (groupOf(field) && !order.includes(groupOf(field))) order.push(groupOf(field)); });
+        order.forEach(name => inspector.appendChild(groupBox(`${block.type}:${name}`, name, name === 'Data', () => {
+          contentFields.filter(field => groupOf(field) === name).forEach(render);
+        })));
       }
-      if (contentFields.some(field => field.type === 'grid')) renderGridEditor(blockId);
-      if (contentFields.some(field => field.type === 'cardlist')) renderCardItemsEditor(blockId);
-      if (contentFields.some(field => field.type === 'cardfields')) renderCardFieldsEditor(blockId);
-      if (contentFields.some(field => field.type === 'carddesign')) {
-        const design = props.design || { parts: [] };
-        const box = el('div', 'mtw-pb-steps-summary');
-        box.appendChild(sectionTitle('Card design'));
-        box.appendChild(el('p', 'mtw-pb-muted', design.parts.length
-          ? `${design.parts.length} part${design.parts.length === 1 ? '' : 's'}: ${design.parts.map(part => c.CARD_PARTS[part.type].label).join(', ')}.`
-          : 'Using the standard card look.'));
-        box.appendChild(button('mtw-pb-btn mtw-pb-btn-primary-dark mtw-pb-design-cards', 'Design cards', 'Open the card designer',
-          () => openDesigner(blockId)));
-        inspector.appendChild(box);
-      }
-      if (contentFields.some(field => field.type === 'colorrules')) renderColourRules(blockId);
       const actionsField = contentFields.find(field => field.type === 'actions');
       if (actionsField) inspector.appendChild(stepsSummary(actionsField.label, `block:${blockId}`, props.actions || []));
 
-      inspector.appendChild(sectionTitle('Look'));
-      c.STYLE_FIELDS.forEach(field => {
-        inspector.appendChild(fieldControl(field, block.style[field.key], value => {
-          const next = c.updateBlock(history.page, blockId, { style: { [field.key]: value === undefined ? '' : value } });
-          commit(next, undefined, `${blockId}:s:${field.key}`);
-        }));
-      });
+      inspector.appendChild(groupBox(`${block.type}:look`, 'Box style (spacing, colours, border)', false, () => {
+        c.STYLE_FIELDS.forEach(field => {
+          inspector.appendChild(fieldControl(field, block.style[field.key], value => {
+            const next = c.updateBlock(history.page, blockId, { style: { [field.key]: value === undefined ? '' : value } });
+            commit(next, undefined, `${blockId}:s:${field.key}`);
+          }));
+        });
+      }));
       inspector.appendChild(itemActions('block', blockId));
     }
 
@@ -1242,7 +1302,8 @@
     // Keeps the Add card popup's inputs matching the table's fields: one input per field,
     // in field order, labelled like the field; removed fields lose their input.
     function syncForm(page, tableId, popupName) {
-      const table = c.findTable(page, tableId);
+      const full = c.findTable(page, tableId);
+      const table = full && { ...full, fields: full.fields.filter(f => f.type !== 'timer') };
       let next = page;
       const found = c.findPopup(next, popupName);
       if (!table || !found) return page;
@@ -1342,6 +1403,11 @@
           card.appendChild(fieldControl({ key: `options-${field.key}`, label: 'Choices (one per line)', type: 'textarea' }, field.options,
             value => commit(c.updateField(history.page, tableId, field.key, { options: value }), undefined, `${tableId}:f:${field.key}:options`)));
         }
+        if (field.type === 'timer') {
+          timerFieldSettings(card, table, field);
+          list.appendChild(card);
+          return;
+        }
         const req = el('label', 'mtw-pb-check');
         const check = el('input', '', null, { type: 'checkbox' });
         check.checked = field.required;
@@ -1363,6 +1429,21 @@
     }
 
     // ---------- data table editor ----------
+    // A Timer field: what it counts from, and (optionally) only while a field has a value.
+    function timerFieldSettings(card, table, field) {
+      const tableId = table.id;
+      const others = table.fields.filter(f => f.key !== field.key && f.type !== 'timer');
+      card.appendChild(fieldControl({ key: `from-${field.key}`, label: 'Counts from', type: 'select',
+        options: [['', 'When the row was added']].concat(others.map(f => [f.key, `When ${f.label} last changed`])) }, field.from,
+      value => commit(c.updateField(history.page, tableId, field.key, { from: value }))));
+      if (field.from) {
+        const from = others.find(f => f.key === field.from);
+        card.appendChild(fieldControl({ key: `while-${field.key}`, label: `Only counts while ${from ? from.label : 'it'} is (blank = always)`, type: 'text' }, field.whileValue,
+          value => commit(c.updateField(history.page, tableId, field.key, { whileValue: value }), undefined, `${tableId}:f:${field.key}:while`)));
+      }
+      card.appendChild(el('p', 'mtw-pb-field-help', 'Nobody fills this in: it ticks by itself in lists, cards and Manage data. Steps and colour rules see it as minutes.'));
+    }
+
     function renderTableInspector(page, tableId) {
       const table = c.findTable(page, tableId);
       if (!table) return;
@@ -1384,6 +1465,11 @@
         if (field.type === 'choice') {
           card.appendChild(fieldControl({ key: `options-${field.key}`, label: 'Choices (one per line)', type: 'textarea' }, field.options,
             value => commit(c.updateField(history.page, tableId, field.key, { options: value }), undefined, `${tableId}:f:${field.key}:options`)));
+        }
+        if (field.type === 'timer') {
+          timerFieldSettings(card, table, field);
+          list.appendChild(card);
+          return;
         }
         const req = el('label', 'mtw-pb-check');
         const check = el('input', '', null, { type: 'checkbox' });
@@ -1437,10 +1523,11 @@
         page = added.page;
         const [left, right] = c.findSection(page, added.id).section.columns.map(col => col.id);
         page = c.insertBlock(page, 'heading', left, 0, { text: `Add to ${table.name}`, level: 'h3' }).page;
-        table.fields.forEach((field, i) => {
+        const inputs = table.fields.filter(field => field.type !== 'timer');
+        inputs.forEach((field, i) => {
           page = c.insertBlock(page, 'input', left, i + 1, { label: field.label, bind: `${tableId}.${field.key}` }).page;
         });
-        const saveButton = c.insertBlock(page, 'button', left, table.fields.length + 1, { label: 'Save' });
+        const saveButton = c.insertBlock(page, 'button', left, inputs.length + 1, { label: 'Save' });
         page = saveButton.page;
         let list = c.steps.add([], [], 'save').list;
         list = c.steps.update(list, list[0].id, { table: tableId });

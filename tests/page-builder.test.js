@@ -1538,20 +1538,22 @@ const QUEUE_PAGE = {
   tables: [{ id: 't-q', name: 'Queue', fields: [
     { key: 'customer', label: 'Customer', type: 'text', required: true },
     { key: 'status', label: 'Status', type: 'choice', options: 'Waiting\nServed' },
-    { key: 'note', label: 'Note', type: 'text' }] }],
+    { key: 'note', label: 'Note', type: 'text' },
+    { key: 'wait', label: 'Waiting for', type: 'timer', from: 'status', whileValue: 'Waiting' }] }],
   sections: [{ layout: '1', columns: [{ blocks: [
-    { type: 'table', name: 'queue', props: { source: 'table', table: 't-q', show: ['customer', 'status'], editable: ['status'],
-      addRows: 'everyone', timerField: 'status', timerLabel: 'Waiting for',
+    { type: 'table', name: 'queue', props: { source: 'table', table: 't-q', show: ['customer', 'status', 'wait'], editable: ['status'],
+      addRows: 'everyone',
       colorRules: [
-        { field: 'status', op: 'equals', value: 'Waiting', minutes: 30, background: '#ff0000', target: 'row' },
+        { field: 'wait', op: 'greater', value: '29', background: '#ff0000', target: 'row' },
         { field: 'status', op: 'equals', value: 'Served', color: '#00aa00', target: 'cell' }] } },
     { type: 'table', name: 'typed', props: { colorRules: [{ field: 'k-role', op: 'equals', value: 'Stores', background: '#ffee00' }] } },
+    { type: 'stat', name: 'last', props: { label: 'Since last served', source: 'timer', timerFrom: 'record', table: 't-q', filterField: 'status', filterValue: 'Served', timerEvent: 'changed' } },
     { type: 'stat', name: 'clock', props: { label: 'Open for', source: 'timer', timerKind: 'stopwatch', timerAuto: 'no',
       colorRules: [{ op: 'greater', value: '-1', background: '#123456' }] } },
     { type: 'stat', name: 'due', props: { label: 'Due', source: 'timer', timerKind: 'until', timerAt: '2000-01-01 00:00', doneText: 'Overdue' } },
     { type: 'button', name: 'go', props: { label: 'Go', actions: [{ type: 'startTimer', target: 'clock' }] } },
     { type: 'cards', name: 'cards', props: { source: 'table', table: 't-q', colorRules: [{ field: 'status', op: 'equals', value: 'Served', background: '#00ff00' }],
-      design: { parts: [{ type: 'field', field: 'customer' }, { type: 'timer', field: 'status', text: 'Waiting' }], style: {} } } }
+      design: { parts: [{ type: 'field', field: 'customer' }, { type: 'field', field: 'wait' }], style: {} } } }
   ] }] }],
   automations: [{ when: 'recordTimer', table: 't-q', field: 'status', op: 'equals', value: 'Waiting', minutes: 1,
     steps: [{ type: 'message', text: '{record.customer} has waited', tone: 'warning' }] }]
@@ -1573,6 +1575,8 @@ test('tables from a data table: add rows, timer column, colour rules; timer tile
   const bob = rows.find(tr => tr.textContent.includes('Bob'));
   assert.equal(ann.style.background, 'rgb(255, 0, 0)', 'waiting 30+ minutes is red');
   assert.match(ann.querySelector('.mtw-pb-records-timer').textContent, /^45m/);
+  assert.equal(bob.querySelector('.mtw-pb-records-timer').textContent, '', 'only counts while Waiting');
+  assert.match(panel.querySelector('[data-name="last"] .mtw-pb-stat-value').textContent, /^\d+m/, 'time since Bob was served (falls back to when added)');
   assert.equal(bob.style.color, '', 'cell rule leaves the row alone');
   assert.equal(bob.children[1].style.color, 'rgb(0, 170, 0)', 'only the status cell is green');
   // typed table colours its rows by column
@@ -1580,7 +1584,8 @@ test('tables from a data table: add rows, timer column, colour rules; timer tile
   // cards: colour + ticking timer part
   const bobCard = [...panel.querySelectorAll('[data-name="cards"] .mtw-pb-record-card')].find(card => card.textContent.includes('Bob'));
   assert.equal(bobCard.style.background, 'rgb(0, 255, 0)');
-  assert.match(panel.querySelector('[data-name="cards"] .mtw-pb-card-timer').textContent, /^Waiting \d/);
+  const annCard = [...panel.querySelectorAll('[data-name="cards"] .mtw-pb-record-card')].find(card => card.textContent.includes('Ann'));
+  assert.match(annCard.querySelector('.is-timer').textContent, /^45m/, 'timer fields tick on cards');
   // countdown in the past shows its done text; stopwatch waits for its Start step
   assert.equal(panel.querySelector('[data-name="due"] .mtw-pb-stat-value').textContent, 'Overdue');
   assert.equal(panel.querySelector('[data-name="clock"] .mtw-pb-stat-value').textContent, '0s');
@@ -1667,13 +1672,23 @@ test('builder: Table block can use a data table; colour rules, timer tiles and n
   pick.dispatchEvent(new window.Event('change', { bubbles: true }));
   assert.equal(editor.page.sections[0].columns[0].blocks[1].props.table, 't-q');
   assert.ok(inspector.querySelector('[data-field="addRows"]'), 'add rows option');
-  assert.ok(inspector.querySelector('[data-field="timerField"]'), 'timer column option');
+  assert.deepEqual([...inspector.querySelectorAll('.mtw-pb-group-box')].map(d => d.dataset.group),
+    ['Data', 'How it looks', 'What people can do', 'Colours', 'Box style (spacing, colours, border)']);
+  assert.equal(inspector.querySelector('.mtw-pb-group-box[data-group="Data"]').open, true);
+  assert.equal(inspector.querySelector('.mtw-pb-group-box[data-group="How it looks"]').open, false);
   // colour rules: the old typed-column rule is still there; add one on a data field
   inspector.querySelector('.mtw-pb-add-colour-rule').click();
   const rules = editor.page.sections[0].columns[0].blocks[1].props.colorRules;
   assert.equal(rules.length, 2);
   assert.equal(rules[1].field, 'customer');
-  assert.ok(inspector.querySelector(`[data-rule-id="${rules[1].id}"] [data-field="minutes"]`), 'data tables get "for at least N minutes"');
+  inspector.querySelector(`[data-rule-id="${rules[1].id}"] [data-preset="green"]`).click();
+  const green = editor.page.sections[0].columns[0].blocks[1].props.colorRules[1];
+  assert.equal(green.background, '#e7f6ec');
+  assert.match(inspector.querySelector(`[data-rule-id="${rules[1].id}"] .mtw-pb-colour-says`).textContent, /If Customer is equal to/);
+  // timer fields are set up on the data table
+  editor.select({ kind: 'table', id: 't-q' });
+  assert.ok(inspector.querySelector('[data-field="from-wait"]'), 'timer field: counts from');
+  assert.ok(inspector.querySelector('[data-field="while-wait"]'), 'timer field: only while');
   // automations offer the new triggers
   editor.select(null);
   const add = inspector.querySelector('.mtw-pb-add-automation');

@@ -25,7 +25,10 @@ columns stack on narrow screens.
 - **Table**: **Rows come from** either *Rows I type in here* (column cards with a heading
   each, **+ Add column**, and row cards with a box per column, **+ Add row**; drag by the
   handle to reorder) or *A data table*, which works like a Records list (columns to show,
-  editable columns, search, delete, add rows, timer column, colours).
+  editable columns, search, delete, add rows, colours). Settings for lists, tables and
+  card lists are folded into **Data**, **How it looks**, **What people can do** and
+  **Colours** (click a heading to open it); every block's spacing / border is under **Box
+  style**.
 - **Input**: short/long text, number, date, dropdown or yes/no. **Save into** points it
   at a data table field (its type, choices and required come from the field).
 - **Records list**: a data table's records, live, with search and an optional Delete
@@ -34,19 +37,21 @@ columns stack on narrow screens.
   **People can add rows here** (everyone who can see the tool, or Managers only) adds a
   **+ Add row** button that adds a blank row straight into the table (like Manage data);
   its cells are boxes / dropdowns to fill in, each saved as it's changed.
-  **Timer column** shows, ticking, how long each row's chosen field has had its value
-  (e.g. *Time at this status*).
-- **Colours** (Table, Records list, Card list from a table, Number tile): rules like
-  *When Status is Waiting* → background / text colour, for the whole row or just that
-  cell. On data tables a rule can also need the value to have been set **for at least N
-  minutes** (e.g. red after 30 min waiting). Number tiles colour by their number. The
-  first matching rule wins.
+- **Colours** (Table, Records list, Card list from a table, Number tile): each rule reads
+  *If [column] is [equal to] [value]* → **Colour it** Red / Amber / Green / Blue / Grey
+  (or **Pick my own colours**), for the whole row or just that cell. Number tiles colour
+  by their number. The top rule that matches wins. To colour by time, use a Timer field:
+  *If Waiting time is more than 30* → Red.
 - **Number tile**: a typed value, a live count of a table's records (optionally
-  only where a field equals a value), or **a timer**: a *stopwatch* (starts when the page
-  opens or with a **Start a timer** step; **Pause** / **Reset** steps), *time since* or a
-  *countdown to* a date / time (`2026-12-24 17:00`, `17:00` for today, or `{element}`),
-  shown as `2h 5m` or `02:05:00`. Steps and colour rules see a timer as whole minutes.
-- **Card designs** have a **Timer** part: how long a field has had its value.
+  only where a field equals a value), or **a timer** that **Counts from**:
+  - *When the page opens*: a stopwatch (or only with a **Start a timer** step; **Pause** /
+    **Reset** steps too).
+  - *When something last happened in a data table*: time since the newest record was
+    added, or, with *Only records where Status is Done*, since the last record became Done.
+  - *A date / time* (`2026-12-24 17:00`, `17:00` for today, or `{element}`), counting up
+    from it or down to it.
+
+  Shown as `2h 5m` or `02:05:00`. Steps and colour rules see a timer as whole minutes.
 
 ## Element names
 
@@ -164,6 +169,13 @@ Records added by people using the tool appear live.
 date, dropdown, yes/no), required, and choices. A field's saved key (shown under it)
 never changes, so renaming is safe. **Add a form and list for this table** builds inputs
 for every field, a Save button (save → message → clear) and a records list.
+
+A **Timer** field is filled in by nobody: it ticks by itself wherever the table shows
+(lists, tables, cards, Manage data). It **Counts from** when the row was added, or when
+another field last changed, optionally **only while** that field has a value (e.g. a
+*Waiting time* that counts while Status is Waiting and goes blank once Served). Steps and
+colour rules see it as minutes. It isn't saved, exported as its current time, and skipped
+by forms and imports.
 
 Records live in Firestore `dashboard-data-<tool id>-<table id>` with the field keys plus
 `_createdAt` and `_createdBy`, plus `_since_<field>` (when that field last changed; used

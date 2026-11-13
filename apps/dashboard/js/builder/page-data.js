@@ -189,7 +189,10 @@
         tr.dataset.recordId = row._id;
         t.fields.forEach(f => {
           const td = tr.insertCell();
-          td.appendChild(cellControl(f, row));
+          if (f.type === 'timer') {
+            td.className = 'mtw-pb-records-timer';
+            runtime.tick(td, () => { td.textContent = root.MTW_PAGE_RUNTIME.fieldTimerText(f, row); });
+          } else td.appendChild(cellControl(f, row));
         });
         const added = tr.insertCell();
         added.className = 'mtw-pb-records-when';

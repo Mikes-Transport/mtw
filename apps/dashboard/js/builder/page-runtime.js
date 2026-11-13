@@ -74,6 +74,32 @@
     return null;
   }
 
+  // A Timer field's time for a record, in ms (NaN while it isn't counting).
+  function fieldMs(field, record, now) {
+    if (!field || field.type !== 'timer' || !record) return NaN;
+    const c = core();
+    if (field.from && field.whileValue && !compare(record[field.from], 'equals', field.whileValue)) return NaN;
+    const start = field.from ? c.sinceOf(record, field.from) : Number(record._createdAt) || 0;
+    return start ? Math.max(0, (now || Date.now()) - start) : NaN;
+  }
+
+  function fieldTimerText(field, record) {
+    const ms = fieldMs(field, record);
+    return Number.isFinite(ms) ? core().formatDuration(ms) : '';
+  }
+
+  // The record as steps and colour rules see it: Timer fields as whole minutes.
+  function viewRecord(def, record) {
+    if (!def || !record || !def.fields.some(f => f.type === 'timer')) return record;
+    const out = { ...record };
+    def.fields.forEach(f => {
+      if (f.type !== 'timer') return;
+      const ms = fieldMs(f, record);
+      out[f.key] = Number.isFinite(ms) ? Math.floor(ms / 60000) : '';
+    });
+    return out;
+  }
+
   // "2026-12-24 17:00", "2026-12-24", "17:00" (today), or a timestamp -> ms (NaN if not a time).
   function parseWhen(text) {
     const v = String(text === undefined || text === null ? '' : text).trim();
@@ -158,7 +184,7 @@
     }
 
     Object.values(elements).forEach(block => {
-      if (block.type === 'stat' && block.props.source === 'timer' && block.props.timerKind === 'stopwatch') {
+      if (block.type === 'stat' && block.props.source === 'timer' && block.props.timerFrom === 'open') {
         state.timers[block.name] = { elapsed: 0, startedAt: block.props.timerAuto === 'no' ? null : Date.now() };
       }
       if (block.hidden) state.hidden.add(block.name);
@@ -266,9 +292,23 @@
       if (!block || block.type !== 'stat' || block.props.source !== 'timer') return NaN;
       const p = block.props;
       const now = Date.now();
-      if (p.timerKind === 'stopwatch') {
+      if (p.timerFrom === 'open') {
         const t = state.timers[name] || { elapsed: 0, startedAt: null };
         return t.elapsed + (t.startedAt ? now - t.startedAt : 0);
+      }
+      if (p.timerFrom === 'record') {
+        // Time since the newest matching record was added (or its field got the value).
+        const entry = tables[p.table] ? table(p.table) : null;
+        if (!entry || !entry.loaded) return NaN;
+        const want = p.filterField ? tokens(p.filterValue) : '';
+        let latest = 0;
+        entry.rows.forEach(row => {
+          if (row._preview && !opts.dryRun) return;
+          if (p.filterField && !compare(row[p.filterField], 'equals', want)) return;
+          const at = p.filterField && p.timerEvent === 'changed' ? c.sinceOf(row, p.filterField) : Number(row._createdAt) || 0;
+          if (at > latest) latest = at;
+        });
+        return latest ? Math.max(0, now - latest) : NaN;
       }
       const at = parseWhen(tokens(p.timerAt));
       if (!Number.isFinite(at)) return NaN;
@@ -278,9 +318,9 @@
     function timerText(name) {
       const block = elements[name];
       const ms = timerMs(name);
-      if (!Number.isFinite(ms)) return '-';
-      if (block.props.timerKind === 'until' && ms <= 0) return block.props.doneText || '0s';
-      return c.formatDuration(block.props.timerKind === 'until' ? ms + 999 : ms, block.props.timerFormat);
+      if (!Number.isFinite(ms)) return block.props.timerFrom === 'record' ? 'Not yet' : '-';
+      if (block.props.timerFrom === 'date' && block.props.timerKind === 'until' && ms <= 0) return block.props.doneText || '0s';
+      return c.formatDuration(block.props.timerFrom === 'date' && block.props.timerKind === 'until' ? ms + 999 : ms, block.props.timerFormat);
     }
 
     function timerStep(type, name) {
@@ -372,6 +412,7 @@
       const record = {};
       const missing = [];
       def.fields.forEach(field => {
+        if (field.type === 'timer') return;
         const input = Object.values(elements).find(block => block.type === 'input' && block.props.bind === `${tableId}.${field.key}`);
         let v = input ? String(value(input.name)).trim() : '';
         if (field.required && !v) missing.push(input ? (input.props.label || field.label) : field.label);
@@ -418,7 +459,7 @@
     function stampChanges(def, record, before) {
       const now = Date.now();
       def.fields.forEach(field => {
-        if (!(field.key in record)) return;
+        if (!(field.key in record) || field.type === 'timer') return;
         if (!before || String(before[field.key] === undefined || before[field.key] === null ? '' : before[field.key]) !== String(record[field.key])) {
           record[`_since_${field.key}`] = now;
         }
@@ -433,6 +474,7 @@
       const record = {};
       const missing = [];
       def.fields.forEach(field => {
+        if (field.type === 'timer') return;
         const raw = values && values[field.key] !== undefined ? values[field.key] : (field.type === 'yesno' ? 'No' : '');
         const checked = coerce(field, raw);
         if (checked.error) throw new Error(checked.error);
@@ -471,6 +513,7 @@
       const def = tables[tableId];
       const field = def && def.fields.find(f => f.key === key);
       if (!field) throw new Error('Unknown field.');
+      if (field.type === 'timer') throw new Error(`${field.label} counts by itself.`);
       const checked = coerce(field, raw);
       if (checked.error) throw new Error(checked.error);
       const entry = state.data[tableId];
@@ -491,7 +534,7 @@
       const def = tables[tableId];
       if (!def) throw new Error('Unknown table.');
       const record = {};
-      def.fields.forEach(f => { record[f.key] = f.type === 'yesno' ? 'No' : ''; });
+      def.fields.forEach(f => { if (f.type !== 'timer') record[f.key] = f.type === 'yesno' ? 'No' : ''; });
       record._createdAt = Date.now();
       record._createdBy = user;
       stampChanges(def, record, null);
@@ -534,7 +577,7 @@
       await Promise.race([entry.ready, new Promise(resolve => root.setTimeout(resolve, 8000))]);
       if (entry.error) throw entry.error;
       const header = def.fields.map(f => f.label).concat('Added', 'Added by');
-      const rows = entry.rows.map(row => def.fields.map(f => fmtValue(row[f.key]))
+      const rows = entry.rows.map(row => def.fields.map(f => (f.type === 'timer' ? fieldTimerText(f, row) : fmtValue(row[f.key])))
         .concat(row._createdAt ? new Date(row._createdAt).toLocaleString('en-NZ') : '', row._createdBy || ''));
       const name = `${def.name.replace(/[^A-Za-z0-9 _-]+/g, '').trim() || 'export'} ${today()}.csv`;
       if (!ui.download) throw new Error('Downloads are not available here.');
@@ -551,13 +594,13 @@
       const parsed = c.parseCsv(text);
       if (parsed.length < 2) throw new Error('That file has no rows under its header row.');
       const header = parsed[0];
-      const keys = c.matchColumns(header, def);
+      const keys = c.matchColumns(header, def).map(key => (key && def.fields.find(f => f.key === key).type === 'timer' ? null : key));
       if (!keys.some(Boolean)) throw new Error(`None of the file's columns match ${def.name}'s fields (${def.fields.map(f => f.label).join(', ')}).`);
       const rows = [];
       const skipped = [];
       parsed.slice(1, 2001).forEach((cells, i) => {
         const record = {};
-        def.fields.forEach(f => { record[f.key] = ''; });
+        def.fields.forEach(f => { if (f.type !== 'timer') record[f.key] = ''; });
         keys.forEach((key, col) => { if (key) record[key] = String(cells[col] === undefined ? '' : cells[col]).trim().slice(0, c.LIMITS.text); });
         let problem = '';
         def.fields.forEach(f => {
@@ -864,5 +907,5 @@
     if (shared) shared.data = {};
   }
 
-  root.MTW_PAGE_RUNTIME = { create, compare, colorFor, parseWhen, disposeShared, clearPreview, createShared: () => ({ data: {} }) };
+  root.MTW_PAGE_RUNTIME = { create, compare, colorFor, parseWhen, fieldMs, fieldTimerText, viewRecord, disposeShared, clearPreview, createShared: () => ({ data: {} }) };
 })(typeof self !== 'undefined' ? self : this);
