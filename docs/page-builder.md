@@ -93,7 +93,12 @@ description; the list on the right). **Done** or Esc goes back to the page.
   Then/Else): Save inputs to a table, Show a message, Ask to confirm, Clear inputs, Set an
   input, Set an element's text, Show/Hide an element, If / then / else (equal to, not
   equal to, containing, empty, not empty, more than, less than; numbers compare as
-  numbers, text ignores case), Stop, Open a dashboard tool, Open a web address.
+  numbers, text ignores case; `3 days` / `4 hours` / `30 minutes` compare against timers),
+  **If rows in a data table** (at least one / at least N / no / every row has [field] [is
+  more than] [value], e.g. at least one Accounts row has Waiting time more than 3 days;
+  Then can use `{record.field}` of the first row that matched), Stop, Open a dashboard
+  tool, Open a web address. A row's Timer fields can be checked with `record.<field>` (in
+  minutes) in steps run from that row.
 - Save checks required fields first and stops with a message if any are empty.
 
 ## Popups

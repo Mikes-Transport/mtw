@@ -808,7 +808,7 @@
     }
 
     // Field types whose change can show or hide other fields, or change pickers.
-    const RESHAPES = ['select', 'table', 'bind'];
+    const RESHAPES = ['select', 'table', 'bind', 'field', 'popup', 'timer'];
 
     function sectionTitle(text) {
       return el('h4', 'mtw-pb-group', text);

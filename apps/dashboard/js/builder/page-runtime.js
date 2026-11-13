@@ -297,7 +297,9 @@
     // ---------- element values ----------
     function value(name, ctx) {
       if (typeof name === 'string' && name.startsWith('record.')) {
-        return ctx && ctx.record ? fmtValue(ctx.record[name.slice(7)]) : '';
+        if (!ctx || !ctx.record) return '';
+        const shown = ctx.table && tables[ctx.table] ? viewRecord(tables[ctx.table], ctx.record) : ctx.record;
+        return fmtValue(shown[name.slice(7)]);
       }
       const block = elements[name];
       if (!block) return '';
@@ -758,6 +760,20 @@
             refresh(step.target);
           }
           return null;
+        case 'ifRows': {
+          const def = tables[step.table];
+          if (!def) return runList(step.else, depth + 1, ctx);
+          const entry = table(step.table);
+          if (!entry.loaded) await Promise.race([entry.ready, new Promise(resolve => root.setTimeout(resolve, 8000))]);
+          const rows = entry.rows.filter(row => !row._preview || opts.dryRun);
+          const want = tokens(step.value, ctx);
+          const hits = step.field ? rows.filter(row => compareTime(viewRecord(def, row)[step.field], step.op, want)) : rows;
+          const pass = step.match === 'none' ? hits.length === 0
+            : step.match === 'all' ? rows.length > 0 && hits.length === rows.length
+              : step.match === 'atLeast' ? hits.length >= step.howMany : hits.length > 0;
+          const next = pass && hits.length && step.match !== 'none' ? { ...(ctx || {}), record: hits[0], table: step.table, count: hits.length } : ctx;
+          return runList(pass ? step.then : step.else, depth + 1, next);
+        }
         case 'if': {
           const pass = compareTime(value(step.left, ctx), step.op, tokens(step.right, ctx));
           return runList(pass ? step.then : step.else, depth + 1, ctx);

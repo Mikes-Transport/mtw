@@ -340,6 +340,20 @@
         { key: 'else', label: 'Else', type: 'steps' }
       ]
     },
+    ifRows: {
+      group: 'Logic', label: 'If rows in a data table...', description: 'Checks a table\'s rows, e.g. if at least one Accounts row has Waiting time more than 3 days. In Then, {record.field} is the first row that matched.',
+      defaults: { table: '', match: 'any', howMany: 2, field: '', op: 'greater', value: '', then: [], else: [] },
+      fields: [
+        { key: 'table', label: 'Data table', type: 'table' },
+        { key: 'match', label: 'If', type: 'select', options: [['any', 'At least one row'], ['atLeast', 'At least this many rows'], ['none', 'No rows'], ['all', 'Every row']] },
+        { key: 'howMany', label: 'How many', type: 'number', min: 1, max: 100000, when: { match: 'atLeast' } },
+        { key: 'field', label: 'has', type: 'field', any: 'Anything (just count rows)' },
+        { key: 'op', label: 'that is', type: 'select', options: OPS, when: { field: '*' } },
+        { key: 'value', label: 'Value (for a timer: 30 minutes, 4 hours, 3 days)', type: 'text', tokens: true, when: { field: '*' } },
+        { key: 'then', label: 'Then', type: 'steps' },
+        { key: 'else', label: 'Else', type: 'steps' }
+      ]
+    },
     stop: {
       group: 'Logic', label: 'Stop', description: 'Stops running the remaining steps.',
       defaults: {},
@@ -1120,7 +1134,7 @@
     add(root, path, type, index) {
       if (!ACTIONS[type]) throw new Error(`Unknown step: ${type}`);
       if (steps.count(root) >= LIMITS.steps) throw new Error('A list can run at most 60 steps.');
-      if (type === 'if' && path.length / 2 >= MAX_DEPTH - 1) throw new Error('Ifs can be nested at most 3 deep.');
+      if ((type === 'if' || type === 'ifRows') && path.length / 2 >= MAX_DEPTH - 1) throw new Error('Ifs can be nested at most 3 deep.');
       const list = steps.get(root, path);
       if (!list) return { list: root, id: null };
       const step = sanitizeStep({ type, ...clone(ACTIONS[type].defaults) }, 1, { left: 1, ids: new Set() });

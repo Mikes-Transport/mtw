@@ -379,3 +379,33 @@ test('timer fields hold still once their stop field is filled in', () => {
   assert.equal(core.sanitizeTables([{ name: 'X', fields: [{ key: 'w', type: 'timer', stopField: 'done' }] }])[0].fields[0].stopField, 'done');
   dom.window.close();
 });
+
+test('If rows in a data table: any / at least / none / every, timers as times', async () => {
+  const { JSDOM } = require('jsdom');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const dom = new JSDOM('<!DOCTYPE html>', { runScripts: 'outside-only' });
+  dom.window.eval(fs.readFileSync(path.join(__dirname, '../apps/dashboard/js/builder/page-core.js'), 'utf8'));
+  dom.window.eval(fs.readFileSync(path.join(__dirname, '../apps/dashboard/js/builder/page-runtime.js'), 'utf8'));
+  const now = Date.now();
+  const rows = [
+    { id: 'a', data: () => ({ name: 'Acme', _createdAt: now - 5 * 86400000 }) },
+    { id: 'b', data: () => ({ name: 'Bolt', _createdAt: now - 3600000 }) }
+  ];
+  const api = { db: {}, collection: (db, n) => ({ n }), onSnapshot: (ref, fn) => { fn({ forEach: f => rows.forEach(f) }); return () => {}; } };
+  const page = {
+    tables: [{ id: 't-acc', name: 'Accounts', fields: [{ key: 'name', label: 'Name' }, { key: 'age', label: 'Age', type: 'timer' }] }],
+    sections: [{ layout: '1', columns: [{ blocks: [] }] }]
+  };
+  const said = [];
+  const rt = dom.window.MTW_PAGE_RUNTIME.create({ page, toolId: 'x', api, ui: { toast: text => said.push(text) } });
+  const check = (match, value, howMany) => rt.run([{ type: 'ifRows', table: 't-acc', match, howMany, field: 'age', op: 'greater', value,
+    then: [{ type: 'message', text: 'yes {record.name}' }], else: [{ type: 'message', text: 'no' }] }]);
+  await check('any', '3 days');
+  await check('none', '3 days');
+  await check('atLeast', '30 minutes', 2);
+  await check('all', '3 days');
+  assert.deepEqual(said, ['yes Acme', 'no', 'yes Acme', 'no']);
+  rt.dispose();
+  dom.window.close();
+});

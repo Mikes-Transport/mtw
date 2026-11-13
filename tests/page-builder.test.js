@@ -1702,3 +1702,37 @@ test('builder: Table block can use a data table; colour rules, timer tiles and n
   editor.close(true);
   dom.window.close();
 });
+
+test('builder: a Number tile counts rows whose timer field is over a time (set up through the inspector)', async () => {
+  const old = Date.now() - 45 * 60000;
+  const draft = JSON.parse(JSON.stringify(QUEUE_PAGE));
+  draft.sections[0].columns[0].blocks.push({ type: 'stat', name: 'late', props: { label: 'Late', source: 'static', value: '0' } });
+  const db = store({ ...TOOLS, 'dashboard-tool-pages': { jobs: { draft } },
+    'dashboard-data-jobs-t-q': {
+      a: { customer: 'Ann', status: 'Waiting', _createdAt: old, _since_status: old },
+      b: { customer: 'Bob', status: 'Waiting', _createdAt: Date.now(), _since_status: Date.now() } } });
+  const { dom, window, document } = host({ db });
+  await waitFor(window, () => typeof window.MTW_OPEN_PAGE_BUILDER === 'function');
+  const editor = await window.MTW_OPEN_PAGE_BUILDER('jobs');
+  await editor.loaded;
+  const inspector = editor.element.querySelector('.mtw-pb-inspector');
+  const tile = editor.page.sections[0].columns[0].blocks.find(b => b.name === 'late');
+  editor.select({ kind: 'block', id: tile.id });
+  const set = (key, value) => {
+    const control = inspector.querySelector(`[data-field="${key}"] select, [data-field="${key}"] input`);
+    assert.ok(control, `${key} is shown`);
+    control.value = value;
+    control.dispatchEvent(new window.Event(control.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
+  };
+  set('source', 'count');
+  set('table', 't-q');
+  set('filterField', 'wait');
+  set('filterOp', 'greater');
+  set('filterValue', '40 minutes');
+  const props = editor.page.sections[0].columns[0].blocks.find(b => b.name === 'late').props;
+  assert.equal(props.filterOp, 'greater');
+  assert.equal(props.filterValue, '40 minutes');
+  await waitFor(window, () => editor.element.querySelector('[data-name="late"] .mtw-pb-stat-value').textContent === '1');
+  editor.close(true);
+  dom.window.close();
+});
