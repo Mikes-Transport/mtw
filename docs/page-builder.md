@@ -172,8 +172,8 @@ for every field, a Save button (save → message → clear) and a records list.
 
 A **Timer** field is filled in by nobody: it ticks by itself wherever the table shows
 (lists, tables, cards, Manage data). It **Counts from** when the row was added, or from
-another field: either the date / time in it (e.g. time since Pickup; a future date shows
-`in 2h 5m`) or when someone last changed it. It stays blank until that field has a value,
+another field: when someone fills it in / changes it (the default; e.g. starts the
+moment a date is picked), or the date / time written in it (a future date shows `in 2h 5m`). It stays blank until that field has a value,
 and can count **only while** that field has a value (e.g. a
 *Waiting time* that counts while Status is Waiting and goes blank once Served). Steps and
 colour rules see it as minutes. It isn't saved, exported as its current time, and skipped
