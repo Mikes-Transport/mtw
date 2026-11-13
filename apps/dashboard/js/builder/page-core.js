@@ -104,7 +104,7 @@
     },
     records: {
       label: 'Records list', group: 'Data',
-      defaults: { table: '', columns: [], editable: [], editBy: 'everyone', order: 'newest', limit: 50, search: 'yes', allowDelete: 'no', addRows: 'no', addFields: [], addLabel: '+ Add row', timerField: '', timerLabel: '', colorRules: [], emptyText: 'Nothing here yet.', actions: [] },
+      defaults: { table: '', columns: [], editable: [], editBy: 'everyone', order: 'newest', limit: 50, search: 'yes', allowDelete: 'no', addRows: 'no', addLabel: '+ Add row', timerField: '', timerLabel: '', colorRules: [], emptyText: 'Nothing here yet.', actions: [] },
       fields: [
         { key: 'table', label: 'Data table', type: 'table' },
         { key: 'columns', label: 'Columns to show (none ticked = all)', type: 'fieldpick' },
@@ -114,8 +114,7 @@
         { key: 'limit', label: 'Show at most', type: 'number', min: 1, max: 500 },
         { key: 'search', label: 'Search box', type: 'select', options: [['yes', 'Show'], ['no', 'Hide']] },
         { key: 'allowDelete', label: 'Delete button on rows', type: 'select', options: [['no', 'Nobody'], ['managers', 'Managers only'], ['everyone', 'Everyone who can see the tool']] },
-        { key: 'addRows', label: 'People can add rows here', type: 'select', options: [['no', 'No'], ['everyone', 'Everyone who can see the tool'], ['managers', 'Managers only']] },
-        { key: 'addFields', label: 'Fields they fill in (none ticked = all; required ones always)', type: 'fieldpick', when: { addRows: ['everyone', 'managers'] } },
+        { key: 'addRows', label: 'People can add rows here (a blank row they fill in)', type: 'select', options: [['no', 'No'], ['everyone', 'Everyone who can see the tool'], ['managers', 'Managers only']] },
         { key: 'addLabel', label: 'Add button text', type: 'text', when: { addRows: ['everyone', 'managers'] } },
         { key: 'timerField', label: 'Timer column: time since this field changed', type: 'field', any: 'No timer column' },
         { key: 'timerLabel', label: 'Timer column heading', type: 'text', when: { timerField: '*' } },
@@ -200,7 +199,7 @@
       defaults: {
         source: 'typed',
         header: 'yes',
-        table: '', show: [], editable: [], editBy: 'everyone', order: 'newest', limit: 50, search: 'no', allowDelete: 'no', addRows: 'no', addFields: [], addLabel: '+ Add row', timerField: '', timerLabel: '', colorRules: [], emptyText: 'Nothing here yet.',
+        table: '', show: [], editable: [], editBy: 'everyone', order: 'newest', limit: 50, search: 'no', allowDelete: 'no', addRows: 'no', addLabel: '+ Add row', timerField: '', timerLabel: '', colorRules: [], emptyText: 'Nothing here yet.',
         actions: [],
         columns: [{ id: 'k-name', label: 'Name' }, { id: 'k-role', label: 'Role' }, { id: 'k-phone', label: 'Phone' }],
         rows: [{ id: 'r-1', cells: { 'k-name': 'Sam', 'k-role': 'Stores', 'k-phone': '021 000 000' } }]
@@ -217,8 +216,7 @@
         { key: 'limit', label: 'Show at most', type: 'number', min: 1, max: 500, when: { source: 'table' } },
         { key: 'search', label: 'Search box', type: 'select', options: [['yes', 'Show'], ['no', 'Hide']], when: { source: 'table' } },
         { key: 'allowDelete', label: 'Delete button on rows', type: 'select', options: [['no', 'Nobody'], ['managers', 'Managers only'], ['everyone', 'Everyone who can see the tool']], when: { source: 'table' } },
-        { key: 'addRows', label: 'People can add rows here', type: 'select', options: [['no', 'No'], ['everyone', 'Everyone who can see the tool'], ['managers', 'Managers only']], when: { source: 'table' } },
-        { key: 'addFields', label: 'Fields they fill in (none ticked = all; required ones always)', type: 'fieldpick', when: { source: 'table', addRows: ['everyone', 'managers'] } },
+        { key: 'addRows', label: 'People can add rows here (a blank row they fill in)', type: 'select', options: [['no', 'No'], ['everyone', 'Everyone who can see the tool'], ['managers', 'Managers only']], when: { source: 'table' } },
         { key: 'addLabel', label: 'Add button text', type: 'text', when: { source: 'table', addRows: ['everyone', 'managers'] } },
         { key: 'timerField', label: 'Timer column: time since this field changed', type: 'field', any: 'No timer column', when: { source: 'table' } },
         { key: 'timerLabel', label: 'Timer column heading', type: 'text', when: { source: 'table', timerField: '*' } },

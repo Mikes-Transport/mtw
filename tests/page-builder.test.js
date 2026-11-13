@@ -1541,7 +1541,7 @@ const QUEUE_PAGE = {
     { key: 'note', label: 'Note', type: 'text' }] }],
   sections: [{ layout: '1', columns: [{ blocks: [
     { type: 'table', name: 'queue', props: { source: 'table', table: 't-q', show: ['customer', 'status'], editable: ['status'],
-      addRows: 'everyone', addFields: ['status'], timerField: 'status', timerLabel: 'Waiting for',
+      addRows: 'everyone', timerField: 'status', timerLabel: 'Waiting for',
       colorRules: [
         { field: 'status', op: 'equals', value: 'Waiting', minutes: 30, background: '#ff0000', target: 'row' },
         { field: 'status', op: 'equals', value: 'Served', color: '#00aa00', target: 'cell' }] } },
@@ -1587,23 +1587,25 @@ test('tables from a data table: add rows, timer column, colour rules; timer tile
   assert.equal(panel.querySelector('[data-name="clock"]').style.background, 'rgb(18, 52, 86)');
   panel.querySelector('[data-name="go"] button').click();
   await waitFor(window, () => panel.querySelector('[data-name="clock"] .mtw-pb-stat-value').textContent === '1s', 3000);
-  // + Add row: only the picked fields plus required ones
+  // + Add row: a blank row appears in the table, its cells filled in place
   queue.querySelector('.mtw-pb-add-row-open').click();
-  const form = queue.querySelector('.mtw-pb-add-row');
-  assert.equal(form.hidden, false);
-  assert.deepEqual([...form.querySelectorAll('[data-field]')].map(c => c.dataset.field), ['customer', 'status']);
-  form.querySelector('[data-field="status"]').value = 'Waiting';
-  form.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
-  await waitFor(window, () => /Customer/.test(form.querySelector('.mtw-pb-add-row-error').textContent));
-  form.querySelector('[data-field="customer"]').value = 'Cat';
-  form.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
-  await waitFor(window, () => Object.values(db.data['dashboard-data-jobs-t-q']).some(r => r.customer === 'Cat'));
-  const cat = Object.values(db.data['dashboard-data-jobs-t-q']).find(r => r.customer === 'Cat');
-  assert.equal(cat.status, 'Waiting');
-  assert.equal(cat._createdBy, 'Stores');
-  assert.ok(cat._since_status > 0, 'remembers when status was set');
-  await waitFor(window, () => queue.querySelectorAll('tbody tr').length === 3);
-  assert.equal(form.hidden, true);
+  await waitFor(window, () => queue.querySelector('tbody tr.is-new-row'));
+  const fresh = queue.querySelector('tbody tr.is-new-row');
+  const [nameBox, statusBox] = fresh.querySelectorAll('.mtw-pb-inline-edit');
+  assert.equal(nameBox.tagName, 'INPUT', 'every cell of the new row is editable');
+  await waitFor(window, () => document.activeElement === nameBox);
+  const newId = Object.keys(db.data['dashboard-data-jobs-t-q']).find(id => !['a', 'b'].includes(id));
+  assert.equal(db.data['dashboard-data-jobs-t-q'][newId]._createdBy, 'Stores');
+  nameBox.value = 'Cat';
+  nameBox.dispatchEvent(new window.Event('blur'));
+  await waitFor(window, () => db.data['dashboard-data-jobs-t-q'][newId].customer === 'Cat');
+  await waitFor(window, () => queue.querySelector('tbody tr.is-new-row select'));
+  const sel = queue.querySelector('tbody tr.is-new-row select');
+  sel.value = 'Waiting';
+  sel.dispatchEvent(new window.Event('change', { bubbles: true }));
+  await waitFor(window, () => db.data['dashboard-data-jobs-t-q'][newId].status === 'Waiting');
+  assert.ok(db.data['dashboard-data-jobs-t-q'][newId]._since_status > 0, 'remembers when status was set');
+  assert.ok(statusBox);
   // changing the status in place restarts its timer
   const annSelect = [...queue.querySelectorAll('tbody tr')].find(tr => tr.textContent.includes('Ann')).querySelector('select');
   annSelect.value = 'Served';

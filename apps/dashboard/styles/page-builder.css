@@ -1167,19 +1167,7 @@ button.mtw-pb-record-card:hover { border-color: #9a9893; box-shadow: 0 4px 14px 
 .mtw-pb-stat.has-ink .mtw-pb-stat-note,
 .mtw-pb-stat.has-ink .mtw-pb-stat-value { color: inherit; }
 .mtw-pb-add-row-wrap { margin-top: 10px; }
-.mtw-pb-add-row {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--mtw-line, #e3e3df);
-  border-radius: 10px;
-  background: var(--mtw-surface, #fafaf8);
-}
-.mtw-pb-add-row[hidden] { display: none; }
-.mtw-pb-add-row-fields { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
-.mtw-pb-add-row-bar { display: flex; gap: 8px; }
-.mtw-pb-add-row-error { margin: 0; color: #b42318; font-size: 13px; }
-.mtw-pb-add-row-error:empty { display: none; }
+.mtw-pb-table tr.is-new-row { background: rgba(37, 99, 235, 0.05); }
 .mtw-pb-colour-swatch {
   display: inline-grid;
   place-items: center;
@@ -1190,5 +1178,4 @@ button.mtw-pb-record-card:hover { border-color: #9a9893; box-shadow: 0 4px 14px 
   font-size: 11px;
   font-weight: 700;
 }
-.mtw-pb-add-row-open[hidden] { display: none; }
 .has-ink .mtw-pb-inline-edit { color: inherit; font-weight: 600; }

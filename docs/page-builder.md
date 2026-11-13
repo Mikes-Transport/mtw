@@ -32,8 +32,8 @@ columns stack on narrow screens.
   button (nobody / Managers / everyone). **Columns people can change right here** turns
   columns into dropdowns / boxes that save in place (everyone or Managers only).
   **People can add rows here** (everyone who can see the tool, or Managers only) adds a
-  **+ Add row** button that opens a small form under the list: the fields the manager
-  ticked (required fields always), checked like the table's fields and saved as a record.
+  **+ Add row** button that adds a blank row straight into the table (like Manage data);
+  its cells are boxes / dropdowns to fill in, each saved as it's changed.
   **Timer column** shows, ticking, how long each row's chosen field has had its value
   (e.g. *Time at this status*).
 - **Colours** (Table, Records list, Card list from a table, Number tile): rules like

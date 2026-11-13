@@ -495,6 +495,12 @@
       record._createdAt = Date.now();
       record._createdBy = user;
       stampChanges(def, record, null);
+      if (opts.dryRun) {
+        previewCount += 1;
+        const id = `preview-${previewCount}`;
+        previewChange(tableId, rows => rows.concat({ ...record, _id: id, _preview: true }));
+        return id;
+      }
       if (typeof api.addDoc !== 'function') throw new Error('The dashboard database is unavailable.');
       const ref = await api.addDoc(collectionRef(tableId), record);
       return ref && ref.id;

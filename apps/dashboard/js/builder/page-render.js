@@ -161,103 +161,6 @@
     else show();
   }
 
-  // "+ Add row": a small form under a list, saved as a new record.
-  function addRowControl(doc, field) {
-    let control;
-    if (field.type === 'choice' || field.type === 'yesno') {
-      control = el(doc, 'select', 'mtw-pb-control');
-      const choices = field.type === 'yesno' ? ['No', 'Yes'] : [''].concat(core().listItems(field.options));
-      choices.forEach(text => {
-        const option = el(doc, 'option', '', text || 'Choose...');
-        option.value = text;
-        control.appendChild(option);
-      });
-    } else if (field.type === 'longtext') {
-      control = el(doc, 'textarea', 'mtw-pb-control');
-      control.rows = 2;
-    } else {
-      control = el(doc, 'input', 'mtw-pb-control');
-      control.type = field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : field.type === 'image' ? 'url' : 'text';
-      if (field.type === 'image') control.placeholder = 'https://';
-    }
-    if (field.required) control.required = true;
-    return control;
-  }
-
-  function renderAddRow(doc, p, def, options) {
-    const rt = options.runtime;
-    const allowed = p.addRows === 'everyone' || (p.addRows === 'managers' && rt && rt.isManager);
-    if (!allowed && !(options.editing && p.addRows && p.addRows !== 'no')) return null;
-    const wrap = el(doc, 'div', 'mtw-pb-add-row-wrap');
-    const open = el(doc, 'button', 'mtw-pb-button mtw-pb-button-secondary mtw-pb-add-row-open', p.addLabel || '+ Add row');
-    open.type = 'button';
-    wrap.appendChild(open);
-    if (options.editing || !rt) {
-      open.tabIndex = -1;
-      return wrap;
-    }
-    const form = el(doc, 'form', 'mtw-pb-add-row');
-    form.hidden = true;
-    form.noValidate = true;
-    const chosen = p.addFields && p.addFields.length ? p.addFields : def.fields.map(f => f.key);
-    const fields = def.fields.filter(f => chosen.includes(f.key) || f.required);
-    const controls = {};
-    const grid = el(doc, 'div', 'mtw-pb-add-row-fields');
-    fields.forEach(field => {
-      const label = el(doc, 'label', 'mtw-pb-input');
-      label.appendChild(el(doc, 'span', 'mtw-pb-input-label', field.required ? `${field.label} *` : field.label));
-      controls[field.key] = addRowControl(doc, field);
-      controls[field.key].dataset.field = field.key;
-      label.appendChild(controls[field.key]);
-      grid.appendChild(label);
-    });
-    const message = el(doc, 'p', 'mtw-pb-add-row-error');
-    message.setAttribute('role', 'alert');
-    const bar = el(doc, 'div', 'mtw-pb-add-row-bar');
-    const saveBtn = el(doc, 'button', 'mtw-pb-button mtw-pb-button-primary', 'Add');
-    saveBtn.type = 'submit';
-    const cancel = el(doc, 'button', 'mtw-pb-button mtw-pb-button-ghost', 'Cancel');
-    cancel.type = 'button';
-    bar.append(saveBtn, cancel);
-    form.append(grid, message, bar);
-    wrap.appendChild(form);
-    const reset = () => {
-      Object.entries(controls).forEach(([key, control]) => {
-        const field = def.fields.find(f => f.key === key);
-        control.value = field && field.type === 'yesno' ? 'No' : '';
-      });
-      message.textContent = '';
-    };
-    open.addEventListener('click', () => {
-      reset();
-      form.hidden = false;
-      open.hidden = true;
-      const first = Object.values(controls)[0];
-      if (first) first.focus();
-    });
-    cancel.addEventListener('click', () => {
-      form.hidden = true;
-      open.hidden = false;
-    });
-    form.addEventListener('submit', async event => {
-      event.preventDefault();
-      const values = {};
-      Object.entries(controls).forEach(([key, control]) => { values[key] = control.value; });
-      saveBtn.disabled = true;
-      try {
-        await rt.addValues(p.table, values);
-        form.hidden = true;
-        open.hidden = false;
-        if (options.ui && options.ui.toast) options.ui.toast('Added.', 'success');
-      } catch (error) {
-        message.textContent = error.message || 'Could not add that.';
-      } finally {
-        saveBtn.disabled = false;
-      }
-    });
-    return wrap;
-  }
-
   function renderRecords(doc, block, options) {
     const rt = options.runtime;
     const p = block.props;
@@ -296,8 +199,37 @@
     node.appendChild(wrap);
     const status = el(doc, 'p', 'mtw-pb-records-status');
     node.appendChild(status);
-    const adder = renderAddRow(doc, p, def, options);
-    if (adder) node.appendChild(adder);
+    // "+ Add row": a blank record straight into the table (like Manage data); its cells
+    // stay editable for whoever added it until they leave the tool.
+    const fresh = new Set();
+    let focusId = null;
+    const canAdd = p.addRows === 'everyone' || (p.addRows === 'managers' && rt && rt.isManager);
+    if (canAdd || (options.editing && p.addRows && p.addRows !== 'no')) {
+      const add = el(doc, 'button', 'mtw-pb-button mtw-pb-button-secondary mtw-pb-add-row-open', p.addLabel || '+ Add row');
+      add.type = 'button';
+      if (options.editing || !rt) add.tabIndex = -1;
+      else {
+        add.addEventListener('click', async () => {
+          add.disabled = true;
+          try {
+            const id = await rt.addRecord(p.table);
+            if (id) {
+              fresh.add(id);
+              focusId = id;
+              if (search && search.value) search.value = '';
+              redraw();
+            }
+          } catch (error) {
+            if (options.ui && options.ui.toast) options.ui.toast(error.message || 'Could not add a row.', 'danger');
+          } finally {
+            add.disabled = false;
+          }
+        });
+      }
+      const wrap = el(doc, 'div', 'mtw-pb-add-row-wrap');
+      wrap.appendChild(add);
+      node.appendChild(wrap);
+    }
 
     let entry = null;
     const draw = () => {
@@ -331,7 +263,7 @@
         const cells = {};
         fields.forEach(field => {
           let td;
-          if (editableKeys.includes(field.key)) {
+          if (editableKeys.includes(field.key) || fresh.has(row._id)) {
             td = el(doc, 'td', 'mtw-pb-edit-cell');
             td.appendChild(editableControl(doc, field, row, p.table, options));
           } else td = el(doc, 'td', '', fmt(row[field.key], field.type));
@@ -344,6 +276,12 @@
           tr.appendChild(td);
         }
         colourRow(tr, cells, p.colorRules, row, rt);
+        if (fresh.has(row._id)) tr.classList.add('is-new-row');
+        if (focusId && row._id === focusId) {
+          focusId = null;
+          const first = tr.querySelector('.mtw-pb-inline-edit');
+          if (first) (doc.defaultView || root).setTimeout(() => first.focus(), 0);
+        }
         const added = el(doc, 'td', 'mtw-pb-records-when', when(row._createdAt));
         if (row._createdBy) added.title = `Added by ${row._createdBy}`;
         tr.appendChild(added);
