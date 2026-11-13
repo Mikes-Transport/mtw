@@ -78,7 +78,12 @@
   function fieldMs(field, record, now) {
     if (!field || field.type !== 'timer' || !record) return NaN;
     const c = core();
-    const at = now || Date.now();
+    let at = now || Date.now();
+    if (field.stopField) {
+      const stop = record[field.stopField];
+      // Filled in: the timer holds at the moment it was filled in.
+      if (stop !== undefined && stop !== null && String(stop).trim() !== '') at = Math.min(at, c.sinceOf(record, field.stopField) || at);
+    }
     if (field.from) {
       const v = record[field.from];
       // Nothing in the field yet: not counting.

@@ -1449,6 +1449,9 @@
         card.appendChild(fieldControl({ key: `while-${field.key}`, label: `Only counts while ${from ? from.label : 'it'} is (blank = always)`, type: 'text' }, field.whileValue,
           value => commit(c.updateField(history.page, tableId, field.key, { whileValue: value }), undefined, `${tableId}:f:${field.key}:while`)));
       }
+      card.appendChild(fieldControl({ key: `stop-${field.key}`, label: 'Stops (holds its time) when this is filled in', type: 'select',
+        options: [['', 'Never: keeps ticking']].concat(others.filter(f => f.key !== field.from).map(f => [f.key, `When ${f.label} is filled in`])) }, field.stopField,
+      value => commit(c.updateField(history.page, tableId, field.key, { stopField: value }))));
       card.appendChild(el('p', 'mtw-pb-field-help', field.from
         ? 'It stays blank until that field has something in it. Nobody fills this in: it ticks by itself in lists, cards and Manage data. Steps and colour rules see it as minutes.'
         : 'Nobody fills this in: it ticks by itself in lists, cards and Manage data. Steps and colour rules see it as minutes.'));

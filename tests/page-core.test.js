@@ -355,3 +355,22 @@ test('timer fields: blank until their field has a value; can count from the date
   assert.match(rt.fieldTimerText(byValue, { pickup: '2999-01-01' }), /^in /, 'future dates count down');
   dom.window.close();
 });
+
+test('timer fields hold still once their stop field is filled in', () => {
+  const { JSDOM } = require('jsdom');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const dom = new JSDOM('<!DOCTYPE html>', { runScripts: 'outside-only' });
+  dom.window.eval(fs.readFileSync(path.join(__dirname, '../apps/dashboard/js/builder/page-core.js'), 'utf8'));
+  dom.window.eval(fs.readFileSync(path.join(__dirname, '../apps/dashboard/js/builder/page-runtime.js'), 'utf8'));
+  const rt = dom.window.MTW_PAGE_RUNTIME;
+  const now = Date.now();
+  const field = { type: 'timer', from: 'start', fromMode: 'changed', stopField: 'done' };
+  const running = { start: '2026-11-13', _since_start: now - 3600000, done: '', _since_done: now - 3600000 };
+  assert.equal(rt.fieldMs(field, running, now), 3600000, 'ticking while Done is empty');
+  const held = { ...running, done: '2026-11-13', _since_done: now - 600000 };
+  assert.equal(rt.fieldMs(field, held, now), 3000000, 'held at when Done was filled in');
+  assert.equal(rt.fieldMs(field, held, now + 999999), 3000000, 'and stays there');
+  assert.equal(core.sanitizeTables([{ name: 'X', fields: [{ key: 'w', type: 'timer', stopField: 'done' }] }])[0].fields[0].stopField, 'done');
+  dom.window.close();
+});

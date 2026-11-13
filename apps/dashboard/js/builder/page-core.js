@@ -756,7 +756,9 @@
             from: typeof f.from === 'string' && KEY_RE.test(f.from) ? f.from : '',
             whileValue: str(f.whileValue, LIMITS.short),
             // 'changed': from when "from" last changed; 'value': from the date / time in it.
-            fromMode: f.fromMode === 'value' ? 'value' : 'changed'
+            fromMode: f.fromMode === 'value' ? 'value' : 'changed',
+            // Stops (holds its time) once this field is filled in.
+            stopField: typeof f.stopField === 'string' && KEY_RE.test(f.stopField) ? f.stopField : ''
           };
         });
       return { id, name: str(raw.name, 80) || 'Untitled table', fields };
@@ -819,6 +821,7 @@
     if (changes.options !== undefined) field.options = str(changes.options, LIMITS.text);
     if (changes.from !== undefined) field.from = typeof changes.from === 'string' && KEY_RE.test(changes.from) ? changes.from : '';
     if (changes.whileValue !== undefined) field.whileValue = str(changes.whileValue, LIMITS.short);
+    if (changes.stopField !== undefined) field.stopField = typeof changes.stopField === 'string' && KEY_RE.test(changes.stopField) ? changes.stopField : '';
     if (changes.fromMode !== undefined) field.fromMode = changes.fromMode === 'value' ? 'value' : 'changed';
     if (field.type === 'timer') field.required = false;
     return next;
