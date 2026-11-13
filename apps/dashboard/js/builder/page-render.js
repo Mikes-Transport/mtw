@@ -123,6 +123,141 @@
     return wrap;
   }
 
+  // ---------- colours and timers ----------
+  function runtimeLib() {
+    return root.MTW_PAGE_RUNTIME;
+  }
+
+  function paint(node, rule) {
+    node.style.background = rule && rule.background ? rule.background : '';
+    node.style.color = rule && rule.color ? rule.color : '';
+    node.classList.toggle('is-coloured', Boolean(rule && (rule.background || rule.color)));
+    node.classList.toggle('has-ink', Boolean(rule && rule.color));
+  }
+
+  // Colours a row (or one cell of it) by the first matching rule. cells: key -> td.
+  // Rules with "for at least N minutes" are checked again every second.
+  function colourRow(tr, cells, rules, record, rt) {
+    if (!rules || !rules.length || !runtimeLib()) return;
+    let last = null;
+    const apply = () => {
+      const rule = runtimeLib().colorFor(rules, record);
+      const id = rule ? rule.id : '';
+      if (id === last) return;
+      last = id;
+      paint(tr, null);
+      Object.values(cells).forEach(td => paint(td, null));
+      if (!rule) return;
+      if (rule.target === 'cell' && cells[rule.field]) paint(cells[rule.field], rule);
+      else paint(tr, rule);
+    };
+    if (rt && rules.some(rule => rule.minutes)) rt.tick(tr, apply);
+    else apply();
+  }
+
+  function sinceCell(doc, td, record, key, rt) {
+    const show = () => { td.textContent = core().formatDuration(Date.now() - core().sinceOf(record, key)); };
+    if (rt) rt.tick(td, show);
+    else show();
+  }
+
+  // "+ Add row": a small form under a list, saved as a new record.
+  function addRowControl(doc, field) {
+    let control;
+    if (field.type === 'choice' || field.type === 'yesno') {
+      control = el(doc, 'select', 'mtw-pb-control');
+      const choices = field.type === 'yesno' ? ['No', 'Yes'] : [''].concat(core().listItems(field.options));
+      choices.forEach(text => {
+        const option = el(doc, 'option', '', text || 'Choose...');
+        option.value = text;
+        control.appendChild(option);
+      });
+    } else if (field.type === 'longtext') {
+      control = el(doc, 'textarea', 'mtw-pb-control');
+      control.rows = 2;
+    } else {
+      control = el(doc, 'input', 'mtw-pb-control');
+      control.type = field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : field.type === 'image' ? 'url' : 'text';
+      if (field.type === 'image') control.placeholder = 'https://';
+    }
+    if (field.required) control.required = true;
+    return control;
+  }
+
+  function renderAddRow(doc, p, def, options) {
+    const rt = options.runtime;
+    const allowed = p.addRows === 'everyone' || (p.addRows === 'managers' && rt && rt.isManager);
+    if (!allowed && !(options.editing && p.addRows && p.addRows !== 'no')) return null;
+    const wrap = el(doc, 'div', 'mtw-pb-add-row-wrap');
+    const open = el(doc, 'button', 'mtw-pb-button mtw-pb-button-secondary mtw-pb-add-row-open', p.addLabel || '+ Add row');
+    open.type = 'button';
+    wrap.appendChild(open);
+    if (options.editing || !rt) {
+      open.tabIndex = -1;
+      return wrap;
+    }
+    const form = el(doc, 'form', 'mtw-pb-add-row');
+    form.hidden = true;
+    form.noValidate = true;
+    const chosen = p.addFields && p.addFields.length ? p.addFields : def.fields.map(f => f.key);
+    const fields = def.fields.filter(f => chosen.includes(f.key) || f.required);
+    const controls = {};
+    const grid = el(doc, 'div', 'mtw-pb-add-row-fields');
+    fields.forEach(field => {
+      const label = el(doc, 'label', 'mtw-pb-input');
+      label.appendChild(el(doc, 'span', 'mtw-pb-input-label', field.required ? `${field.label} *` : field.label));
+      controls[field.key] = addRowControl(doc, field);
+      controls[field.key].dataset.field = field.key;
+      label.appendChild(controls[field.key]);
+      grid.appendChild(label);
+    });
+    const message = el(doc, 'p', 'mtw-pb-add-row-error');
+    message.setAttribute('role', 'alert');
+    const bar = el(doc, 'div', 'mtw-pb-add-row-bar');
+    const saveBtn = el(doc, 'button', 'mtw-pb-button mtw-pb-button-primary', 'Add');
+    saveBtn.type = 'submit';
+    const cancel = el(doc, 'button', 'mtw-pb-button mtw-pb-button-ghost', 'Cancel');
+    cancel.type = 'button';
+    bar.append(saveBtn, cancel);
+    form.append(grid, message, bar);
+    wrap.appendChild(form);
+    const reset = () => {
+      Object.entries(controls).forEach(([key, control]) => {
+        const field = def.fields.find(f => f.key === key);
+        control.value = field && field.type === 'yesno' ? 'No' : '';
+      });
+      message.textContent = '';
+    };
+    open.addEventListener('click', () => {
+      reset();
+      form.hidden = false;
+      open.hidden = true;
+      const first = Object.values(controls)[0];
+      if (first) first.focus();
+    });
+    cancel.addEventListener('click', () => {
+      form.hidden = true;
+      open.hidden = false;
+    });
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const values = {};
+      Object.entries(controls).forEach(([key, control]) => { values[key] = control.value; });
+      saveBtn.disabled = true;
+      try {
+        await rt.addValues(p.table, values);
+        form.hidden = true;
+        open.hidden = false;
+        if (options.ui && options.ui.toast) options.ui.toast('Added.', 'success');
+      } catch (error) {
+        message.textContent = error.message || 'Could not add that.';
+      } finally {
+        saveBtn.disabled = false;
+      }
+    });
+    return wrap;
+  }
+
   function renderRecords(doc, block, options) {
     const rt = options.runtime;
     const p = block.props;
@@ -144,8 +279,12 @@
     }
     const wrap = el(doc, 'div', 'mtw-pb-table-wrap');
     const tableEl = el(doc, 'table', 'mtw-pb-table');
-    const head = tableEl.createTHead().insertRow();
+    const thead = tableEl.createTHead();
+    if (p.header === 'no') thead.hidden = true;
+    const head = thead.insertRow();
     fields.forEach(field => head.appendChild(el(doc, 'th', '', field.label)));
+    const timerField = p.timerField ? def.fields.find(f => f.key === p.timerField) : null;
+    if (timerField) head.appendChild(el(doc, 'th', 'mtw-pb-records-timer', p.timerLabel || `Time at this ${timerField.label.toLowerCase()}`));
     head.appendChild(el(doc, 'th', 'mtw-pb-records-when', 'Added'));
     const canDelete = canDeleteRows(p, options);
     const clickable = !options.editing && p.actions && p.actions.length;
@@ -157,6 +296,8 @@
     node.appendChild(wrap);
     const status = el(doc, 'p', 'mtw-pb-records-status');
     node.appendChild(status);
+    const adder = renderAddRow(doc, p, def, options);
+    if (adder) node.appendChild(adder);
 
     let entry = null;
     const draw = () => {
@@ -187,13 +328,22 @@
             if (event.key === 'Enter' && !event.target.closest('.mtw-pb-records-delete')) go();
           });
         }
+        const cells = {};
         fields.forEach(field => {
+          let td;
           if (editableKeys.includes(field.key)) {
-            const td = el(doc, 'td', 'mtw-pb-edit-cell');
+            td = el(doc, 'td', 'mtw-pb-edit-cell');
             td.appendChild(editableControl(doc, field, row, p.table, options));
-            tr.appendChild(td);
-          } else tr.appendChild(el(doc, 'td', '', fmt(row[field.key], field.type)));
+          } else td = el(doc, 'td', '', fmt(row[field.key], field.type));
+          cells[field.key] = td;
+          tr.appendChild(td);
         });
+        if (timerField) {
+          const td = el(doc, 'td', 'mtw-pb-records-timer');
+          sinceCell(doc, td, row, timerField.key, rt);
+          tr.appendChild(td);
+        }
+        colourRow(tr, cells, p.colorRules, row, rt);
         const added = el(doc, 'td', 'mtw-pb-records-when', when(row._createdAt));
         if (row._createdBy) added.title = `Added by ${row._createdBy}`;
         tr.appendChild(added);
@@ -364,6 +514,13 @@
           const text = part.field ? value : (rt ? rt.tokens(part.text, { record }) : part.text);
           if (!text) return;
           node = el(doc, 'span', `mtw-pb-card-part mtw-pb-badge mtw-pb-badge-${part.tone}`, text);
+          break;
+        }
+        case 'timer': {
+          node = el(doc, 'div', 'mtw-pb-card-part mtw-pb-card-timer');
+          const words = part.text ? `${part.text} ` : '';
+          if (more.preview || !rt) node.textContent = `${words}12m 5s`;
+          else rt.tick(node, () => { node.textContent = `${words}${core().formatDuration(Date.now() - core().sinceOf(record, part.field || '_createdAt'))}`; });
           break;
         }
         case 'meta': {
@@ -545,6 +702,18 @@
           });
         }
         applyCardStyle(card, p.design.style);
+        if (p.colorRules && p.colorRules.length && runtimeLib()) {
+          const colour = () => {
+            const rule = runtimeLib().colorFor(p.colorRules, row);
+            if (rule && rule.background) card.style.background = rule.background;
+            else if (p.design.style && p.design.style.background) card.style.background = p.design.style.background;
+            else card.style.background = '';
+            card.style.color = rule && rule.color ? rule.color : '';
+            card.classList.toggle('is-coloured', Boolean(rule));
+          };
+          if (p.colorRules.some(rule => rule.minutes)) rt.tick(card, colour);
+          else colour();
+        }
         if (p.design.parts.length) {
           const fieldMap = { _createdAt: { label: 'Added', type: 'text' }, _createdBy: { label: 'Added by', type: 'text' } };
           def.fields.forEach(f => { fieldMap[f.key] = f; });
@@ -682,13 +851,26 @@
         node.appendChild(el(doc, 'span', 'mtw-pb-stat-label', p.label));
         const valueNode = el(doc, 'strong', 'mtw-pb-stat-value', override !== null ? override : p.source === 'count' ? '' : p.value);
         node.appendChild(valueNode);
+        const colour = () => {
+          if (!rt || !p.colorRules || !p.colorRules.length || !runtimeLib()) return;
+          paint(node, runtimeLib().colorFor(p.colorRules, { value: rt.value(block.name) }));
+        };
         if (p.source === 'count' && override === null) {
           if (rt && rt.tables[p.table]) {
             rt.watch(p.table, node, entry => {
               valueNode.textContent = entry.error ? '-' : entry.loaded ? String(rt.count(block)) : '...';
+              colour();
             });
           } else valueNode.textContent = '-';
-        }
+        } else if (p.source === 'timer' && override === null && rt) {
+          node.classList.add('is-timer');
+          rt.tick(node, () => {
+            valueNode.textContent = rt.timerText(block.name);
+            colour();
+          });
+        } else if (p.source === 'timer' && override === null) {
+          valueNode.textContent = '0s';
+        } else colour();
         if (p.note) node.appendChild(el(doc, 'span', 'mtw-pb-stat-note', p.note));
         break;
       }
@@ -701,6 +883,11 @@
         node.setAttribute('aria-hidden', 'true');
         break;
       case 'table': {
+        if (p.source === 'table') {
+          node = renderRecords(doc, { ...block, props: { ...p, columns: p.show || [] } }, options);
+          node.classList.add('mtw-pb-data-table');
+          break;
+        }
         node = el(doc, 'div', 'mtw-pb-table-wrap');
         const tableEl = el(doc, 'table', 'mtw-pb-table');
         if (p.header === 'yes' && p.columns.length) {
@@ -710,7 +897,12 @@
         const body = tableEl.appendChild(el(doc, 'tbody'));
         p.rows.forEach(row => {
           const tr = body.insertRow();
-          p.columns.forEach(col => tr.appendChild(el(doc, 'td', '', row.cells[col.id] || '')));
+          const cells = {};
+          p.columns.forEach(col => {
+            cells[col.id] = el(doc, 'td', '', row.cells[col.id] || '');
+            tr.appendChild(cells[col.id]);
+          });
+          colourRow(tr, cells, p.colorRules, row.cells, null);
         });
         node.appendChild(tableEl);
         break;
@@ -756,7 +948,7 @@
         node = el(doc, 'div');
     }
     // Headings, text, notices, cards, tiles and images can run steps when clicked.
-    if (CLICKABLE.includes(block.type) && Array.isArray(p.actions) && p.actions.length && !options.editing && rt) {
+    if (CLICKABLE.includes(block.type) && !(block.type === 'table' && p.source === 'table') && Array.isArray(p.actions) && p.actions.length && !options.editing && rt) {
       node.classList.add('is-clickable');
       node.setAttribute('role', 'button');
       node.tabIndex = 0;

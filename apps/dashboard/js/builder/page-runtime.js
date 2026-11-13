@@ -57,6 +57,43 @@
     }
   }
 
+  // The first colour rule that matches a record (rules: see core sanitizeColorRules).
+  // A rule with minutes also needs the field to have had its value that long.
+  function colorFor(rules, record, now) {
+    const c = core();
+    const at = now || Date.now();
+    for (const rule of rules || []) {
+      if (!rule || (!rule.background && !rule.color)) continue;
+      let v = record ? (rule.field ? record[rule.field] : record.value) : '';
+      if (v === true) v = 'Yes';
+      if (v === false) v = 'No';
+      if (!compare(v, rule.op, rule.value)) continue;
+      if (rule.minutes && rule.field && at - c.sinceOf(record, rule.field) < rule.minutes * 60000) continue;
+      return rule;
+    }
+    return null;
+  }
+
+  // "2026-12-24 17:00", "2026-12-24", "17:00" (today), or a timestamp -> ms (NaN if not a time).
+  function parseWhen(text) {
+    const v = String(text === undefined || text === null ? '' : text).trim();
+    if (!v) return NaN;
+    if (/^\d{12,}$/.test(v)) return Number(v);
+    const time = v.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (time) {
+      const d = new Date();
+      d.setHours(Number(time[1]), Number(time[2]), Number(time[3] || 0), 0);
+      return d.getTime();
+    }
+    const date = v.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+    if (date) {
+      return new Date(Number(date[1]), Number(date[2]) - 1, Number(date[3]),
+        Number(date[4] || 0), Number(date[5] || 0), Number(date[6] || 0)).getTime();
+    }
+    const parsed = Date.parse(v);
+    return Number.isFinite(parsed) ? parsed : NaN;
+  }
+
   // options: { page, toolId, api, user, isManager, editing, ui }
   //   ui (from the renderer): { toast(text, tone), confirm(text) -> Promise<boolean>,
   //   update(name) to redraw one element, openTool(id), openUrl(url, newTab) }
@@ -78,6 +115,8 @@
       // tableId -> { rows, loaded, error, unsubscribe, listeners:Set }. The builder passes a
       // shared cache so redrawing the canvas doesn't resubscribe on every edit.
       data: opts.shared ? opts.shared.data : {},
+      // stopwatch tile name -> { elapsed, startedAt (null when paused) }
+      timers: {},
       disposed: false
     };
     let ui = opts.ui || {};
@@ -119,6 +158,9 @@
     }
 
     Object.values(elements).forEach(block => {
+      if (block.type === 'stat' && block.props.source === 'timer' && block.props.timerKind === 'stopwatch') {
+        state.timers[block.name] = { elapsed: 0, startedAt: block.props.timerAuto === 'no' ? null : Date.now() };
+      }
       if (block.hidden) state.hidden.add(block.name);
       if (block.type === 'input') {
         const spec = inputSpec(block);
@@ -205,7 +247,8 @@
         case 'notice': return p.text;
         case 'button': return p.label;
         case 'card': return p.title;
-        case 'stat': return p.source === 'count' ? count(block) : p.value;
+        case 'stat': return p.source === 'count' ? count(block)
+          : p.source === 'timer' ? (Number.isFinite(timerMs(name)) ? Math.floor(timerMs(name) / 60000) : '') : p.value;
         case 'records': {
           const entry = table(p.table);
           return entry ? entry.rows.length : 0;
@@ -214,6 +257,70 @@
         case 'list': return c.listItems(p.items).length;
         default: return '';
       }
+    }
+
+    // ---------- timers ----------
+    // Milliseconds shown by a timer tile (NaN when its date / time isn't a time yet).
+    function timerMs(name) {
+      const block = elements[name];
+      if (!block || block.type !== 'stat' || block.props.source !== 'timer') return NaN;
+      const p = block.props;
+      const now = Date.now();
+      if (p.timerKind === 'stopwatch') {
+        const t = state.timers[name] || { elapsed: 0, startedAt: null };
+        return t.elapsed + (t.startedAt ? now - t.startedAt : 0);
+      }
+      const at = parseWhen(tokens(p.timerAt));
+      if (!Number.isFinite(at)) return NaN;
+      return p.timerKind === 'until' ? Math.max(0, at - now) : Math.max(0, now - at);
+    }
+
+    function timerText(name) {
+      const block = elements[name];
+      const ms = timerMs(name);
+      if (!Number.isFinite(ms)) return '-';
+      if (block.props.timerKind === 'until' && ms <= 0) return block.props.doneText || '0s';
+      return c.formatDuration(block.props.timerKind === 'until' ? ms + 999 : ms, block.props.timerFormat);
+    }
+
+    function timerStep(type, name) {
+      const t = state.timers[name];
+      if (!t) return;
+      const now = Date.now();
+      if (type === 'startTimer' && !t.startedAt) t.startedAt = now;
+      if (type === 'pauseTimer' && t.startedAt) {
+        t.elapsed += now - t.startedAt;
+        t.startedAt = null;
+      }
+      if (type === 'resetTimer') {
+        t.elapsed = 0;
+        if (t.startedAt) t.startedAt = now;
+      }
+      refresh(name);
+    }
+
+    // Once a second while something on screen ticks (timers, "time since" columns).
+    const tickers = new Set();
+    let tickId = null;
+    function onTick() {
+      tickers.forEach(item => {
+        if (item.node.isConnected) item.seen = true;
+        else if (item.seen || Date.now() - item.added > 10000) {
+          tickers.delete(item);
+          return;
+        }
+        try { item.fn(); } catch (error) { tickers.delete(item); }
+      });
+      if (!tickers.size && tickId !== null) {
+        root.clearInterval(tickId);
+        tickId = null;
+      }
+    }
+    function tick(node, fn) {
+      fn();
+      if (state.disposed) return;
+      tickers.add({ node, fn, seen: false, added: Date.now() });
+      if (tickId === null) tickId = root.setInterval(onTick, 1000);
     }
 
     function refresh(name) {
@@ -281,6 +388,9 @@
       if (missing.length) throw new Error(`Please fill in: ${missing.join(', ')}.`);
       const editing = mode !== 'add' && state.editing && state.editing.table === tableId ? state.editing : null;
       if (editing) {
+        const entry = state.data[tableId];
+        const before = entry && entry.rows.find(row => row._id === editing.id);
+        stampChanges(def, record, before);
         if (opts.dryRun) {
           previewChange(tableId, rows => rows.map(row => (row._id === editing.id ? { ...row, ...record, _preview: true } : row)));
           state.editing = null;
@@ -293,7 +403,47 @@
       }
       record._createdAt = Date.now();
       record._createdBy = user;
+      stampChanges(def, record, null);
       if (opts.dryRun) { // builder preview: shows in lists, nothing is written
+        previewCount += 1;
+        previewChange(tableId, rows => rows.concat({ ...record, _id: `preview-${previewCount}`, _preview: true }));
+        return record;
+      }
+      if (typeof api.addDoc !== 'function') throw new Error('The dashboard database is unavailable.');
+      await api.addDoc(collectionRef(tableId), record);
+      return record;
+    }
+
+    // Notes when each field got its value (_since_<field>) for timers and colour rules.
+    function stampChanges(def, record, before) {
+      const now = Date.now();
+      def.fields.forEach(field => {
+        if (!(field.key in record)) return;
+        if (!before || String(before[field.key] === undefined || before[field.key] === null ? '' : before[field.key]) !== String(record[field.key])) {
+          record[`_since_${field.key}`] = now;
+        }
+      });
+      return record;
+    }
+
+    // People adding a row straight into a list: values by field key.
+    async function addValues(tableId, values) {
+      const def = tables[tableId];
+      if (!def) throw new Error('Unknown table.');
+      const record = {};
+      const missing = [];
+      def.fields.forEach(field => {
+        const raw = values && values[field.key] !== undefined ? values[field.key] : (field.type === 'yesno' ? 'No' : '');
+        const checked = coerce(field, raw);
+        if (checked.error) throw new Error(checked.error);
+        if (field.required && (checked.value === '' || checked.value === undefined)) missing.push(field.label);
+        record[field.key] = checked.value;
+      });
+      if (missing.length) throw new Error(`Please fill in: ${missing.join(', ')}.`);
+      record._createdAt = Date.now();
+      record._createdBy = user;
+      stampChanges(def, record, null);
+      if (opts.dryRun) {
         previewCount += 1;
         previewChange(tableId, rows => rows.concat({ ...record, _id: `preview-${previewCount}`, _preview: true }));
         return record;
@@ -323,13 +473,16 @@
       if (!field) throw new Error('Unknown field.');
       const checked = coerce(field, raw);
       if (checked.error) throw new Error(checked.error);
+      const entry = state.data[tableId];
+      const before = entry && entry.rows.find(row => row._id === id);
+      const change = stampChanges(def, { [key]: checked.value }, before || {});
       if (opts.dryRun) {
-        previewChange(tableId, rows => rows.map(row => (row._id === id ? { ...row, [key]: checked.value, _preview: true } : row)));
+        previewChange(tableId, rows => rows.map(row => (row._id === id ? { ...row, ...change, _preview: true } : row)));
         return checked.value;
       }
       if (typeof api.updateDoc !== 'function' || typeof api.doc !== 'function') throw new Error('The dashboard database is unavailable.');
       await api.updateDoc(api.doc(api.db, c.dataCollection(opts.toolId, tableId), id),
-        { [key]: checked.value, _updatedAt: Date.now(), _updatedBy: user });
+        { ...change, _updatedAt: Date.now(), _updatedBy: user });
       return checked.value;
     }
 
@@ -341,6 +494,7 @@
       def.fields.forEach(f => { record[f.key] = f.type === 'yesno' ? 'No' : ''; });
       record._createdAt = Date.now();
       record._createdBy = user;
+      stampChanges(def, record, null);
       if (typeof api.addDoc !== 'function') throw new Error('The dashboard database is unavailable.');
       const ref = await api.addDoc(collectionRef(tableId), record);
       return ref && ref.id;
@@ -427,7 +581,7 @@
       if (typeof api.addDoc !== 'function') throw new Error('The dashboard database is unavailable.');
       const now = Date.now();
       for (let i = 0; i < rows.length; i += 1) {
-        await api.addDoc(collectionRef(tableId), { ...rows[i], _createdAt: now + i, _createdBy: user });
+        await api.addDoc(collectionRef(tableId), stampChanges(def, { ...rows[i], _createdAt: now + i, _createdBy: user }, null));
       }
       return { added: rows.length, skipped: skipped.length };
     }
@@ -528,6 +682,11 @@
         case 'openUrl':
           if (step.url && ui.openUrl) ui.openUrl(step.url, step.newTab === 'yes');
           return null;
+        case 'startTimer':
+        case 'pauseTimer':
+        case 'resetTimer':
+          timerStep(step.type, step.target);
+          return null;
         case 'stop':
           return STOP;
         default:
@@ -558,7 +717,40 @@
       run(page.onOpen);
       (page.automations || []).forEach(auto => {
         if (!auto.steps.length) return;
-        if (auto.when === 'interval') {
+        if (auto.when === 'timerDone' && elements[auto.target]) {
+          let left = timerMs(auto.target);
+          timers.push(root.setInterval(() => {
+            if (state.disposed) return;
+            const now = timerMs(auto.target);
+            if (left > 0 && now <= 0) run(auto.steps);
+            left = now;
+          }, 1000));
+        } else if (auto.when === 'recordTimer' && tables[auto.table] && auto.field) {
+          const entry = table(auto.table);
+          let fired = null; // record id + when it got the value
+          const check = () => {
+            if (state.disposed || !entry.loaded || entry.error) return;
+            const now = Date.now();
+            const due = entry.rows.filter(row => (!row._preview || opts.dryRun)
+              && compare(row[auto.field], auto.op, auto.value)
+              && now - c.sinceOf(row, auto.field) >= auto.minutes * 60000);
+            const keys = due.map(row => `${row._id}:${c.sinceOf(row, auto.field)}`);
+            if (fired === null) { // already overdue when the page opened: don't run for those
+              fired = new Set(keys);
+              return;
+            }
+            due.forEach((row, i) => {
+              if (fired.has(keys[i])) return;
+              fired.add(keys[i]);
+              run(auto.steps, { record: row, table: auto.table });
+            });
+          };
+          const listener = () => check();
+          entry.listeners.add(listener);
+          unwatchers.push(() => entry.listeners.delete(listener));
+          timers.push(root.setInterval(check, 5000));
+          check();
+        } else if (auto.when === 'interval') {
           timers.push(root.setInterval(() => {
             if (!state.disposed) run(auto.steps);
           }, Math.max(5, auto.seconds) * 1000));
@@ -602,6 +794,8 @@
 
     function dispose() {
       timers.forEach(id => root.clearInterval(id));
+      if (tickId !== null) root.clearInterval(tickId);
+      tickers.clear();
       unwatchers.forEach(fn => fn());
       state.disposed = true;
       if (!opts.shared) disposeShared({ data: state.data });
@@ -633,6 +827,10 @@
       popupEvent,
       updateRecord,
       addRecord,
+      addValues,
+      timerMs,
+      timerText,
+      tick,
       coerce,
       stopEditing,
       run,
@@ -660,5 +858,5 @@
     if (shared) shared.data = {};
   }
 
-  root.MTW_PAGE_RUNTIME = { create, compare, disposeShared, clearPreview, createShared: () => ({ data: {} }) };
+  root.MTW_PAGE_RUNTIME = { create, compare, colorFor, parseWhen, disposeShared, clearPreview, createShared: () => ({ data: {} }) };
 })(typeof self !== 'undefined' ? self : this);

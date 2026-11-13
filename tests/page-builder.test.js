@@ -1533,3 +1533,153 @@ test('builder: add automations and popup open/close steps', async () => {
   editor.close(true);
   dom.window.close();
 });
+
+const QUEUE_PAGE = {
+  tables: [{ id: 't-q', name: 'Queue', fields: [
+    { key: 'customer', label: 'Customer', type: 'text', required: true },
+    { key: 'status', label: 'Status', type: 'choice', options: 'Waiting\nServed' },
+    { key: 'note', label: 'Note', type: 'text' }] }],
+  sections: [{ layout: '1', columns: [{ blocks: [
+    { type: 'table', name: 'queue', props: { source: 'table', table: 't-q', show: ['customer', 'status'], editable: ['status'],
+      addRows: 'everyone', addFields: ['status'], timerField: 'status', timerLabel: 'Waiting for',
+      colorRules: [
+        { field: 'status', op: 'equals', value: 'Waiting', minutes: 30, background: '#ff0000', target: 'row' },
+        { field: 'status', op: 'equals', value: 'Served', color: '#00aa00', target: 'cell' }] } },
+    { type: 'table', name: 'typed', props: { colorRules: [{ field: 'k-role', op: 'equals', value: 'Stores', background: '#ffee00' }] } },
+    { type: 'stat', name: 'clock', props: { label: 'Open for', source: 'timer', timerKind: 'stopwatch', timerAuto: 'no',
+      colorRules: [{ op: 'greater', value: '-1', background: '#123456' }] } },
+    { type: 'stat', name: 'due', props: { label: 'Due', source: 'timer', timerKind: 'until', timerAt: '2000-01-01 00:00', doneText: 'Overdue' } },
+    { type: 'button', name: 'go', props: { label: 'Go', actions: [{ type: 'startTimer', target: 'clock' }] } },
+    { type: 'cards', name: 'cards', props: { source: 'table', table: 't-q', colorRules: [{ field: 'status', op: 'equals', value: 'Served', background: '#00ff00' }],
+      design: { parts: [{ type: 'field', field: 'customer' }, { type: 'timer', field: 'status', text: 'Waiting' }], style: {} } } }
+  ] }] }],
+  automations: [{ when: 'recordTimer', table: 't-q', field: 'status', op: 'equals', value: 'Waiting', minutes: 1,
+    steps: [{ type: 'message', text: '{record.customer} has waited', tone: 'warning' }] }]
+};
+
+test('tables from a data table: add rows, timer column, colour rules; timer tiles; timer cards', async () => {
+  const old = Date.now() - 45 * 60000;
+  const db = store({ ...TOOLS, 'dashboard-tool-pages': { jobs: { published: QUEUE_PAGE } },
+    'dashboard-data-jobs-t-q': {
+      a: { customer: 'Ann', status: 'Waiting', _createdAt: old, _since_status: old },
+      b: { customer: 'Bob', status: 'Served', _createdAt: old + 1 } } });
+  const { dom, window, document } = host({ role: 'Stores', db });
+  await waitFor(window, () => document.querySelectorAll('.custom-dashboard-tool-jobs-panel [data-name="queue"] tbody tr').length === 2);
+  const panel = document.querySelector('.custom-dashboard-tool-jobs-panel');
+  const queue = panel.querySelector('[data-name="queue"]');
+  assert.deepEqual([...queue.querySelectorAll('thead th')].map(th => th.textContent).slice(0, 3), ['Customer', 'Status', 'Waiting for']);
+  const rows = [...queue.querySelectorAll('tbody tr')];
+  const ann = rows.find(tr => tr.textContent.includes('Ann'));
+  const bob = rows.find(tr => tr.textContent.includes('Bob'));
+  assert.equal(ann.style.background, 'rgb(255, 0, 0)', 'waiting 30+ minutes is red');
+  assert.match(ann.querySelector('.mtw-pb-records-timer').textContent, /^45m/);
+  assert.equal(bob.style.color, '', 'cell rule leaves the row alone');
+  assert.equal(bob.children[1].style.color, 'rgb(0, 170, 0)', 'only the status cell is green');
+  // typed table colours its rows by column
+  assert.equal(panel.querySelector('[data-name="typed"] tbody tr').style.background, 'rgb(255, 238, 0)');
+  // cards: colour + ticking timer part
+  const bobCard = [...panel.querySelectorAll('[data-name="cards"] .mtw-pb-record-card')].find(card => card.textContent.includes('Bob'));
+  assert.equal(bobCard.style.background, 'rgb(0, 255, 0)');
+  assert.match(panel.querySelector('[data-name="cards"] .mtw-pb-card-timer').textContent, /^Waiting \d/);
+  // countdown in the past shows its done text; stopwatch waits for its Start step
+  assert.equal(panel.querySelector('[data-name="due"] .mtw-pb-stat-value').textContent, 'Overdue');
+  assert.equal(panel.querySelector('[data-name="clock"] .mtw-pb-stat-value').textContent, '0s');
+  assert.equal(panel.querySelector('[data-name="clock"]').style.background, 'rgb(18, 52, 86)');
+  panel.querySelector('[data-name="go"] button').click();
+  await waitFor(window, () => panel.querySelector('[data-name="clock"] .mtw-pb-stat-value').textContent === '1s', 3000);
+  // + Add row: only the picked fields plus required ones
+  queue.querySelector('.mtw-pb-add-row-open').click();
+  const form = queue.querySelector('.mtw-pb-add-row');
+  assert.equal(form.hidden, false);
+  assert.deepEqual([...form.querySelectorAll('[data-field]')].map(c => c.dataset.field), ['customer', 'status']);
+  form.querySelector('[data-field="status"]').value = 'Waiting';
+  form.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+  await waitFor(window, () => /Customer/.test(form.querySelector('.mtw-pb-add-row-error').textContent));
+  form.querySelector('[data-field="customer"]').value = 'Cat';
+  form.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+  await waitFor(window, () => Object.values(db.data['dashboard-data-jobs-t-q']).some(r => r.customer === 'Cat'));
+  const cat = Object.values(db.data['dashboard-data-jobs-t-q']).find(r => r.customer === 'Cat');
+  assert.equal(cat.status, 'Waiting');
+  assert.equal(cat._createdBy, 'Stores');
+  assert.ok(cat._since_status > 0, 'remembers when status was set');
+  await waitFor(window, () => queue.querySelectorAll('tbody tr').length === 3);
+  assert.equal(form.hidden, true);
+  // changing the status in place restarts its timer
+  const annSelect = [...queue.querySelectorAll('tbody tr')].find(tr => tr.textContent.includes('Ann')).querySelector('select');
+  annSelect.value = 'Served';
+  annSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+  await waitFor(window, () => db.data['dashboard-data-jobs-t-q'].a.status === 'Served');
+  assert.ok(db.data['dashboard-data-jobs-t-q'].a._since_status > old);
+  dom.window.close();
+});
+
+test('add rows: managers-only hides the button from others; runtime timers, parseWhen and record timers', async () => {
+  const page = JSON.parse(JSON.stringify(QUEUE_PAGE));
+  page.sections[0].columns[0].blocks[0].props.addRows = 'managers';
+  const db = store({ ...TOOLS, 'dashboard-tool-pages': { jobs: { published: page } }, 'dashboard-data-jobs-t-q': {} });
+  const { dom, window, document } = host({ role: 'Stores', db });
+  await waitFor(window, () => document.querySelector('.custom-dashboard-tool-jobs-panel [data-name="queue"] .mtw-pb-records-status'));
+  assert.equal(document.querySelector('[data-name="queue"] .mtw-pb-add-row-open'), null);
+  const lib = window.MTW_PAGE_RUNTIME;
+  const at = lib.parseWhen('2026-12-24 17:30');
+  assert.equal(new window.Date(at).getHours(), 17);
+  assert.ok(Number.isNaN(lib.parseWhen('soon')));
+  assert.equal(lib.colorFor([{ field: 'x', op: 'equals', value: 'a', minutes: 5, background: '#fff' }], { x: 'a', _since_x: Date.now() }), null, 'not long enough yet');
+  // record timer automation: fires once when a record crosses the time while open
+  const msgs = [];
+  const rt = lib.create({ page: QUEUE_PAGE, toolId: 'jobs', api: window.MTW, user: 'Stores', ui: { toast: text => msgs.push(text) } });
+  rt.start();
+  await waitFor(window, () => rt.table('t-q').loaded);
+  const entry = rt.table('t-q');
+  entry.rows = [{ _id: 'z', customer: 'Zed', status: 'Waiting', _since_status: Date.now() - 30000 }];
+  entry.listeners.forEach(fn => fn(entry));
+  entry.rows = [{ _id: 'z', customer: 'Zed', status: 'Waiting', _since_status: Date.now() - 61000 }];
+  entry.listeners.forEach(fn => fn(entry));
+  await waitFor(window, () => msgs.length === 1);
+  entry.listeners.forEach(fn => fn(entry));
+  await tick(window);
+  assert.deepEqual(msgs, ['Zed has waited'], 'only once per record');
+  assert.equal(rt.value('clock'), 0, 'timer tiles give minutes to steps');
+  rt.dispose();
+  dom.window.close();
+});
+
+test('builder: Table block can use a data table; colour rules, timer tiles and new automations in the inspector', async () => {
+  const db = store({ ...TOOLS, 'dashboard-tool-pages': { jobs: { draft: QUEUE_PAGE } } });
+  const { dom, window, document } = host({ db });
+  await waitFor(window, () => typeof window.MTW_OPEN_PAGE_BUILDER === 'function');
+  const editor = await window.MTW_OPEN_PAGE_BUILDER('jobs');
+  await editor.loaded;
+  const ui = editor.element;
+  const inspector = ui.querySelector('.mtw-pb-inspector');
+  const typedId = editor.page.sections[0].columns[0].blocks[1].id;
+  editor.select({ kind: 'block', id: typedId });
+  const source = inspector.querySelector('[data-field="source"] select');
+  assert.equal(source.value, 'typed');
+  assert.equal(inspector.querySelector('[data-field="table"]'), null);
+  source.value = 'table';
+  source.dispatchEvent(new window.Event('change', { bubbles: true }));
+  const pick = inspector.querySelector('[data-field="table"] select');
+  assert.ok(pick, 'a data table picker appears');
+  pick.value = 't-q';
+  pick.dispatchEvent(new window.Event('change', { bubbles: true }));
+  assert.equal(editor.page.sections[0].columns[0].blocks[1].props.table, 't-q');
+  assert.ok(inspector.querySelector('[data-field="addRows"]'), 'add rows option');
+  assert.ok(inspector.querySelector('[data-field="timerField"]'), 'timer column option');
+  // colour rules: the old typed-column rule is still there; add one on a data field
+  inspector.querySelector('.mtw-pb-add-colour-rule').click();
+  const rules = editor.page.sections[0].columns[0].blocks[1].props.colorRules;
+  assert.equal(rules.length, 2);
+  assert.equal(rules[1].field, 'customer');
+  assert.ok(inspector.querySelector(`[data-rule-id="${rules[1].id}"] [data-field="minutes"]`), 'data tables get "for at least N minutes"');
+  // automations offer the new triggers
+  editor.select(null);
+  const add = inspector.querySelector('.mtw-pb-add-automation');
+  add.value = 'timerDone';
+  add.dispatchEvent(new window.Event('change', { bubbles: true }));
+  const auto = editor.page.automations.find(a => a.when === 'timerDone');
+  assert.equal(auto.target, 'due', 'defaults to the first countdown');
+  assert.match(inspector.textContent, /When due ends/);
+  editor.close(true);
+  dom.window.close();
+});

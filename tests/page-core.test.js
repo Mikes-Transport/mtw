@@ -298,3 +298,37 @@ test('card designs: parts, order, inline, style limits', () => {
   assert.deepEqual(d.style, { accent: '#0a0', radius: 40, padding: 12 });
   assert.equal(core.sanitizeDesign({ parts: [{ type: 'script' }, { type: 'divider' }] }).parts.length, 1);
 });
+
+test('colour rules, durations and since times', () => {
+  const rules = core.sanitizeColorRules([
+    { field: 'status', op: 'equals', value: 'Waiting', minutes: 30, background: '#ff0000', color: 'red; x', target: 'cell' },
+    { field: 'k-role', op: 'nope', background: 'url(x)' },
+    { field: 'Bad Field!' },
+    'junk'
+  ]);
+  assert.equal(rules.length, 3);
+  assert.equal(rules[0].background, '#ff0000');
+  assert.equal(rules[0].color, '', 'only real colours');
+  assert.equal(rules[0].target, 'cell');
+  assert.equal(rules[1].field, 'k-role', 'typed table columns work');
+  assert.equal(rules[1].op, 'equals');
+  assert.equal(rules[1].background, '');
+  assert.equal(rules[2].field, '');
+  assert.equal(core.formatDuration(3723000), '1h 2m');
+  assert.equal(core.formatDuration(3723000, 'clock'), '01:02:03');
+  assert.equal(core.formatDuration(90061000, 'clock'), '1d 01:01:01');
+  assert.equal(core.formatDuration(-5), '0s');
+  assert.equal(core.sinceOf({ _createdAt: 5, _since_status: 9 }, 'status'), 9);
+  assert.equal(core.sinceOf({ _createdAt: 5 }, 'status'), 5);
+  const page = core.sanitizePage({ sections: [{ layout: '1', columns: [{ blocks: [
+    { type: 'stat', name: 'clock', props: { source: 'timer', timerKind: 'until', timerAt: '{when}' } },
+    { type: 'table', props: { source: 'table', table: 't-a', addRows: 'everyone', show: ['a', 'B!'] } }
+  ] }] }], automations: [{ when: 'timerDone', target: 'clock', steps: [] }, { when: 'recordTimer', table: 't-a', field: 'a', minutes: 0 }] });
+  const [stat, table] = page.sections[0].columns[0].blocks;
+  assert.equal(stat.props.timerKind, 'until');
+  assert.deepEqual([...table.props.show], ['a']);
+  assert.equal(table.props.addRows, 'everyone');
+  assert.equal(page.automations[1].minutes, 1, 'at least a minute');
+  const renamed = core.renameBlock(page, stat.id, 'deadline').page;
+  assert.equal(renamed.automations[0].target, 'deadline');
+});

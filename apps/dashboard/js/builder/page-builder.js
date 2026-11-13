@@ -716,6 +716,11 @@
           commit(made.page);
           onChange(made.name);
         });
+      } else if (field.type === 'timer') {
+        const items = c.pageElements(page).filter(item => item.type === 'stat' && item.block.props.source === 'timer'
+          && (field.kind ? item.block.props.timerKind === field.kind : item.block.props.timerKind === 'stopwatch'));
+        input = selectOf(id, [['', items.length ? 'Choose a timer' : field.kind ? 'No countdown tiles yet' : 'No stopwatch tiles yet (Number tile > A timer)']]
+          .concat(items.map(item => [item.name, `${item.name} (${item.block.props.label || 'Timer'})`])), value);
       } else if (field.type === 'element' || field.type === 'input') {
         const items = c.pageElements(page).filter(item => field.type === 'element' || item.type === 'input');
         const options = [['', items.length ? 'Choose an element' : 'Nothing on the page yet']]
@@ -798,7 +803,7 @@
 
     function visible(field, props) {
       return !field.when || Object.entries(field.when).every(([key, value]) =>
-        (Array.isArray(value) ? value.includes(props[key]) : props[key] === value));
+        (Array.isArray(value) ? value.includes(props[key]) : value === '*' ? Boolean(props[key]) : props[key] === value));
     }
 
     // Field types whose change can show or hide other fields, or change pickers.
@@ -834,6 +839,12 @@
         const what = { any: 'changes', added: 'gets a new record', changed: 'has a record changed', deleted: 'has a record deleted' }[auto.change];
         return `When ${table ? table.name : 'a data table'} ${what}`;
       }
+      if (auto.when === 'recordTimer') {
+        const table = c.findTable(history.page, auto.table);
+        const field = table && table.fields.find(f => f.key === auto.field);
+        return `When ${field ? field.label : 'a field'} has been ${auto.value || '...'} for ${auto.minutes} min`;
+      }
+      if (auto.when === 'timerDone') return `When ${auto.target || 'a countdown'} ends`;
       const popup = c.findPopup(history.page, auto.popup);
       return `When ${popup ? popup.title || popup.name : 'a popup'} ${auto.when === 'popupOpen' ? 'opens' : 'closes'}`;
     }
@@ -856,12 +867,23 @@
           fields.push({ key: 'change', label: 'When', type: 'select', options: [['added', 'A record is added'], ['changed', 'A record is changed'], ['deleted', 'A record is deleted'], ['any', 'Any of those']] });
         }
         if (auto.when === 'popupOpen' || auto.when === 'popupClose') fields.push({ key: 'popup', label: 'Popup', type: 'popup' });
+        if (auto.when === 'recordTimer') {
+          fields.push({ key: 'table', label: 'Data table', type: 'table' });
+          fields.push({ key: 'field', label: 'Field', type: 'field', any: 'Choose a field' });
+          fields.push({ key: 'op', label: 'is', type: 'select', options: c.OPS });
+          if (!['empty', 'notEmpty'].includes(auto.op)) fields.push({ key: 'value', label: 'Value', type: 'text' });
+          fields.push({ key: 'minutes', label: 'For at least (minutes)', type: 'number', min: 1, max: 525600 });
+        }
+        if (auto.when === 'timerDone') fields.push({ key: 'target', label: 'Countdown tile', type: 'timer', kind: 'until' });
+        if (c.AUTOMATIONS[auto.when].description && ['recordTimer', 'timerDone'].includes(auto.when)) {
+          card.appendChild(el('p', 'mtw-pb-field-help', c.AUTOMATIONS[auto.when].description));
+        }
         fields.forEach(field => {
           card.appendChild(fieldControl(field, auto[field.key], value => {
             const next = c.updateAutomation(history.page, auto.id, { [field.key]: value });
-            if (field.type === 'number') commit(next, undefined, `${auto.id}:${field.key}`);
+            if (field.type === 'number' || field.type === 'text') commit(next, undefined, `${auto.id}:${field.key}`);
             else commit(next);
-          }));
+          }, { tableId: auto.table }));
         });
         card.appendChild(stepsSummary('Then do', `auto:${auto.id}`, auto.steps));
         inspector.appendChild(card);
@@ -871,7 +893,9 @@
       add.setAttribute('aria-label', 'Add an automation');
       add.addEventListener('change', () => {
         if (!add.value) return;
-        const options = add.value === 'tableChange' ? { table: ((history.page.tables || [])[0] || {}).id || '' }
+        const timers = c.pageElements(history.page).filter(item => item.type === 'stat' && item.block.props.source === 'timer' && item.block.props.timerKind === 'until');
+        const options = add.value === 'tableChange' || add.value === 'recordTimer' ? { table: ((history.page.tables || [])[0] || {}).id || '' }
+          : add.value === 'timerDone' ? { target: (timers[0] || {}).name || '' }
           : add.value.startsWith('popup') ? { popup: (c.pagePopups(history.page)[0] || {}).name || '' } : {};
         const result = attempt(() => c.addAutomation(history.page, add.value, options));
         if (result) commit(result.page);
@@ -951,6 +975,72 @@
       renderAutomations();
     }
 
+    // Colour rules: "When [field] is [value] (for N minutes), colour the row / cell".
+    function renderColourRules(blockId) {
+      const block = c.findBlock(history.page, blockId).block;
+      const props = block.props;
+      const box = el('div', 'mtw-pb-colour-rules');
+      box.appendChild(sectionTitle('Colours'));
+      const dataBacked = block.type !== 'stat' && !(block.type === 'table' && props.source !== 'table');
+      const table = dataBacked ? c.findTable(history.page, props.table) : null;
+      const columns = block.type === 'stat' ? []
+        : table ? table.fields.map(f => [f.key, f.label])
+          : block.type === 'table' ? props.columns.map(col => [col.id, col.label || 'Untitled']) : [];
+      box.appendChild(el('p', 'mtw-pb-field-help', block.type === 'stat'
+        ? 'Colour the tile by its number (timers count in minutes). The first rule that matches wins.'
+        : `Colour a ${block.type === 'cards' ? 'card' : 'row'} by its values. The first rule that matches wins.`));
+      if (dataBacked && !table) {
+        box.appendChild(el('p', 'mtw-pb-muted', 'Pick a data table first.'));
+        inspector.appendChild(box);
+        return;
+      }
+      const rules = props.colorRules || [];
+      const save = (list, coalesce) => {
+        const next = c.updateBlock(history.page, blockId, { props: { colorRules: list } });
+        if (coalesce) commit(next, undefined, coalesce);
+        else commit(next);
+      };
+      const latest = () => (c.findBlock(history.page, blockId) || { block: { props: {} } }).block.props.colorRules || [];
+      const change = (ruleId, changes, coalesce) => save(latest().map(rule => (rule.id === ruleId ? { ...rule, ...changes } : rule)), coalesce);
+      rules.forEach((rule, index) => {
+        const card = el('div', 'mtw-pb-card-item mtw-pb-colour-rule');
+        card.dataset.ruleId = rule.id;
+        const head = el('div', 'mtw-pb-card-head');
+        const swatch = el('span', 'mtw-pb-colour-swatch', 'Aa');
+        swatch.style.background = rule.background || 'transparent';
+        swatch.style.color = rule.color || '';
+        head.append(swatch, el('strong', '', `Rule ${index + 1}`),
+          iconButton('mtw-pb-tool-btn mtw-pb-card-delete', 'delete', 'Delete this colour rule', () => save(latest().filter(item => item.id !== rule.id))));
+        card.appendChild(head);
+        const fields = [];
+        if (block.type !== 'stat') fields.push({ key: 'field', label: 'When', type: 'rulefield' });
+        fields.push({ key: 'op', label: block.type === 'stat' ? 'When the number is' : 'is', type: 'select', options: c.OPS });
+        if (!['empty', 'notEmpty'].includes(rule.op)) fields.push({ key: 'value', label: 'Value', type: 'text' });
+        if (table) fields.push({ key: 'minutes', label: 'And has been that for at least (minutes, 0 = straight away)', type: 'number', min: 0, max: 525600 });
+        fields.push({ key: 'background', label: 'Background', type: 'color' });
+        fields.push({ key: 'color', label: 'Text colour', type: 'color' });
+        if (block.type !== 'stat' && block.type !== 'cards') fields.push({ key: 'target', label: 'Colour', type: 'select', options: [['row', 'The whole row'], ['cell', 'Just that cell']] });
+        fields.forEach(field => {
+          if (field.type === 'rulefield') {
+            card.appendChild(fieldControl({ key: 'field', label: 'When', type: 'select', options: [['', 'Choose a column']].concat(columns) }, rule.field,
+              value => change(rule.id, { field: value })));
+            return;
+          }
+          card.appendChild(fieldControl(field, rule[field.key], value => {
+            if (field.type === 'select') change(rule.id, { [field.key]: value });
+            else change(rule.id, { [field.key]: value === undefined ? 0 : value }, `${blockId}:rule:${rule.id}:${field.key}`);
+          }));
+        });
+        box.appendChild(card);
+      });
+      if (rules.length < 12) {
+        box.appendChild(button('mtw-pb-btn mtw-pb-add-colour-rule', '+ Add a colour rule', 'Add a colour rule', () => save(latest().concat({
+          field: (columns[0] || [''])[0], op: 'equals', value: '', background: '#fdecea', color: '', target: 'row'
+        }))));
+      }
+      inspector.appendChild(box);
+    }
+
     function renderBlockInspector(page, blockId) {
       const found = c.findBlock(page, blockId);
       if (!found) return;
@@ -987,7 +1077,7 @@
 
       const props = block.props;
       const contentFields = def.fields.filter(field => visible(field, props));
-      const plain = contentFields.filter(field => !['grid', 'actions', 'cardlist', 'cardfields', 'carddesign'].includes(field.type));
+      const plain = contentFields.filter(field => !['grid', 'actions', 'cardlist', 'cardfields', 'carddesign', 'colorrules'].includes(field.type));
       if (plain.length) {
         inspector.appendChild(sectionTitle('Content'));
         plain.forEach(field => {
@@ -1027,6 +1117,7 @@
           () => openDesigner(blockId)));
         inspector.appendChild(box);
       }
+      if (contentFields.some(field => field.type === 'colorrules')) renderColourRules(blockId);
       const actionsField = contentFields.find(field => field.type === 'actions');
       if (actionsField) inspector.appendChild(stepsSummary(actionsField.label, `block:${blockId}`, props.actions || []));
 
@@ -1414,7 +1505,7 @@
         const auto = (history.page.automations || []).find(a => a.id === autoId);
         return {
           key,
-          recordTable: auto && auto.when === 'tableChange' ? auto.table : '',
+          recordTable: auto && (auto.when === 'tableChange' || auto.when === 'recordTimer') ? auto.table : '',
           get: () => ((history.page.automations || []).find(a => a.id === autoId) || { steps: [] }).steps,
           set: (list, coalesce) => commit(c.updateAutomation(history.page, autoId, { steps: list }), undefined, coalesce)
         };
@@ -1447,7 +1538,8 @@
       const owner = c.findBlock(history.page, blockId);
       const block = owner && owner.block;
       const recordTable = !block ? ''
-        : block.type === 'records' || (block.type === 'cards' && block.props.source === 'table') ? block.props.table
+        : block.type === 'records' || (block.type === 'cards' && block.props.source !== 'manual')
+          || (block.type === 'table' && block.props.source === 'table') ? block.props.table
           : block.type === 'cards' ? 'manual-cards' : '';
       return {
         key,
@@ -1745,7 +1837,7 @@
         const def = c.BLOCKS[found.block.type];
         title = `${def.label}: ${found.block.props.label || found.block.name}`;
         trigger = found.block.type === 'input' ? 'When it changes'
-          : found.block.type === 'records' ? 'When a row is clicked'
+          : found.block.type === 'records' || (found.block.type === 'table' && found.block.props.source === 'table') ? 'When a row is clicked'
             : found.block.type === 'cards' ? 'When a card is clicked' : 'When it is clicked';
       }
       const scroll = logic.querySelector('.mtw-pb-logic-list') ? logic.querySelector('.mtw-pb-logic-list').scrollTop : 0;

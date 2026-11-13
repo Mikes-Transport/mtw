@@ -104,7 +104,7 @@
     },
     records: {
       label: 'Records list', group: 'Data',
-      defaults: { table: '', columns: [], editable: [], editBy: 'everyone', order: 'newest', limit: 50, search: 'yes', allowDelete: 'no', emptyText: 'Nothing here yet.', actions: [] },
+      defaults: { table: '', columns: [], editable: [], editBy: 'everyone', order: 'newest', limit: 50, search: 'yes', allowDelete: 'no', addRows: 'no', addFields: [], addLabel: '+ Add row', timerField: '', timerLabel: '', colorRules: [], emptyText: 'Nothing here yet.', actions: [] },
       fields: [
         { key: 'table', label: 'Data table', type: 'table' },
         { key: 'columns', label: 'Columns to show (none ticked = all)', type: 'fieldpick' },
@@ -114,6 +114,12 @@
         { key: 'limit', label: 'Show at most', type: 'number', min: 1, max: 500 },
         { key: 'search', label: 'Search box', type: 'select', options: [['yes', 'Show'], ['no', 'Hide']] },
         { key: 'allowDelete', label: 'Delete button on rows', type: 'select', options: [['no', 'Nobody'], ['managers', 'Managers only'], ['everyone', 'Everyone who can see the tool']] },
+        { key: 'addRows', label: 'People can add rows here', type: 'select', options: [['no', 'No'], ['everyone', 'Everyone who can see the tool'], ['managers', 'Managers only']] },
+        { key: 'addFields', label: 'Fields they fill in (none ticked = all; required ones always)', type: 'fieldpick', when: { addRows: ['everyone', 'managers'] } },
+        { key: 'addLabel', label: 'Add button text', type: 'text', when: { addRows: ['everyone', 'managers'] } },
+        { key: 'timerField', label: 'Timer column: time since this field changed', type: 'field', any: 'No timer column' },
+        { key: 'timerLabel', label: 'Timer column heading', type: 'text', when: { timerField: '*' } },
+        { key: 'colorRules', label: 'Colours', type: 'colorrules' },
         { key: 'emptyText', label: 'Text when empty', type: 'text' },
         { key: 'actions', label: 'When a row is clicked, do', type: 'actions' }
       ]
@@ -128,7 +134,7 @@
           { id: 'i-3', title: 'Third card', text: 'One more.', note: '' }
         ],
         design: { parts: [], style: {} },
-        table: '', formPopup: '', titleField: '', textField: '', fields: [], editBy: 'everyone', perRow: 3, order: 'newest', limit: 60, search: 'no', allowDelete: 'no', emptyText: 'No cards yet.', actions: []
+        table: '', formPopup: '', titleField: '', textField: '', fields: [], editBy: 'everyone', perRow: 3, order: 'newest', limit: 60, search: 'no', allowDelete: 'no', colorRules: [], emptyText: 'No cards yet.', actions: []
       },
       fields: [
         { key: 'source', label: 'Cards come from', type: 'select', options: [['manual', 'Cards I type in here'], ['added', 'Cards people add (saved to Firebase)'], ['table', 'An existing data table']] },
@@ -146,6 +152,7 @@
         { key: 'limit', label: 'Show at most', type: 'number', min: 1, max: 500, when: { source: ['added', 'table'] } },
         { key: 'allowDelete', label: 'Delete button on cards', type: 'select', options: [['no', 'Nobody'], ['managers', 'Managers only'], ['everyone', 'Everyone who can see the tool']], when: { source: ['added', 'table'] } },
         { key: 'editBy', label: 'Who can change editable card fields', type: 'select', options: [['everyone', 'Everyone who can see the tool'], ['managers', 'Managers only']], when: { source: ['added', 'table'] } },
+        { key: 'colorRules', label: 'Colours', type: 'colorrules', when: { source: ['added', 'table'] } },
         { key: 'emptyText', label: 'Text when empty', type: 'text' },
         { key: 'actions', label: 'When a card is clicked, do', type: 'actions' }
       ]
@@ -161,14 +168,20 @@
     },
     stat: {
       label: 'Number tile', group: 'Layout',
-      defaults: { label: 'Orders today', source: 'static', value: '24', table: '', filterField: '', filterValue: '', note: '', actions: [] },
+      defaults: { label: 'Orders today', source: 'static', value: '24', table: '', filterField: '', filterValue: '', timerKind: 'stopwatch', timerAt: '', timerAuto: 'yes', timerFormat: 'short', doneText: 'Time is up', colorRules: [], note: '', actions: [] },
       fields: [
         { key: 'label', label: 'Label', type: 'text' },
-        { key: 'source', label: 'Number comes from', type: 'select', options: [['static', 'What I type'], ['count', 'Count of records in a data table']] },
+        { key: 'source', label: 'Number comes from', type: 'select', options: [['static', 'What I type'], ['count', 'Count of records in a data table'], ['timer', 'A timer']] },
+        { key: 'timerKind', label: 'Timer', type: 'select', options: [['stopwatch', 'Stopwatch (counts up; steps can start, pause, reset)'], ['since', 'Time since a date / time'], ['until', 'Countdown to a date / time']], when: { source: 'timer' } },
+        { key: 'timerAuto', label: 'Starts', type: 'select', options: [['yes', 'When the page opens'], ['no', 'Only with a Start a timer step']], when: { source: 'timer', timerKind: 'stopwatch' } },
+        { key: 'timerAt', label: 'Date / time (e.g. 2026-12-24 17:00, or {element_name})', type: 'text', tokens: true, when: { source: 'timer', timerKind: ['since', 'until'] } },
+        { key: 'doneText', label: 'Shows when the countdown ends', type: 'text', when: { source: 'timer', timerKind: 'until' } },
+        { key: 'timerFormat', label: 'Show as', type: 'select', options: [['short', '2h 5m'], ['clock', '02:05:00']], when: { source: 'timer' } },
         { key: 'value', label: 'Number or value', type: 'text', when: { source: 'static' } },
         { key: 'table', label: 'Data table', type: 'table', when: { source: 'count' } },
         { key: 'filterField', label: 'Only count where', type: 'field', when: { source: 'count' } },
         { key: 'filterValue', label: 'equals', type: 'text', when: { source: 'count' } },
+        { key: 'colorRules', label: 'Colours', type: 'colorrules' },
         { key: 'note', label: 'Small note', type: 'text' },
         { key: 'actions', label: 'When clicked, do', type: 'actions' }
       ]
@@ -185,14 +198,32 @@
     table: {
       label: 'Table', group: 'Data',
       defaults: {
+        source: 'typed',
         header: 'yes',
+        table: '', show: [], editable: [], editBy: 'everyone', order: 'newest', limit: 50, search: 'no', allowDelete: 'no', addRows: 'no', addFields: [], addLabel: '+ Add row', timerField: '', timerLabel: '', colorRules: [], emptyText: 'Nothing here yet.',
         actions: [],
         columns: [{ id: 'k-name', label: 'Name' }, { id: 'k-role', label: 'Role' }, { id: 'k-phone', label: 'Phone' }],
         rows: [{ id: 'r-1', cells: { 'k-name': 'Sam', 'k-role': 'Stores', 'k-phone': '021 000 000' } }]
       },
       fields: [
+        { key: 'source', label: 'Rows come from', type: 'select', options: [['typed', 'Rows I type in here'], ['table', 'A data table (saved records)']] },
+        { key: 'table', label: 'Data table', type: 'table', when: { source: 'table' } },
         { key: 'header', label: 'Show headings', type: 'select', options: [['yes', 'Yes'], ['no', 'No']] },
-        { key: 'columns', label: 'Columns and rows', type: 'grid' },
+        { key: 'columns', label: 'Columns and rows', type: 'grid', when: { source: 'typed' } },
+        { key: 'show', label: 'Columns to show (none ticked = all)', type: 'fieldpick', when: { source: 'table' } },
+        { key: 'editable', label: 'Columns people can change right here', type: 'fieldpick', when: { source: 'table' } },
+        { key: 'editBy', label: 'Who can change them', type: 'select', options: [['everyone', 'Everyone who can see the tool'], ['managers', 'Managers only']], when: { source: 'table' } },
+        { key: 'order', label: 'Order', type: 'select', options: [['newest', 'Newest first'], ['oldest', 'Oldest first']], when: { source: 'table' } },
+        { key: 'limit', label: 'Show at most', type: 'number', min: 1, max: 500, when: { source: 'table' } },
+        { key: 'search', label: 'Search box', type: 'select', options: [['yes', 'Show'], ['no', 'Hide']], when: { source: 'table' } },
+        { key: 'allowDelete', label: 'Delete button on rows', type: 'select', options: [['no', 'Nobody'], ['managers', 'Managers only'], ['everyone', 'Everyone who can see the tool']], when: { source: 'table' } },
+        { key: 'addRows', label: 'People can add rows here', type: 'select', options: [['no', 'No'], ['everyone', 'Everyone who can see the tool'], ['managers', 'Managers only']], when: { source: 'table' } },
+        { key: 'addFields', label: 'Fields they fill in (none ticked = all; required ones always)', type: 'fieldpick', when: { source: 'table', addRows: ['everyone', 'managers'] } },
+        { key: 'addLabel', label: 'Add button text', type: 'text', when: { source: 'table', addRows: ['everyone', 'managers'] } },
+        { key: 'timerField', label: 'Timer column: time since this field changed', type: 'field', any: 'No timer column', when: { source: 'table' } },
+        { key: 'timerLabel', label: 'Timer column heading', type: 'text', when: { source: 'table', timerField: '*' } },
+                { key: 'colorRules', label: 'Colours', type: 'colorrules' },
+        { key: 'emptyText', label: 'Text when empty', type: 'text', when: { source: 'table' } },
         { key: 'actions', label: 'When clicked, do', type: 'actions' }
       ]
     },
@@ -312,6 +343,21 @@
       group: 'Logic', label: 'Stop', description: 'Stops running the remaining steps.',
       defaults: {},
       fields: []
+    },
+    startTimer: {
+      group: 'Timers', label: 'Start a timer', description: 'Starts (or carries on) a stopwatch Number tile.',
+      defaults: { target: '' },
+      fields: [{ key: 'target', label: 'Timer', type: 'timer' }]
+    },
+    pauseTimer: {
+      group: 'Timers', label: 'Pause a timer', description: 'Pauses a stopwatch Number tile; Start carries on from there.',
+      defaults: { target: '' },
+      fields: [{ key: 'target', label: 'Timer', type: 'timer' }]
+    },
+    resetTimer: {
+      group: 'Timers', label: 'Reset a timer', description: 'Sets a stopwatch back to 0 (it keeps running if it was).',
+      defaults: { target: '' },
+      fields: [{ key: 'target', label: 'Timer', type: 'timer' }]
     },
     openTool: {
       group: 'Go to', label: 'Open a dashboard tool', description: 'Switches to another tool.',
@@ -583,6 +629,7 @@
         return typeof value === 'string' && KEY_RE.test(value) ? value : '';
       case 'input':
       case 'popup':
+      case 'timer':
         return typeof value === 'string' && KEY_RE.test(value) ? value : '';
       case 'element':
         return typeof value === 'string' && (KEY_RE.test(value) || RECORD_RE.test(value)) ? value : '';
@@ -593,6 +640,8 @@
         return sanitizeActions(value);
       case 'carddesign':
         return sanitizeDesign(value);
+      case 'colorrules':
+        return sanitizeColorRules(value);
       case 'cardlist': {
         const seen = new Set();
         return (Array.isArray(value) ? value : []).filter(item => item && typeof item === 'object').slice(0, 100).map(item => {
@@ -607,6 +656,50 @@
       default:
         return value === undefined ? fallback : str(value, LIMITS.short);
     }
+  }
+
+  // Colour rules: the first rule that matches a row / card / tile colours it.
+  const RULE_FIELD_RE = /^(?:[a-z][a-z0-9_]{0,39}|[a-z]{1,3}-[a-z0-9]{1,36})$/;
+  function sanitizeColorRules(list) {
+    const seen = new Set();
+    return (Array.isArray(list) ? list : []).filter(rule => rule && typeof rule === 'object').slice(0, 12).map(rule => {
+      let id = typeof rule.id === 'string' && ID_RE.test(rule.id) && !seen.has(rule.id) ? rule.id : newId('c');
+      while (seen.has(id)) id = newId('c');
+      seen.add(id);
+      return {
+        id,
+        field: typeof rule.field === 'string' && RULE_FIELD_RE.test(rule.field) ? rule.field : '',
+        op: pick(rule.op, OPS.map(op => op[0]), 'equals'),
+        value: str(rule.value, LIMITS.short),
+        minutes: num(rule.minutes, 0, 525600, 0),
+        background: color(rule.background),
+        color: color(rule.color),
+        target: pick(rule.target, ['row', 'cell'], 'row')
+      };
+    });
+  }
+
+  // How long ago, as "2h 5m" (short) or "02:05:00" (clock).
+  function formatDuration(ms, format) {
+    const total = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+    const d = Math.floor(total / 86400);
+    const h = Math.floor((total % 86400) / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const sec = total % 60;
+    if (format === 'clock') {
+      const pad = n => String(n).padStart(2, '0');
+      return `${d ? `${d}d ` : ''}${pad(h)}:${pad(m)}:${pad(sec)}`;
+    }
+    if (d) return `${d}d ${h}h`;
+    if (h) return `${h}h ${m}m`;
+    if (m) return `${m}m ${sec}s`;
+    return `${sec}s`;
+  }
+
+  // When a record's field last changed (records keep _since_<field>).
+  function sinceOf(record, key) {
+    if (!record) return 0;
+    return Number(record[`_since_${key}`]) || Number(record._createdAt) || 0;
   }
 
   function sanitizeProps(type, raw) {
@@ -832,6 +925,14 @@
         { key: 'tone', label: 'Colour', type: 'select', options: [['neutral', 'Grey'], ['info', 'Blue'], ['success', 'Green'], ['warning', 'Amber'], ['danger', 'Red']] },
         { key: 'inline', label: 'Next to the previous part', type: 'select', options: [['no', 'No'], ['yes', 'Yes']] }
       ]
+    },
+    timer: {
+      label: 'Timer', description: 'How long a field has had its value, ticking (e.g. time in this status).',
+      defaults: { field: '', text: '', size: '', weight: '', color: '', align: '', inline: 'no' },
+      fields: [
+        { key: 'field', label: 'Time since this field changed', type: 'cardfield', any: 'Since the card was added' },
+        { key: 'text', label: 'Words before it (e.g. Waiting)', type: 'text' }
+      ].concat(LOOK)
     },
     meta: {
       label: 'Added by / when', description: 'When the record was added, and by whom.',
@@ -1113,12 +1214,13 @@
     fixList(page.onOpen);
     (page.automations || []).forEach(auto => {
       if (auto.popup === from) auto.popup = to;
+      if (auto.target === from) auto.target = to;
       fixList(auto.steps);
     });
     allSections(page).forEach(section => section.columns.forEach(column => column.blocks.forEach(block => {
       if (Array.isArray(block.props.actions)) fixList(block.props.actions);
       ['popup', 'formPopup'].forEach(key => { if (block.props[key] === from) block.props[key] = to; });
-      ['defaultValue', 'text', 'filterValue'].forEach(key => {
+      ['defaultValue', 'text', 'filterValue', 'timerAt'].forEach(key => {
         if (typeof block.props[key] === 'string') block.props[key] = fixText(block.props[key]);
       });
     })));
@@ -1130,7 +1232,9 @@
     interval: { label: 'Every few seconds', description: 'Repeats while the tool is open (at least every 5 seconds).' },
     tableChange: { label: 'When a data table changes', description: 'A record is added, changed or deleted (by anyone). The record is available as {record.field}.' },
     popupOpen: { label: 'When a popup opens', description: 'Runs each time the popup opens.' },
-    popupClose: { label: 'When a popup closes', description: 'Runs each time the popup closes (X, Esc, outside click or a step).' }
+    popupClose: { label: 'When a popup closes', description: 'Runs each time the popup closes (X, Esc, outside click or a step).' },
+    recordTimer: { label: 'When a record has been a value for a while', description: 'E.g. Status has been Waiting for 30 minutes. Runs once per record each time it gets that value, while the tool is open somewhere. The record is available as {record.field}.' },
+    timerDone: { label: 'When a countdown ends', description: 'A countdown Number tile reaches zero.' }
   });
 
   function sanitizeAutomations(list) {
@@ -1146,6 +1250,11 @@
         table: typeof a.table === 'string' && ID_RE.test(a.table) ? a.table : '',
         change: pick(a.change, ['any', 'added', 'changed', 'deleted'], 'added'),
         popup: typeof a.popup === 'string' && KEY_RE.test(a.popup) ? a.popup : '',
+        field: typeof a.field === 'string' && KEY_RE.test(a.field) ? a.field : '',
+        op: pick(a.op, OPS.map(op => op[0]), 'equals'),
+        value: str(a.value, LIMITS.short),
+        minutes: num(a.minutes, 1, 525600, 30),
+        target: typeof a.target === 'string' && KEY_RE.test(a.target) ? a.target : '',
         steps: sanitizeActions(a.steps)
       };
     });
@@ -1666,7 +1775,7 @@
 
   return {
     VERSION, LIMITS, LAYOUTS, LAYOUT_LABELS, BLOCKS, STYLE_FIELDS, SECTION_FIELDS, TONES, FIELD_TYPES, ACTIONS,
-    OPS, KEY_RE, RECORD_RE, AUTOMATIONS, sanitizeAutomations, addAutomation, updateAutomation, removeAutomation, pagePopups, allNames, allSections, findPopup, addPopup, updatePopup, removePopup, countSections, parseCsv, toCsv, matchColumns, slug, uniqueKey, inputKey, dataCollection, pageInputs, pageElements, freeName, renameBlock,
+    OPS, KEY_RE, RECORD_RE, AUTOMATIONS, sanitizeColorRules, formatDuration, sinceOf, sanitizeAutomations, addAutomation, updateAutomation, removeAutomation, pagePopups, allNames, allSections, findPopup, addPopup, updatePopup, removePopup, countSections, parseCsv, toCsv, matchColumns, slug, uniqueKey, inputKey, dataCollection, pageInputs, pageElements, freeName, renameBlock,
     updatePageActions, sanitizeActions, sanitizeTables,
     findTable, addTable, updateTable, removeTable, addField, updateField, removeField, moveField,
     moveInList, grid, steps, cardItems, CARD_PARTS, CARD_STYLE_FIELDS, sanitizeDesign, cardDesign,

@@ -22,15 +22,31 @@ Heading, Text, List, Notice, Button, Input, Card, Number tile, Divider, Spacer,
 Table, Records list, Image, Embed (https pages). Sections have one to four columns;
 columns stack on narrow screens.
 
-- **Table**: column cards (a heading each, **+ Add column**) and row cards (a box per
-  column, **+ Add row**). Drag cards by their handle to reorder.
+- **Table**: **Rows come from** either *Rows I type in here* (column cards with a heading
+  each, **+ Add column**, and row cards with a box per column, **+ Add row**; drag by the
+  handle to reorder) or *A data table*, which works like a Records list (columns to show,
+  editable columns, search, delete, add rows, timer column, colours).
 - **Input**: short/long text, number, date, dropdown or yes/no. **Save into** points it
   at a data table field (its type, choices and required come from the field).
 - **Records list**: a data table's records, live, with search and an optional Delete
   button (nobody / Managers / everyone). **Columns people can change right here** turns
   columns into dropdowns / boxes that save in place (everyone or Managers only).
-- **Number tile**: a typed value, or a live count of a table's records (optionally
-  only where a field equals a value).
+  **People can add rows here** (everyone who can see the tool, or Managers only) adds a
+  **+ Add row** button that opens a small form under the list: the fields the manager
+  ticked (required fields always), checked like the table's fields and saved as a record.
+  **Timer column** shows, ticking, how long each row's chosen field has had its value
+  (e.g. *Time at this status*).
+- **Colours** (Table, Records list, Card list from a table, Number tile): rules like
+  *When Status is Waiting* → background / text colour, for the whole row or just that
+  cell. On data tables a rule can also need the value to have been set **for at least N
+  minutes** (e.g. red after 30 min waiting). Number tiles colour by their number. The
+  first matching rule wins.
+- **Number tile**: a typed value, a live count of a table's records (optionally
+  only where a field equals a value), or **a timer**: a *stopwatch* (starts when the page
+  opens or with a **Start a timer** step; **Pause** / **Reset** steps), *time since* or a
+  *countdown to* a date / time (`2026-12-24 17:00`, `17:00` for today, or `{element}`),
+  shown as `2h 5m` or `02:05:00`. Steps and colour rules see a timer as whole minutes.
+- **Card designs** have a **Timer** part: how long a field has had its value.
 
 ## Element names
 
@@ -44,7 +60,10 @@ value with `{order_number}` (the **Insert value** picker adds it). Also `{user}`
 Steps that start on their own. With nothing selected on the page, the right panel's
 **Automations** section has **When the page opens** plus **+ Add an automation**:
 **Every few seconds** (5+), **When a data table changes** (added / changed / deleted /
-any; the record is `{record.field}`), **When a popup opens**, **When a popup closes**.
+any; the record is `{record.field}`), **When a popup opens**, **When a popup closes**,
+**When a record has been a value for a while** (e.g. Status is Waiting for 30 minutes;
+runs once per record each time it gets that value, for each person who has the tool open
+when it crosses the time) and **When a countdown ends**.
 A popup's settings also have **Steps when it opens / closes**. Inputs can run their steps
 **while typing** (after a short pause) instead of when changed. Automations run in the
 builder's Preview too (without writing).
@@ -147,7 +166,9 @@ never changes, so renaming is safe. **Add a form and list for this table** build
 for every field, a Save button (save → message → clear) and a records list.
 
 Records live in Firestore `dashboard-data-<tool id>-<table id>` with the field keys plus
-`_createdAt` and `_createdBy`. Deleting a table in the builder doesn't delete them.
+`_createdAt` and `_createdBy`, plus `_since_<field>` (when that field last changed; used
+by timers and timed colour rules; older records fall back to when they were added).
+Deleting a table in the builder doesn't delete them.
 
 ## Storage and safety
 

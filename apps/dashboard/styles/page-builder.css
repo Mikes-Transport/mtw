@@ -1156,3 +1156,39 @@ button.mtw-pb-record-card:hover { border-color: #9a9893; box-shadow: 0 4px 14px 
 .mtw-pb-card-field.is-editable .mtw-pb-inline-edit { width: 100%; }
 .mtw-pb-automation { margin-bottom: 8px; }
 .mtw-pb-automation .mtw-pb-steps-summary .mtw-pb-group { margin-top: 4px; }
+
+/* ---------- timers, colour rules, add a row ---------- */
+.mtw-pb-records-timer { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mtw-pb-stat.is-timer .mtw-pb-stat-value,
+.mtw-pb-card-timer { font-variant-numeric: tabular-nums; }
+.mtw-pb-card-timer { font-size: 13px; font-weight: 600; }
+.mtw-pb-table tr.has-ink .mtw-pb-records-when { color: inherit; opacity: 0.8; }
+.mtw-pb-stat.has-ink .mtw-pb-stat-label,
+.mtw-pb-stat.has-ink .mtw-pb-stat-note,
+.mtw-pb-stat.has-ink .mtw-pb-stat-value { color: inherit; }
+.mtw-pb-add-row-wrap { margin-top: 10px; }
+.mtw-pb-add-row {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--mtw-line, #e3e3df);
+  border-radius: 10px;
+  background: var(--mtw-surface, #fafaf8);
+}
+.mtw-pb-add-row[hidden] { display: none; }
+.mtw-pb-add-row-fields { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.mtw-pb-add-row-bar { display: flex; gap: 8px; }
+.mtw-pb-add-row-error { margin: 0; color: #b42318; font-size: 13px; }
+.mtw-pb-add-row-error:empty { display: none; }
+.mtw-pb-colour-swatch {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 22px;
+  border: 1px solid var(--mtw-line, #e3e3df);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.mtw-pb-add-row-open[hidden] { display: none; }
+.has-ink .mtw-pb-inline-edit { color: inherit; font-weight: 600; }
