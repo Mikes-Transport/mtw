@@ -754,7 +754,9 @@
             // Timer fields: count from when the row was added, or from when field "from"
             // last changed; with whileValue, only while that field has that value.
             from: typeof f.from === 'string' && KEY_RE.test(f.from) ? f.from : '',
-            whileValue: str(f.whileValue, LIMITS.short)
+            whileValue: str(f.whileValue, LIMITS.short),
+            // 'changed': from when "from" last changed; 'value': from the date / time in it.
+            fromMode: f.fromMode === 'value' ? 'value' : 'changed'
           };
         });
       return { id, name: str(raw.name, 80) || 'Untitled table', fields };
@@ -817,6 +819,7 @@
     if (changes.options !== undefined) field.options = str(changes.options, LIMITS.text);
     if (changes.from !== undefined) field.from = typeof changes.from === 'string' && KEY_RE.test(changes.from) ? changes.from : '';
     if (changes.whileValue !== undefined) field.whileValue = str(changes.whileValue, LIMITS.short);
+    if (changes.fromMode !== undefined) field.fromMode = changes.fromMode === 'value' ? 'value' : 'changed';
     if (field.type === 'timer') field.required = false;
     return next;
   }

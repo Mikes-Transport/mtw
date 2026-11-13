@@ -171,8 +171,10 @@ never changes, so renaming is safe. **Add a form and list for this table** build
 for every field, a Save button (save → message → clear) and a records list.
 
 A **Timer** field is filled in by nobody: it ticks by itself wherever the table shows
-(lists, tables, cards, Manage data). It **Counts from** when the row was added, or when
-another field last changed, optionally **only while** that field has a value (e.g. a
+(lists, tables, cards, Manage data). It **Counts from** when the row was added, or from
+another field: either the date / time in it (e.g. time since Pickup; a future date shows
+`in 2h 5m`) or when someone last changed it. It stays blank until that field has a value,
+and can count **only while** that field has a value (e.g. a
 *Waiting time* that counts while Status is Waiting and goes blank once Served). Steps and
 colour rules see it as minutes. It isn't saved, exported as its current time, and skipped
 by forms and imports.

@@ -332,3 +332,26 @@ test('colour rules, durations and since times', () => {
   const renamed = core.renameBlock(page, stat.id, 'deadline').page;
   assert.equal(renamed.automations[0].target, 'deadline');
 });
+
+test('timer fields: blank until their field has a value; can count from the date in it', () => {
+  const { JSDOM } = require('jsdom');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const dom = new JSDOM('<!DOCTYPE html>', { runScripts: 'outside-only' });
+  dom.window.eval(fs.readFileSync(path.join(__dirname, '../apps/dashboard/js/builder/page-core.js'), 'utf8'));
+  dom.window.eval(fs.readFileSync(path.join(__dirname, '../apps/dashboard/js/builder/page-runtime.js'), 'utf8'));
+  const rt = dom.window.MTW_PAGE_RUNTIME;
+  const now = Date.now();
+  const changed = { type: 'timer', from: 'pickup', fromMode: 'changed' };
+  const byValue = { type: 'timer', from: 'pickup', fromMode: 'value' };
+  const added = { _createdAt: now - 3600000, _since_pickup: now - 3600000 };
+  assert.ok(Number.isNaN(rt.fieldMs(changed, { ...added, pickup: '' }, now)), 'empty field: not counting');
+  assert.equal(rt.fieldMs(changed, { ...added, pickup: '2026-01-01', _since_pickup: now - 60000 }, now), 60000);
+  const tenAgo = new Date(now - 600000);
+  const pad = n => String(n).padStart(2, '0');
+  const stamp = `${tenAgo.getFullYear()}-${pad(tenAgo.getMonth() + 1)}-${pad(tenAgo.getDate())} ${pad(tenAgo.getHours())}:${pad(tenAgo.getMinutes())}`;
+  const ms = rt.fieldMs(byValue, { ...added, pickup: stamp }, now);
+  assert.ok(ms >= 600000 && ms < 660000, 'counts from the date in the field');
+  assert.match(rt.fieldTimerText(byValue, { pickup: '2999-01-01' }), /^in /, 'future dates count down');
+  dom.window.close();
+});

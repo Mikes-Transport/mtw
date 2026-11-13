@@ -1434,14 +1434,24 @@
       const tableId = table.id;
       const others = table.fields.filter(f => f.key !== field.key && f.type !== 'timer');
       card.appendChild(fieldControl({ key: `from-${field.key}`, label: 'Counts from', type: 'select',
-        options: [['', 'When the row was added']].concat(others.map(f => [f.key, `When ${f.label} last changed`])) }, field.from,
-      value => commit(c.updateField(history.page, tableId, field.key, { from: value }))));
+        options: [['', 'When the row was added']].concat(others.map(f => [f.key, f.type === 'date' ? `${f.label}` : `When ${f.label} last changed`])) }, field.from,
+      value => {
+        const picked = others.find(f => f.key === value);
+        commit(c.updateField(history.page, tableId, field.key, { from: value, fromMode: picked && picked.type === 'date' ? 'value' : 'changed' }));
+      }));
       if (field.from) {
         const from = others.find(f => f.key === field.from);
+        if (from && (from.type === 'date' || from.type === 'text')) {
+          card.appendChild(fieldControl({ key: `mode-${field.key}`, label: `Count from`, type: 'select',
+            options: [['value', `The date / time in ${from.label} (e.g. time since pickup)`], ['changed', `When someone last changed ${from.label}`]] }, field.fromMode,
+          value => commit(c.updateField(history.page, tableId, field.key, { fromMode: value }))));
+        }
         card.appendChild(fieldControl({ key: `while-${field.key}`, label: `Only counts while ${from ? from.label : 'it'} is (blank = always)`, type: 'text' }, field.whileValue,
           value => commit(c.updateField(history.page, tableId, field.key, { whileValue: value }), undefined, `${tableId}:f:${field.key}:while`)));
       }
-      card.appendChild(el('p', 'mtw-pb-field-help', 'Nobody fills this in: it ticks by itself in lists, cards and Manage data. Steps and colour rules see it as minutes.'));
+      card.appendChild(el('p', 'mtw-pb-field-help', field.from
+        ? 'It stays blank until that field has something in it. Nobody fills this in: it ticks by itself in lists, cards and Manage data. Steps and colour rules see it as minutes.'
+        : 'Nobody fills this in: it ticks by itself in lists, cards and Manage data. Steps and colour rules see it as minutes.'));
     }
 
     function renderTableInspector(page, tableId) {

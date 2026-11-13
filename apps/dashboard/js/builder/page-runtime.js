@@ -78,14 +78,27 @@
   function fieldMs(field, record, now) {
     if (!field || field.type !== 'timer' || !record) return NaN;
     const c = core();
-    if (field.from && field.whileValue && !compare(record[field.from], 'equals', field.whileValue)) return NaN;
-    const start = field.from ? c.sinceOf(record, field.from) : Number(record._createdAt) || 0;
-    return start ? Math.max(0, (now || Date.now()) - start) : NaN;
+    const at = now || Date.now();
+    if (field.from) {
+      const v = record[field.from];
+      // Nothing in the field yet: not counting.
+      if (v === undefined || v === null || String(v).trim() === '') return NaN;
+      if (field.whileValue && !compare(v, 'equals', field.whileValue)) return NaN;
+      if (field.fromMode === 'value') {
+        const when = parseWhen(v);
+        return Number.isFinite(when) ? at - when : NaN; // negative: still to come
+      }
+      const start = c.sinceOf(record, field.from);
+      return start ? Math.max(0, at - start) : NaN;
+    }
+    const start = Number(record._createdAt) || 0;
+    return start ? Math.max(0, at - start) : NaN;
   }
 
   function fieldTimerText(field, record) {
     const ms = fieldMs(field, record);
-    return Number.isFinite(ms) ? core().formatDuration(ms) : '';
+    if (!Number.isFinite(ms)) return '';
+    return ms < 0 ? `in ${core().formatDuration(-ms + 999)}` : core().formatDuration(ms);
   }
 
   // The record as steps and colour rules see it: Timer fields as whole minutes.
@@ -95,7 +108,7 @@
     def.fields.forEach(f => {
       if (f.type !== 'timer') return;
       const ms = fieldMs(f, record);
-      out[f.key] = Number.isFinite(ms) ? Math.floor(ms / 60000) : '';
+      out[f.key] = Number.isFinite(ms) ? Math.trunc(ms / 60000) : '';
     });
     return out;
   }
