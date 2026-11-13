@@ -1231,3 +1231,25 @@ button.mtw-pb-record-card:hover { border-color: #9a9893; box-shadow: 0 4px 14px 
 .mtw-pb-colour-preset.is-on { box-shadow: 0 0 0 2px var(--mtw-ink, #242424); }
 .mtw-pb-colour-custom > summary { font-size: 12.5px; cursor: pointer; color: var(--mtw-muted, #777774); }
 .mtw-pb-colour-custom[open] > summary { margin-bottom: 6px; }
+
+/* "Only show when..." elements: tagged while editing. */
+.mtw-pb-item.is-conditional::before {
+  content: "Shows when...";
+  position: absolute;
+  top: -9px;
+  left: 6px;
+  z-index: 2;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #6d28d9;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.mtw-pb-show-when { display: grid; gap: 8px; margin: 4px 0 12px; }
+.mtw-pb-show-rule { display: grid; gap: 6px; }
+.mtw-pb-show-where { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px; border-radius: 8px; background: rgba(0, 0, 0, 0.03); }
+.mtw-pb-show-where > [data-field="field"] { grid-column: 1 / -1; }
+.mtw-pb-show-where .mtw-pb-field { margin: 0; }
+.mtw-pb-show-and { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--mtw-muted, #777774); }
+.mtw-pb-show-actions { display: flex; flex-wrap: wrap; gap: 6px; }

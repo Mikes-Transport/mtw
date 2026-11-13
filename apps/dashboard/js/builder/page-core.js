@@ -1444,6 +1444,8 @@
               style: sanitizeStyle(rawBlock.style)
             };
             if (rawBlock.hidden === true) block.hidden = true;
+            const showWhen = sanitizeShowWhen(rawBlock.showWhen);
+            if (showWhen) block.showWhen = showWhen;
             blocks.push(block);
           });
           return { id: uniqueId(rawColumn.id, 'c'), blocks };
@@ -1626,7 +1628,30 @@
       if (changes.hidden === true) block.hidden = true;
       else delete block.hidden;
     }
+    if (changes.showWhen !== undefined) {
+      const showWhen = changes.showWhen && sanitizeShowWhen(changes.showWhen);
+      if (showWhen) block.showWhen = showWhen;
+      else delete block.showWhen;
+    }
     return next;
+  }
+
+  // "Only show when rows in a data table...": checked live (every second and on changes).
+  // { rules: [{ table, match, howMany, where: [{ field, op, value }] }] }: every rule must
+  // pass; a row counts when it meets every "where".
+  function sanitizeShowWhen(raw) {
+    if (!raw || typeof raw !== 'object' || !Array.isArray(raw.rules)) return null;
+    const rules = raw.rules.filter(rule => rule && typeof rule === 'object').slice(0, 6).map(rule => ({
+      table: typeof rule.table === 'string' && ID_RE.test(rule.table) ? rule.table : '',
+      match: pick(rule.match, ['any', 'atLeast', 'none', 'all'], 'any'),
+      howMany: num(rule.howMany, 1, 100000, 2),
+      where: (Array.isArray(rule.where) ? rule.where : []).filter(w => w && typeof w === 'object').slice(0, 6).map(w => ({
+        field: typeof w.field === 'string' && KEY_RE.test(w.field) ? w.field : '',
+        op: pick(w.op, OPS.map(op => op[0]), 'greater'),
+        value: str(w.value, LIMITS.short)
+      }))
+    }));
+    return rules.length ? { rules } : null;
   }
 
   // popupId: add to that popup's sections instead of the page's.

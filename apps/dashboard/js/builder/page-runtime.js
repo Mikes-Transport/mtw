@@ -348,6 +348,29 @@
       }
     }
 
+    // Does a table's rows meet { table, match, howMany, field, op, value }?
+    // { pass, hits }, or pass null while the table is still loading.
+    function rowsMatch(cond, ctx) {
+      const def = tables[cond.table];
+      const entry = def ? table(cond.table) : null;
+      if (!entry || !entry.loaded || entry.error) return { pass: null, hits: [] };
+      const rows = entry.rows.filter(row => !row._preview || opts.dryRun);
+      const where = (cond.where || (cond.field ? [{ field: cond.field, op: cond.op, value: cond.value }] : []))
+        .filter(w => w.field).map(w => ({ ...w, want: tokens(w.value, ctx) }));
+      const hits = rows.filter(row => where.every(w => matchField(def, row, w.field, w.op, w.want)));
+      const pass = cond.match === 'none' ? hits.length === 0
+        : cond.match === 'all' ? rows.length > 0 && hits.length === rows.length
+          : cond.match === 'atLeast' ? hits.length >= cond.howMany : hits.length > 0;
+      return { pass, hits };
+    }
+
+    // Elements with "Only show when..." follow their rule; others the Show / Hide steps.
+    function isHidden(name) {
+      const block = elements[name];
+      if (block && block.showWhen) return !block.showWhen.rules.every(rule => rowsMatch(rule).pass === true);
+      return state.hidden.has(name);
+    }
+
     // ---------- timers ----------
     // Milliseconds shown by a timer tile (NaN when its date / time isn't a time yet).
     function timerMs(name) {
@@ -789,12 +812,7 @@
           if (!def) return runList(step.else, depth + 1, ctx);
           const entry = table(step.table);
           if (!entry.loaded) await Promise.race([entry.ready, new Promise(resolve => root.setTimeout(resolve, 8000))]);
-          const rows = entry.rows.filter(row => !row._preview || opts.dryRun);
-          const want = tokens(step.value, ctx);
-          const hits = step.field ? rows.filter(row => matchField(def, row, step.field, step.op, want)) : rows;
-          const pass = step.match === 'none' ? hits.length === 0
-            : step.match === 'all' ? rows.length > 0 && hits.length === rows.length
-              : step.match === 'atLeast' ? hits.length >= step.howMany : hits.length > 0;
+          const { pass, hits } = rowsMatch(step, ctx);
           const next = pass && hits.length && step.match !== 'none' ? { ...(ctx || {}), record: hits[0], table: step.table, count: hits.length } : ctx;
           return runList(pass ? step.then : step.else, depth + 1, next);
         }
@@ -877,6 +895,7 @@
           timers.push(root.setInterval(check, 5000));
           check();
         } else if (auto.when === 'interval') {
+          run(auto.steps); // once straight away, then every N seconds
           timers.push(root.setInterval(() => {
             if (!state.disposed) run(auto.steps);
           }, Math.max(5, auto.seconds) * 1000));
@@ -940,7 +959,8 @@
       inputSpec,
       value,
       setValue,
-      isHidden: name => state.hidden.has(name),
+      isHidden,
+      rowsMatch,
       text: name => (state.texts[name] !== undefined ? state.texts[name] : null),
       table,
       watch,

@@ -80,6 +80,22 @@ builder's Preview too (without writing).
 Tick **Hidden at start** under an element's name to hide it when the page opens (it
 shows faded with a tag in the builder). A **Show an element** step reveals it.
 
+## Only show when...
+
+Under an element's name, **Only show when...** makes it show and hide by itself, checked
+live (every second and whenever the data changes), no steps needed. A rule is *There is
+at least one row / at least N rows / no rows / every row in [table] where [field] is
+[value]*, and **+ And the row...** adds more conditions the same row must meet (e.g.
+Day/Hr more than 10s **and** Completed is empty). **+ And also...** adds another rule
+that must also be true. Example escalation:
+
+- Warning 1: at least one row where Day/Hr > 10s and Completed is empty, **and also** no
+  rows where Day/Hr > 15s and Completed is empty.
+- Warning 2: at least one row where Day/Hr > 15s and Completed is empty.
+
+Show / Hide steps don't change these elements. "Every few seconds" automations now also
+run once as soon as the page opens.
+
 ## When -> Do steps
 
 The right panel shows a short outline of an element's steps; **Edit steps** opens the

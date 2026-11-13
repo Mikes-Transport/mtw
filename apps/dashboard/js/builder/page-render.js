@@ -912,7 +912,11 @@
     node.classList.add('mtw-pb-block', `mtw-pb-block-${block.type}`);
     node.dataset.blockId = block.id;
     if (block.name) node.dataset.name = block.name;
-    if (!options.editing && rt && block.name && rt.isHidden(block.name)) node.style.display = 'none';
+    if (!options.editing && rt && block.name && block.showWhen) {
+      const apply = () => { node.style.display = rt.isHidden(block.name) ? 'none' : ''; };
+      [...new Set(block.showWhen.rules.map(rule => rule.table))].filter(id => rt.tables[id]).forEach(id => rt.watch(id, node, apply));
+      rt.tick(node, apply);
+    } else if (!options.editing && rt && block.name && rt.isHidden(block.name)) node.style.display = 'none';
     if (options.editing && block.hidden) node.classList.add('is-start-hidden');
     applyStyle(node, block.style);
     return node;
@@ -951,6 +955,7 @@
         item.dataset.blockId = block.id;
         item.dataset.blockType = block.type;
         if (block.hidden) item.classList.add('is-start-hidden');
+        if (block.showWhen) item.classList.add('is-conditional');
         delete node.dataset.blockId;
         item.appendChild(node);
         col.appendChild(item);
