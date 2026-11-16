@@ -1733,6 +1733,19 @@ test('builder: a Number tile counts rows whose timer field is over a time (set u
   assert.equal(props.filterOp, 'greater');
   assert.equal(props.filterValue, '40 minutes');
   await waitFor(window, () => editor.element.querySelector('[data-name="late"] .mtw-pb-stat-value').textContent === '1');
+  inspector.querySelector('.mtw-pb-add-condition').click();
+  const cond = inspector.querySelector('.mtw-pb-condition [data-field="field"] select');
+  cond.value = 'customer';
+  cond.dispatchEvent(new window.Event('change', { bubbles: true }));
+  const op = inspector.querySelector('.mtw-pb-condition [data-field="op"] select');
+  op.value = 'equals';
+  op.dispatchEvent(new window.Event('change', { bubbles: true }));
+  const val = inspector.querySelector('.mtw-pb-condition [data-field="value"] input');
+  val.value = 'Nobody';
+  val.dispatchEvent(new window.Event('input', { bubbles: true }));
+  const late = editor.page.sections[0].columns[0].blocks.find(b => b.name === 'late').props;
+  assert.deepEqual(JSON.parse(JSON.stringify(late.filterAnd)), [{ field: 'customer', op: 'equals', value: 'Nobody' }]);
+  await waitFor(window, () => editor.element.querySelector('[data-name="late"] .mtw-pb-stat-value').textContent === '0');
   editor.close(true);
   dom.window.close();
 });
@@ -1794,5 +1807,38 @@ test('Keep checking (repeat): Ifs in the order written keep up with timers; hide
   await waitFor(window, () => shown('warn_two') && !shown('warn_one'), 6000);
   await window.MTW.updateDoc(window.MTW.doc(window.MTW.db, 'dashboard-data-jobs-t-k', 'a'), { done: '2026-11-13', _since_done: Date.now() });
   await waitFor(window, () => !shown('warn_two') && !shown('warn_one'), 3000);
+  dom.window.close();
+});
+
+test('count tiles: "and also where" lets completed orders drop out, and the colour goes back', async () => {
+  const now = Date.now();
+  const page = {
+    tables: [{ id: 't-o', name: 'Orders', fields: [{ key: 'name', label: 'Name' }, { key: 'done', label: 'Completed', type: 'date' },
+      { key: 'age', label: 'Age', type: 'timer', stopField: 'done' }] }],
+    sections: [{ layout: '1', columns: [{ blocks: [
+      { type: 'stat', name: 'overdue', props: { label: 'Orders overdue', source: 'count', table: 't-o', filterField: 'age', filterOp: 'greater', filterValue: '1 hour',
+        filterAnd: [{ field: 'done', op: 'empty' }], colorRules: [{ op: 'greater', value: '0', background: '#ff0000' }] } },
+      { type: 'button', name: 'fake', props: { label: 'Fake', actions: [{ type: 'setText', target: 'overdue', value: '99' }] } },
+      { type: 'button', name: 'reset', props: { label: 'Reset', actions: [{ type: 'setText', target: 'overdue', value: '' }] } }
+    ] }] }]
+  };
+  const db = store({ ...TOOLS, 'dashboard-tool-pages': { jobs: { published: page } },
+    'dashboard-data-jobs-t-o': {
+      a: { name: 'A', done: '', _createdAt: now - 7200000 },
+      b: { name: 'B', done: '', _createdAt: now - 9000000 } } });
+  const { dom, window, document } = host({ role: 'Stores', db });
+  const tile = () => document.querySelector('.custom-dashboard-tool-jobs-panel [data-name="overdue"]');
+  await waitFor(window, () => tile() && tile().querySelector('.mtw-pb-stat-value').textContent === '2');
+  assert.equal(tile().style.background, 'rgb(255, 0, 0)');
+  for (const id of ['a', 'b']) {
+    await window.MTW.updateDoc(window.MTW.doc(window.MTW.db, 'dashboard-data-jobs-t-o', id), { done: '2026-11-16', _since_done: Date.now() });
+  }
+  await waitFor(window, () => tile().querySelector('.mtw-pb-stat-value').textContent === '0');
+  assert.equal(tile().style.background, '', 'back to its normal colour');
+  // Set text overrides the count; setting it blank puts the live count back
+  document.querySelector('[data-name="fake"] button').click();
+  await waitFor(window, () => tile().querySelector('.mtw-pb-stat-value').textContent === '99');
+  document.querySelector('[data-name="reset"] button').click();
+  await waitFor(window, () => tile().querySelector('.mtw-pb-stat-value').textContent === '0');
   dom.window.close();
 });

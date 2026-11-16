@@ -315,7 +315,9 @@
       if (!p.filterField) return entry.rows.length;
       const want = tokens(p.filterValue);
       const def = tables[p.table];
-      return entry.rows.filter(row => matchField(def, row, p.filterField, p.filterOp || 'equals', want)).length;
+      const more = (p.filterAnd || []).filter(w => w.field).map(w => ({ ...w, want: tokens(w.value) }));
+      return entry.rows.filter(row => matchField(def, row, p.filterField, p.filterOp || 'equals', want)
+        && more.every(w => matchField(def, row, w.field, w.op, w.want))).length;
     }
 
     // ---------- element values ----------
@@ -796,7 +798,10 @@
           if (elements[step.target]) {
             if (elements[step.target].type === 'input') setValue(step.target, tokens(step.value, ctx));
             else {
-              state.texts[step.target] = tokens(step.value, ctx);
+              const text = tokens(step.value, ctx);
+              // Blank puts the element back to normal (a count tile counts again).
+              if (text === '') delete state.texts[step.target];
+              else state.texts[step.target] = text;
               refresh(step.target);
             }
           }

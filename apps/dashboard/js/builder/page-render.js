@@ -806,7 +806,8 @@
               colour();
             };
             rt.watch(p.table, node, show);
-            if (timeField(rt.tables[p.table], p.filterField, p.filterValue)) rt.tick(node, show);
+            if (timeField(rt.tables[p.table], p.filterField, p.filterValue)
+              || (p.filterAnd || []).some(w => timeField(rt.tables[p.table], w.field, w.value))) rt.tick(node, show);
           } else valueNode.textContent = '-';
         } else if (p.source === 'timer' && override === null && rt) {
           node.classList.add('is-timer');

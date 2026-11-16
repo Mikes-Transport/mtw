@@ -165,7 +165,7 @@
     },
     stat: {
       label: 'Number tile', group: 'Layout',
-      defaults: { label: 'Orders today', source: 'static', value: '24', table: '', filterField: '', filterOp: 'equals', filterValue: '', timerFrom: 'open', timerKind: 'since', timerEvent: 'added', timerAt: '', timerAuto: 'yes', timerFormat: 'short', doneText: 'Time is up', colorRules: [], note: '', actions: [] },
+      defaults: { label: 'Orders today', source: 'static', value: '24', table: '', filterField: '', filterOp: 'equals', filterValue: '', filterAnd: [], timerFrom: 'open', timerKind: 'since', timerEvent: 'added', timerAt: '', timerAuto: 'yes', timerFormat: 'short', doneText: 'Time is up', colorRules: [], note: '', actions: [] },
       fields: [
         { key: 'label', label: 'Label', type: 'text' },
         { key: 'source', label: 'Number comes from', type: 'select', options: [['static', 'What I type'], ['count', 'Count of records in a data table'], ['timer', 'A timer']] },
@@ -179,6 +179,7 @@
         { key: 'filterField', label: 'Only count where', type: 'field', when: { source: 'count' } },
         { key: 'filterOp', label: 'is', type: 'select', options: [['equals', 'equal to'], ['notEquals', 'not equal to'], ['contains', 'containing'], ['empty', 'empty'], ['notEmpty', 'not empty'], ['greater', 'more than'], ['less', 'less than']], when: { source: 'count', filterField: '*' } },
         { key: 'filterValue', label: 'Value (for a timer or date field: 10 seconds, 30 minutes, 4 hours, 3 days)', type: 'text', when: { source: 'count', filterField: '*' } },
+        { key: 'filterAnd', label: 'And also where', type: 'conditions', when: { source: 'count', filterField: '*' } },
         { key: 'table', label: 'Data table', type: 'table', when: { source: 'timer', timerFrom: 'record' } },
         { key: 'filterField', label: 'Only records where', type: 'field', any: 'Any record', when: { source: 'timer', timerFrom: 'record' } },
         { key: 'filterValue', label: 'is', type: 'text', when: { source: 'timer', timerFrom: 'record', filterField: '*' } },
@@ -665,6 +666,12 @@
         return sanitizeDesign(value);
       case 'colorrules':
         return sanitizeColorRules(value);
+      case 'conditions':
+        return (Array.isArray(value) ? value : []).filter(w => w && typeof w === 'object').slice(0, 5).map(w => ({
+          field: typeof w.field === 'string' && KEY_RE.test(w.field) ? w.field : '',
+          op: pick(w.op, OPS.map(op => op[0]), 'equals'),
+          value: str(w.value, LIMITS.short)
+        }));
       case 'cardlist': {
         const seen = new Set();
         return (Array.isArray(value) ? value : []).filter(item => item && typeof item === 'object').slice(0, 100).map(item => {

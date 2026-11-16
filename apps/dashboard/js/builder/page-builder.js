@@ -976,6 +976,39 @@
       renderAutomations();
     }
 
+    // "And also where [field] [is] [value]" rows (all must be true for a record to count).
+    function renderConditions(blockId, key) {
+      const block = c.findBlock(history.page, blockId).block;
+      const list = block.props[key] || [];
+      const box = el('div', 'mtw-pb-conditions');
+      box.dataset.field = key;
+      const latest = () => c.clone((c.findBlock(history.page, blockId) || { block: { props: {} } }).block.props[key] || []);
+      const save = (fn, coalesce) => {
+        const next = latest();
+        fn(next);
+        const page = c.updateBlock(history.page, blockId, { props: { [key]: next } });
+        if (coalesce) commit(page, undefined, coalesce);
+        else commit(page);
+      };
+      list.forEach((w, i) => {
+        const row = el('div', 'mtw-pb-show-where mtw-pb-condition');
+        row.appendChild(fieldControl({ key: 'field', label: 'and', type: 'field', any: 'Choose a field' }, w.field,
+          value => save(next => { next[i].field = value; }), { tableId: block.props.table }));
+        row.appendChild(fieldControl({ key: 'op', label: 'is', type: 'select', options: c.OPS }, w.op, value => save(next => { next[i].op = value; })));
+        if (!['empty', 'notEmpty'].includes(w.op)) {
+          row.appendChild(fieldControl({ key: 'value', label: 'Value', type: 'text' }, w.value,
+            value => save(next => { next[i].value = value; }, `${blockId}:${key}:${i}:value`)));
+        }
+        row.appendChild(button('mtw-pb-mini', 'Remove', 'Remove this condition', () => save(next => next.splice(i, 1))));
+        box.appendChild(row);
+      });
+      if (list.length < 5) {
+        box.appendChild(button('mtw-pb-btn mtw-pb-btn-light mtw-pb-add-condition', '+ And also where...', 'Add another condition a record must meet to count',
+          () => save(next => next.push({ field: '', op: 'empty', value: '' }))));
+      }
+      inspector.appendChild(box);
+    }
+
     // A fold-away group in the inspector. fill() appends to the inspector; what it adds
     // is moved into the group. Open / closed is remembered per block type.
     function groupBox(key, title, openByDefault, fill) {
@@ -1124,7 +1157,7 @@
 
       const props = block.props;
       const contentFields = def.fields.filter(field => visible(field, props));
-      const SPECIAL = ['grid', 'actions', 'cardlist', 'cardfields', 'carddesign', 'colorrules'];
+      const SPECIAL = ['grid', 'actions', 'cardlist', 'cardfields', 'carddesign', 'colorrules', 'conditions'];
       const renderPlain = field => {
         inspector.appendChild(fieldControl(field, props[field.key], value => {
           if (block.type === 'cards' && field.key === 'formPopup' && props.source === 'added') {
@@ -1152,6 +1185,7 @@
         if (field.type === 'cardlist') renderCardItemsEditor(blockId);
         if (field.type === 'cardfields') renderCardFieldsEditor(blockId);
         if (field.type === 'colorrules') renderColourRules(blockId);
+        if (field.type === 'conditions') renderConditions(blockId, field.key);
         if (field.type === 'carddesign') {
           const design = props.design || { parts: [] };
           const box = el('div', 'mtw-pb-steps-summary');

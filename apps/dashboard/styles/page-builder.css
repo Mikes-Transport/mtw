@@ -1253,3 +1253,4 @@ button.mtw-pb-record-card:hover { border-color: #9a9893; box-shadow: 0 4px 14px 
 .mtw-pb-show-where .mtw-pb-field { margin: 0; }
 .mtw-pb-show-and { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--mtw-muted, #777774); }
 .mtw-pb-show-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.mtw-pb-conditions { display: grid; gap: 6px; margin: 0 0 12px; }

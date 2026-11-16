@@ -45,7 +45,8 @@ columns stack on narrow screens.
 - **Number tile**: a typed value, a live count of a table's records (optionally only
   where a field is equal to / more than / ... a value; for a Timer field the value can be
   `10 seconds`, `30 minutes`, `4 hours`, `3 days`; a date field against a length of time
-  means "that long ago", e.g. Pickup more than 3 days), or **a timer** that **Counts from**:
+  means "that long ago", e.g. Pickup more than 3 days; **+ And also where...** adds more
+  conditions, e.g. *and Completed is empty* so finished orders drop out of the count), or **a timer** that **Counts from**:
   - *When the page opens*: a stopwatch (or only with a **Start a timer** step; **Pause** /
     **Reset** steps too).
   - *When something last happened in a data table*: time since the newest record was
@@ -92,7 +93,7 @@ description; the list on the right). **Done** or Esc goes back to the page.
   page to edit that list). A block with no steps isn't clickable.
 - **Do** (in order; drag steps in from the chips, drag cards to reorder or into an If's
   Then/Else): Save inputs to a table, Show a message, Ask to confirm, Clear inputs, Set an
-  input, Set an element's text, Show/Hide an element, If / then / else (equal to, not
+  input, Set an element's text (blank puts it back to normal, e.g. a count tile counts again), Show/Hide an element, If / then / else (equal to, not
   equal to, containing, empty, not empty, more than, less than; numbers compare as
   numbers, text ignores case; `3 days` / `4 hours` / `30 minutes` compare against timers),
   **If rows in a data table** (at least one / at least N / no / every row has [field] [is
