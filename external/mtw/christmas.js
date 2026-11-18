@@ -159,6 +159,168 @@
       color: #f0f7f1;
     }
 
+    body.mtw-christmas-active #nav-left h2 {
+      padding: 8px 10px;
+      border-left: 3px solid #69b64f;
+      background: linear-gradient(145deg, #203326, #14231a) !important;
+      color: #f4f7f5 !important;
+    }
+
+    body.mtw-christmas-active #nav-left ul.categories,
+    body.mtw-christmas-active #nav-left ul.categories li.category,
+    body.mtw-christmas-active #nav-left ul.categories li.category > a {
+      background-color: transparent !important;
+    }
+
+    body.mtw-christmas-active #nav-left ul.categories ul.categories {
+      background: #14231a !important;
+    }
+
+    body.mtw-christmas-active #nav-left ul.categories li.category > a {
+      color: #d3e2d6 !important;
+    }
+
+    body.mtw-christmas-active #nav-left ul.categories li.category.active > a {
+      color: #aee58e !important;
+      font-weight: 700;
+    }
+
+    body.mtw-christmas-active #nav-left ul.categories li.category > a:hover,
+    body.mtw-christmas-active #nav-left ul.categories li.category > a:focus-visible {
+      background: #203326 !important;
+      color: #fff !important;
+    }
+
+    body.mtw-christmas-active.product_view #body #single-product-details .price:not(.retail),
+    body.mtw-christmas-active.product_view #body #single-product-details .price:not(.retail) * {
+      color: #f4f7f5 !important;
+    }
+
+    body.mtw-christmas-active.product_view #body #single-product-details .price:not(.retail) .suffix {
+      color: #8ed068 !important;
+    }
+
+    body.mtw-christmas-active.product_view #body #single-product-details .price.retail,
+    body.mtw-christmas-active.product_view #body #single-product-details .price.retail *,
+    body.mtw-christmas-active.product_view #body #single-product-details .retail-value,
+    body.mtw-christmas-active.product_view #body #single-product-details .price-label {
+      color: #bd5555 !important;
+    }
+
+    body.mtw-christmas-active.product_view #body #single-product-details .price.retail .suffix,
+    body.mtw-christmas-active.product_view #body #single-product-details .retail-value .suffix {
+      color: #bd5555 !important;
+    }
+
+    body.mtw-christmas-active #body table {
+      border-color: #496052 !important;
+      background: #15241c !important;
+      color: #e7f1e9 !important;
+    }
+
+    body.mtw-christmas-active #body table th,
+    body.mtw-christmas-active #body table thead td {
+      border-color: #496052 !important;
+      background: #203326 !important;
+      color: #f4f7f5 !important;
+    }
+
+    body.mtw-christmas-active #body table th *,
+    body.mtw-christmas-active #body table thead td * {
+      color: #f4f7f5 !important;
+    }
+
+    body.mtw-christmas-active #body table td,
+    body.mtw-christmas-active #body table tfoot th,
+    body.mtw-christmas-active #body table tfoot td {
+      border-color: #496052 !important;
+      background: #15241c !important;
+      color: #e7f1e9 !important;
+    }
+
+    body.mtw-christmas-active #body table td * {
+      color: #e7f1e9 !important;
+    }
+
+    body.mtw-christmas-active #body table a {
+      color: #b8e4a0 !important;
+    }
+
+    body.mtw-christmas-active .modal {
+      border: 1px solid #496052 !important;
+      border-radius: 8px;
+      background: #14231a !important;
+      color: #e7f1e9 !important;
+      box-shadow: 0 12px 36px rgb(0 0 0 / 55%);
+    }
+
+    body.mtw-christmas-active .modal .modal-header,
+    body.mtw-christmas-active .modal .modal-body,
+    body.mtw-christmas-active .modal .modal-footer {
+      border-color: #496052 !important;
+      background: #14231a !important;
+      color: #e7f1e9 !important;
+    }
+
+    body.mtw-christmas-active .modal h1,
+    body.mtw-christmas-active .modal h2,
+    body.mtw-christmas-active .modal h3,
+    body.mtw-christmas-active .modal p,
+    body.mtw-christmas-active .modal th,
+    body.mtw-christmas-active .modal td,
+    body.mtw-christmas-active .modal label {
+      color: #e7f1e9 !important;
+    }
+
+    body.mtw-christmas-active .modal table,
+    body.mtw-christmas-active .modal table th,
+    body.mtw-christmas-active .modal table td {
+      border-color: #496052 !important;
+      background: #15241c !important;
+    }
+
+    body.mtw-christmas-active .modal table th *,
+    body.mtw-christmas-active .modal table td * {
+      color: #e7f1e9 !important;
+    }
+
+    body.mtw-christmas-active .modal a.btn,
+    body.mtw-christmas-active .modal a.button {
+      color: #fff !important;
+      text-decoration: none !important;
+    }
+
+    body.mtw-christmas-active .modal .close {
+      color: #b8e4a0 !important;
+      opacity: 1;
+      text-shadow: none;
+    }
+
+    body.mtw-christmas-active .pagination .results {
+      color: #b8d2bf !important;
+    }
+
+    body.mtw-christmas-active .pagination ul.pages li a {
+      display: inline-flex;
+      min-width: 24px;
+      height: 24px;
+      align-items: center;
+      justify-content: center;
+      padding: 0 5px;
+      border: 1px solid #496052 !important;
+      border-radius: 4px;
+      background: #15241c !important;
+      color: #b8e4a0 !important;
+      text-decoration: none !important;
+    }
+
+    body.mtw-christmas-active .pagination ul.pages li.active a {
+      border-color: #69b64f !important;
+      background: #438b3d !important;
+      color: #fff !important;
+      font-weight: 700;
+    }
+
     body.mtw-christmas-active ul.products li.product,
     body.mtw-christmas-active ul.product-groups li.product-group,
     body.mtw-christmas-active #body ul.categories li.category {
