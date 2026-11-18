@@ -1,11 +1,22 @@
-(function () {
+(function initializeMtwChristmas() {
   "use strict";
 
-  if (window.__mtwChristmas) {
+  var hostname = window.location.hostname.toLowerCase();
+  var isMtwSite = /(^|\.)mtw\.co\.nz$/.test(hostname);
+  var isLocalPreview = window.location.protocol === "file:" ||
+    hostname === "localhost" ||
+    hostname === "127.0.0.1";
+  if (!isMtwSite && !isLocalPreview) {
     return;
   }
 
-  var style = document.createElement("style");
+  if (!document.head || !document.body) {
+    document.addEventListener("DOMContentLoaded", initializeMtwChristmas, { once: true });
+    return;
+  }
+
+  var alreadyInitialized = Boolean(window.__mtwChristmas);
+  var style = document.getElementById("mtw-christmas-styles") || document.createElement("style");
   style.id = "mtw-christmas-styles";
   style.textContent = `
     body.mtw-christmas-active {
@@ -228,6 +239,63 @@
       color: #bd5555 !important;
     }
 
+    body.mtw-christmas-active.product_view #body #single-product-details .model,
+    body.mtw-christmas-active.product_view #body #single-product-details .model *,
+    body.mtw-christmas-active.product_view #body #single-product-details .stock-label {
+      color: #fff !important;
+    }
+
+    body.mtw-christmas-active.product_view #body #single-product-details .btn,
+    body.mtw-christmas-active.product_view #body #single-product-details button,
+    body.mtw-christmas-active.product_view #body #single-product-details input[type="submit"],
+    body.mtw-christmas-active.product_view #body #single-product-details input[type="button"],
+    body.mtw-christmas-active.product_view #body .tab-content .btn,
+    body.mtw-christmas-active.product_view #body .tab-content button,
+    body.mtw-christmas-active.product_view #body .tab-content input[type="submit"] {
+      border: 1px solid #f08e82 !important;
+      border-radius: 6px !important;
+      background: linear-gradient(180deg, #d84b4a, #a92c36) !important;
+      box-shadow: 0 3px 0 #74202b, 0 5px 12px rgb(0 0 0 / 24%) !important;
+      color: #fff !important;
+      font-weight: 700 !important;
+      letter-spacing: 0.025em !important;
+      min-height: 36px !important;
+      padding: 8px 15px !important;
+      text-shadow: 0 1px 1px rgb(77 16 22 / 35%) !important;
+      cursor: pointer;
+    }
+
+    body.mtw-christmas-active.product_view #body #single-product-details input.qtyminus,
+    body.mtw-christmas-active.product_view #body #single-product-details input.qtyplus {
+      width: 40px !important;
+      height: 40px !important;
+      padding: 0 !important;
+      font-size: 22px !important;
+      line-height: 38px !important;
+      text-align: center;
+    }
+
+    body.mtw-christmas-active.product_view #body #single-product-details .btn:hover,
+    body.mtw-christmas-active.product_view #body #single-product-details button:hover,
+    body.mtw-christmas-active.product_view #body #single-product-details input[type="submit"]:hover,
+    body.mtw-christmas-active.product_view #body #single-product-details input[type="button"]:hover,
+    body.mtw-christmas-active.product_view #body .tab-content .btn:hover,
+    body.mtw-christmas-active.product_view #body .tab-content button:hover,
+    body.mtw-christmas-active.product_view #body .tab-content input[type="submit"]:hover,
+    body.mtw-christmas-active.product_view #body #single-product-details .btn:focus-visible,
+    body.mtw-christmas-active.product_view #body #single-product-details button:focus-visible,
+    body.mtw-christmas-active.product_view #body #single-product-details input[type="submit"]:focus-visible,
+    body.mtw-christmas-active.product_view #body #single-product-details input[type="button"]:focus-visible,
+    body.mtw-christmas-active.product_view #body .tab-content .btn:focus-visible,
+    body.mtw-christmas-active.product_view #body .tab-content button:focus-visible,
+    body.mtw-christmas-active.product_view #body .tab-content input[type="submit"]:focus-visible {
+      border-color: #b7e09d !important;
+      background: linear-gradient(180deg, #69b64f, #438b3d) !important;
+      color: #fff !important;
+      outline: 2px solid #d5efbd;
+      outline-offset: 2px;
+    }
+
     body.mtw-christmas-active.product_view #body .nav-tabs {
       border-bottom: 1px solid #496052 !important;
     }
@@ -392,6 +460,45 @@
       font-weight: 700;
     }
 
+    body.mtw-christmas-active #body ul.products:not(.hot) {
+      display: grid !important;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 16px;
+      width: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      list-style: none;
+    }
+
+    body.mtw-christmas-active #body ul.products:not(.hot) > li.product {
+      float: none !important;
+      clear: none !important;
+      width: auto !important;
+      min-width: 0;
+      margin: 0 !important;
+    }
+
+    body.mtw-christmas-active.product_view #body ul.product-groups.related-products {
+      gap: 16px;
+    }
+
+    @media (max-width: 600px) {
+      body.mtw-christmas-active #body ul.products:not(.hot) {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      body.mtw-christmas-active.product_view #body ul.product-groups.related-products {
+        gap: 12px;
+      }
+    }
+
+    @media (max-width: 360px) {
+      body.mtw-christmas-active #body ul.products:not(.hot) {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
     body.mtw-christmas-active ul.products li.product,
     body.mtw-christmas-active ul.product-groups li.product-group,
     body.mtw-christmas-active #body ul.categories li.category {
@@ -446,6 +553,28 @@
 
     body.mtw-christmas-active .clearance-products ul.products li.product.clearance {
       clear: none !important;
+    }
+
+    body.mtw-christmas-active #clearance-right .owl-item {
+      box-sizing: border-box;
+      padding: 0 8px;
+    }
+
+    body.mtw-christmas-active .related-products .owl-item {
+      box-sizing: border-box;
+      padding: 0 8px;
+    }
+
+    body.mtw-christmas-active #clearance-right .owl-item > li.product {
+      box-sizing: border-box;
+      width: 100% !important;
+      margin: 0 !important;
+    }
+
+    body.mtw-christmas-active .related-products .owl-item > li.product {
+      box-sizing: border-box;
+      width: 100% !important;
+      margin: 0 !important;
     }
 
     body.mtw-christmas-active #body .hot-products li.hot .flag,
@@ -737,6 +866,25 @@
     }
 
     body.mtw-christmas-active.public_index #homepage-cta-hotproduct a.btn.see-all,
+    body.mtw-christmas-active.public_index #home-brands a.btn.btn-primary {
+      border: 1px solid #f08e82 !important;
+      border-radius: 6px !important;
+      background: linear-gradient(180deg, #d84b4a, #a92c36) !important;
+      box-shadow: 0 3px 0 #74202b, 0 5px 12px rgb(0 0 0 / 24%);
+      color: #fff !important;
+      font-weight: 700;
+      letter-spacing: 0.025em;
+      text-shadow: 0 1px 1px rgb(77 16 22 / 35%);
+    }
+
+    body.mtw-christmas-active.public_index #home-brands a.btn.btn-primary {
+      display: inline-flex !important;
+      align-items: center;
+      justify-content: center;
+      min-height: 36px;
+      padding: 8px 15px !important;
+    }
+
     body.mtw-christmas-active.public_index #home-categories ~ a.btn.see-all {
       border: 1px solid #78bb66 !important;
       border-radius: 6px !important;
@@ -748,8 +896,17 @@
     }
 
     body.mtw-christmas-active.public_index #homepage-cta-hotproduct a.btn.see-all:hover,
-    body.mtw-christmas-active.public_index #home-categories ~ a.btn.see-all:hover,
     body.mtw-christmas-active.public_index #homepage-cta-hotproduct a.btn.see-all:focus-visible,
+    body.mtw-christmas-active.public_index #home-brands a.btn.btn-primary:hover,
+    body.mtw-christmas-active.public_index #home-brands a.btn.btn-primary:focus-visible {
+      border-color: #b7e09d !important;
+      background: linear-gradient(180deg, #69b64f, #438b3d) !important;
+      color: #fff !important;
+      outline: 2px solid #d5efbd;
+      outline-offset: 2px;
+    }
+
+    body.mtw-christmas-active.public_index #home-categories ~ a.btn.see-all:hover,
     body.mtw-christmas-active.public_index #home-categories ~ a.btn.see-all:focus-visible {
       border-color: #b7e09d !important;
       background: linear-gradient(180deg, #3e985c, #267345) !important;
@@ -871,6 +1028,9 @@
     }
   `;
   document.head.appendChild(style);
+  if (alreadyInitialized) {
+    return;
+  }
 
   var body = document.body;
   var isEmbedded = false;
