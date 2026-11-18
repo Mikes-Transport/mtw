@@ -90,9 +90,25 @@
         transform-origin: center;
       }
 
+      body.mtw-christmas-active #header-outer,
+      body.mtw-christmas-active #header,
+      body.mtw-christmas-active #header-inner,
+      body.mtw-christmas-active #mobile-header,
+      body.mtw-christmas-active #mobile-menu,
+      body.mtw-christmas-active #mobile-menu li,
+      body.mtw-christmas-active #mobile-menu a {
+        border: 0 !important;
+        background: #101d17 !important;
+        background-color: #101d17 !important;
+        background-image: none !important;
+        box-shadow: none !important;
+      }
+
       body.mtw-christmas-active #mobile-header {
         border: 0 !important;
         background: #101d17 !important;
+        background-color: #101d17 !important;
+        background-image: none !important;
         box-shadow: none !important;
       }
 
