@@ -212,6 +212,61 @@
       color: #bd5555 !important;
     }
 
+    body.mtw-christmas-active.product_view #body .nav-tabs {
+      border-bottom: 1px solid #496052 !important;
+    }
+
+    body.mtw-christmas-active.product_view #body .nav-tabs > li > a {
+      border: 1px solid #496052 !important;
+      border-bottom-color: #496052 !important;
+      background: #15241c !important;
+      color: #d3e2d6 !important;
+      text-shadow: none !important;
+    }
+
+    body.mtw-christmas-active.product_view #body .nav-tabs > li > a:hover,
+    body.mtw-christmas-active.product_view #body .nav-tabs > li > a:focus {
+      border-color: #69b64f !important;
+      background: #203326 !important;
+      color: #fff !important;
+    }
+
+    body.mtw-christmas-active.product_view #body .nav-tabs > .active > a,
+    body.mtw-christmas-active.product_view #body .nav-tabs > .active > a:hover,
+    body.mtw-christmas-active.product_view #body .nav-tabs > .active > a:focus {
+      border-color: #496052 #496052 #14231a !important;
+      background: #14231a !important;
+      color: #f4f7f5 !important;
+      cursor: default;
+    }
+
+    body.mtw-christmas-active.product_view #body .tab-content {
+      border: 1px solid #496052 !important;
+      border-top: 0 !important;
+      background: linear-gradient(145deg, #1a2a20, #14231a) !important;
+      color: #e7f1e9 !important;
+    }
+
+    body.mtw-christmas-active.product_view #body .tab-content > .tab-pane,
+    body.mtw-christmas-active.product_view #body .tab-content > .tab-pane p,
+    body.mtw-christmas-active.product_view #body .tab-content > .tab-pane li,
+    body.mtw-christmas-active.product_view #body .tab-content > .tab-pane label {
+      background-color: transparent !important;
+      color: #e7f1e9 !important;
+    }
+
+    body.mtw-christmas-active.product_view #body .tab-content > .tab-pane h1,
+    body.mtw-christmas-active.product_view #body .tab-content > .tab-pane h2,
+    body.mtw-christmas-active.product_view #body .tab-content > .tab-pane h3,
+    body.mtw-christmas-active.product_view #body .tab-content > .tab-pane h4,
+    body.mtw-christmas-active.product_view #body .tab-content > .tab-pane strong {
+      color: #f4f7f5 !important;
+    }
+
+    body.mtw-christmas-active.product_view #body .tab-content > .tab-pane a:not(.btn):not(.button) {
+      color: #b8e4a0 !important;
+    }
+
     body.mtw-christmas-active #body table {
       border-color: #496052 !important;
       background: #15241c !important;
