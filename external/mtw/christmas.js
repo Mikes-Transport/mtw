@@ -79,6 +79,32 @@
       pointer-events: none;
     }
 
+    @media (max-width: 600px) {
+      .mtw-holiday-lights {
+        height: 20px;
+      }
+
+      .mtw-holiday-lights .bulb-shape {
+        transform: scaleX(1.45);
+        transform-box: fill-box;
+        transform-origin: center;
+      }
+
+      body.mtw-christmas-active #mobile-header {
+        border: 0 !important;
+        background: #101d17 !important;
+        box-shadow: none !important;
+      }
+
+      body.mtw-christmas-active #clearance-left {
+        display: none !important;
+      }
+
+      .mtw-christmas-hat {
+        display: none !important;
+      }
+    }
+
     @keyframes mtw-holiday-light-glow {
       from {
         opacity: 0.78;
@@ -275,6 +301,13 @@
       pointer-events: none;
     }
 
+    @media (max-width: 600px) {
+      body.mtw-christmas-active #clearance-right .hot-products li.hot .flag::before {
+        padding: 8px 27px 8px 16px;
+        font-size: 15px;
+      }
+    }
+
     body.mtw-christmas-active ul.products li.product .details,
     body.mtw-christmas-active ul.product-groups li.product-group .details,
     body.mtw-christmas-active #body ul.categories li.category .details {
@@ -370,6 +403,7 @@
     body.mtw-christmas-active #content #body table.results .notify a,
     body.mtw-christmas-active #content #body table.products .notify a,
     body.mtw-christmas-active #content #body .product-actions .button-outer.notify a,
+    body.mtw-christmas-active #clearance-right .button-outer.notify a,
     body.mtw-christmas-active #single-product-actions .button-outer.notify a {
       display: inline-flex !important;
       align-items: center;
@@ -394,6 +428,7 @@
     body.mtw-christmas-active #content #body table.results .notify a::after,
     body.mtw-christmas-active #content #body table.products .notify a::after,
     body.mtw-christmas-active #content #body .product-actions .button-outer.notify a::after,
+    body.mtw-christmas-active #clearance-right .button-outer.notify a::after,
     body.mtw-christmas-active #single-product-actions .button-outer.notify a::after {
       color: #fff;
       display: inline-block;
@@ -405,6 +440,7 @@
     body.mtw-christmas-active #content #body table.results .notify a::before,
     body.mtw-christmas-active #content #body table.products .notify a::before,
     body.mtw-christmas-active #content #body .product-actions .button-outer.notify a::before,
+    body.mtw-christmas-active #clearance-right .button-outer.notify a::before,
     body.mtw-christmas-active #single-product-actions .button-outer.notify a::before {
       position: static;
       display: block;
@@ -413,10 +449,35 @@
       flex: 0 0 16px;
       margin: 0;
       padding: 0;
+      color: #fff;
+      content: "✉" !important;
       font-size: 16px;
+      font-family: Arial, sans-serif;
       line-height: 16px;
       text-align: center;
       vertical-align: middle;
+    }
+
+    @media (max-width: 600px) {
+      body.mtw-christmas-active #content #body #clearance-right .button-outer.notify a,
+      body.mtw-christmas-active #clearance-right .button-outer.notify a {
+        display: flex !important;
+        width: 100% !important;
+        height: auto !important;
+        min-height: 36px;
+        padding: 8px 12px !important;
+        font-size: 13px !important;
+        line-height: 1.2;
+        white-space: nowrap;
+      }
+
+      body.mtw-christmas-active #content #body #clearance-right .button-outer.notify a::before,
+      body.mtw-christmas-active #content #body #clearance-right .button-outer.notify a::after,
+      body.mtw-christmas-active #clearance-right .button-outer.notify a::before,
+      body.mtw-christmas-active #clearance-right .button-outer.notify a::after {
+        display: none !important;
+        content: none !important;
+      }
     }
 
     body.mtw-christmas-active ul.products li.product .product-actions .button-outer.cart a:hover,
@@ -541,6 +602,27 @@
       outline-offset: 2px;
     }
 
+    @media (max-width: 600px) {
+      .mtw-xmas-toggle {
+        display: grid;
+        place-items: center;
+        width: 36px;
+        height: 36px;
+        overflow: hidden;
+        padding: 0;
+        border-radius: 50%;
+        color: transparent;
+        font-size: 0;
+        text-shadow: none;
+      }
+
+      .mtw-xmas-toggle::before {
+        color: #f1f8eb;
+        content: "❄";
+        font: 600 17px/1 Arial, sans-serif;
+      }
+    }
+
     @media (prefers-reduced-motion: reduce) {
       body.mtw-christmas-active ul.products li.product,
       body.mtw-christmas-active ul.product-groups li.product-group,
@@ -594,41 +676,62 @@
     lightWire.setAttribute("d", "M0 0 C50 0 50 20 100 20 S150 0 200 0 S250 20 300 20 S350 0 400 0 S450 20 500 20 S550 0 600 0 S650 20 700 20 S750 0 800 0 S850 20 900 20 S950 0 1000 0 S1050 20 1100 20 S1150 0 1200 0");
     lightSvg.appendChild(lightWire);
 
-    var bulbColors = ["#ffd875", "#f15b59", "#79d16b", "#6fc9f2"];
-    for (var bulbIndex = 0; bulbIndex < 31; bulbIndex += 1) {
-      var bulbX = 20 + bulbIndex * 39;
-      var wireY = 10 - 10 * Math.cos((bulbX / 100) * Math.PI);
-      var bulbY = wireY + 8 + bulbIndex % 4 * 1.5;
-      var lightSocket = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      lightSocket.setAttribute("class", "socket");
-      lightSocket.setAttribute("x1", bulbX);
-      lightSocket.setAttribute("y1", wireY);
-      lightSocket.setAttribute("x2", bulbX);
-      lightSocket.setAttribute("y2", bulbY - 4);
-      lightSvg.appendChild(lightSocket);
-
-      var bulb = document.createElementNS("http://www.w3.org/2000/svg", "g");
-      bulb.setAttribute("class", "bulb");
-      bulb.setAttribute("transform", "translate(" + bulbX + " " + bulbY + ")");
-      var bulbColor = bulbColors[bulbIndex % bulbColors.length];
-      var bulbShape = document.createElementNS("http://www.w3.org/2000/svg", "path");
-      bulbShape.setAttribute("class", "bulb-shape");
-      bulbShape.setAttribute("d", "M-2.2-4V-1.5C-6 2-4.8 8.2 0 9c4.8-.8 6-7 2.2-10.5V-4Z");
-      bulbShape.setAttribute("fill", bulbColor);
-      bulb.appendChild(bulbShape);
-      var bulbHighlight = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-      bulbHighlight.setAttribute("class", "bulb-highlight");
-      bulbHighlight.setAttribute("cx", "-1.2");
-      bulbHighlight.setAttribute("cy", "2");
-      bulbHighlight.setAttribute("r", "1.1");
-      bulb.appendChild(bulbHighlight);
-      bulb.style.setProperty("--bulb-glow", bulbColor);
-      bulbShape.style.animationDelay = (bulbIndex % 8 * 0.16) + "s";
-      lightSvg.appendChild(bulb);
-    }
-
     lightStrand.appendChild(lightSvg);
     lightAnchor.appendChild(lightStrand);
+
+    var bulbColors = ["#ffd875", "#f15b59", "#79d16b", "#6fc9f2"];
+    var currentLightCount = 0;
+    function renderHolidayBulbs() {
+      var bulbCount = window.innerWidth <= 600 ? 15 : 31;
+      if (bulbCount === currentLightCount) {
+        return;
+      }
+      currentLightCount = bulbCount;
+
+      var oldSockets = lightSvg.querySelectorAll(".socket");
+      for (var socketIndex = 0; socketIndex < oldSockets.length; socketIndex += 1) {
+        oldSockets[socketIndex].remove();
+      }
+      var oldBulbs = lightSvg.querySelectorAll(".bulb");
+      for (var oldBulbIndex = 0; oldBulbIndex < oldBulbs.length; oldBulbIndex += 1) {
+        oldBulbs[oldBulbIndex].remove();
+      }
+
+      for (var bulbIndex = 0; bulbIndex < bulbCount; bulbIndex += 1) {
+        var bulbX = 20 + bulbIndex * 1160 / (bulbCount - 1);
+        var wireY = 10 - 10 * Math.cos((bulbX / 100) * Math.PI);
+        var bulbY = wireY + 8 + bulbIndex % 4 * 1.5;
+        var lightSocket = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        lightSocket.setAttribute("class", "socket");
+        lightSocket.setAttribute("x1", bulbX);
+        lightSocket.setAttribute("y1", wireY);
+        lightSocket.setAttribute("x2", bulbX);
+        lightSocket.setAttribute("y2", bulbY - 4);
+        lightSvg.appendChild(lightSocket);
+
+        var bulb = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        bulb.setAttribute("class", "bulb");
+        bulb.setAttribute("transform", "translate(" + bulbX + " " + bulbY + ")");
+        var bulbColor = bulbColors[bulbIndex % bulbColors.length];
+        var bulbShape = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        bulbShape.setAttribute("class", "bulb-shape");
+        bulbShape.setAttribute("d", "M-2.2-4V-1.5C-6 2-4.8 8.2 0 9c4.8-.8 6-7 2.2-10.5V-4Z");
+        bulbShape.setAttribute("fill", bulbColor);
+        bulb.appendChild(bulbShape);
+        var bulbHighlight = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        bulbHighlight.setAttribute("class", "bulb-highlight");
+        bulbHighlight.setAttribute("cx", "-1.2");
+        bulbHighlight.setAttribute("cy", "2");
+        bulbHighlight.setAttribute("r", "1.1");
+        bulb.appendChild(bulbHighlight);
+        bulb.style.setProperty("--bulb-glow", bulbColor);
+        bulbShape.style.animationDelay = (bulbIndex % 8 * 0.16) + "s";
+        lightSvg.appendChild(bulb);
+      }
+    }
+
+    renderHolidayBulbs();
+    window.addEventListener("resize", renderHolidayBulbs);
   }
 
   var canvas = document.createElement("canvas");
@@ -719,6 +822,12 @@
         }
 
         var rect = element.getBoundingClientRect();
+        if (element.matches("#clearance-right") && documentToInspect.defaultView.innerWidth <= 600) {
+          var activeProduct = element.querySelector(".owl-item.active li.product");
+          if (activeProduct) {
+            rect = activeProduct.getBoundingClientRect();
+          }
+        }
         var top = offsetY + rect.top * scaleY;
         var bottom = offsetY + rect.bottom * scaleY;
         if (
@@ -778,14 +887,28 @@
     }
 
     var frames = document.querySelectorAll("iframe");
-    if (frames.length === 0) {
+    var previewFrames = [];
+    for (var candidateIndex = 0; candidateIndex < frames.length; candidateIndex += 1) {
+      var candidateFrame = frames[candidateIndex];
+      var candidateDocument = candidateFrame.contentDocument;
+      if (!candidateDocument || !candidateDocument.documentElement || !candidateDocument.querySelector(snowSurfaceSelector)) {
+        continue;
+      }
+
+      previewFrames.push({
+        frame: candidateFrame,
+        document: candidateDocument
+      });
+    }
+
+    if (previewFrames.length === 0) {
       setCanvasClipPath("");
       collect(document, 0, 0, 1, 1, 0, 0, width, height);
       return;
     }
 
-    for (var frameIndex = 0; frameIndex < frames.length; frameIndex += 1) {
-      var frame = frames[frameIndex];
+    for (var frameIndex = 0; frameIndex < previewFrames.length; frameIndex += 1) {
+      var frame = previewFrames[frameIndex].frame;
       if (!observedFrames.has(frame)) {
         frame.addEventListener("load", function (event) {
           var loadedFrame = event.currentTarget;
@@ -798,11 +921,8 @@
         observedFrames.add(frame);
       }
 
-      var frameDocument = frame.contentDocument;
+      var frameDocument = previewFrames[frameIndex].document;
       var frameRoot = frameDocument && frameDocument.documentElement;
-      if (!frameRoot) {
-        continue;
-      }
       if (!observedFrameDocuments.has(frameDocument)) {
         frameDocument.defaultView.addEventListener("scroll", refreshSnowPosition, { passive: true });
         frameDocument.defaultView.addEventListener("resize", refreshSnowPosition);
@@ -912,14 +1032,15 @@
       accumulationContext.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     }
 
-    var flakeCount = Math.min(110, Math.max(32, Math.round(width / 18)));
+    var isSmallScreen = width <= 600;
+    var flakeCount = Math.min(110, Math.max(isSmallScreen ? 18 : 32, Math.round(width / (isSmallScreen ? 24 : 18))));
     flakes = [];
     for (var index = 0; index < flakeCount; index += 1) {
       flakes.push({
         x: Math.random() * width,
         y: Math.random() * height,
-        radius: 1.5 + Math.random() * 2.4,
-        speed: 0.45 + Math.random() * 1.2,
+        radius: (isSmallScreen ? 1.2 : 1.5) + Math.random() * (isSmallScreen ? 1.7 : 2.4),
+        speed: (isSmallScreen ? 0.35 : 0.45) + Math.random() * (isSmallScreen ? 0.9 : 1.2),
         sway: 0.35 + Math.random() * 1.1,
         phase: Math.random() * Math.PI * 2,
         opacity: 0.3 + Math.random() * 0.45
@@ -1003,6 +1124,11 @@
       toggleButton.textContent = enabled ? "❄ Holiday effects: On" : "❄ Holiday effects: Off";
       var frames = document.querySelectorAll("iframe");
       for (var index = 0; index < frames.length; index += 1) {
+        var frameDocument = frames[index].contentDocument;
+        if (!frameDocument || !frameDocument.querySelector(snowSurfaceSelector)) {
+          continue;
+        }
+
         frames[index].contentWindow.postMessage({
           type: "mtw-christmas-toggle",
           enabled: enabled
