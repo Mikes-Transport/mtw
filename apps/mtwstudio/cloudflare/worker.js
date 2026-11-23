@@ -358,9 +358,9 @@ export class ConnectionRoom {
   sockets(role){return this.state.getWebSockets().filter(s=>s.deserializeAttachment()?.role===role);}
   emit(role,value){for(const socket of this.sockets(role)){try{socket.send(JSON.stringify(value))}catch{}}}
   async rate(path){
-    const now=now(),key=path==='/rate'?'login-rate':'code-rate';
-    const state=await this.state.storage.get(key)||{count:0,until:now+600000};
-    if(now>state.until){state.count=0;state.until=now+600000;}
+    const currentTime=now(),key=path==='/rate'?'login-rate':'code-rate';
+    const state=await this.state.storage.get(key)||{count:0,until:currentTime+600000};
+    if(currentTime>state.until){state.count=0;state.until=currentTime+600000;}
     state.count++;
     await this.state.storage.put(key,state);
     return state.count>(path==='/rate'?8:15)?new Response('',{status:429}):new Response('',{status:204});
