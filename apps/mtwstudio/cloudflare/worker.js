@@ -219,7 +219,9 @@ export class ConnectionRoom {
     session.status='ended';await this.state.storage.put('connection',session);
     await this.env.DB.prepare("UPDATE connections SET status='ended',ended_at=? WHERE id=?").bind(time(),session.id).run();
     this.emit('agent',{type:'end',reason});this.emit('controller',{type:'end',reason});
-    for(const socket of this.state.getWebSockets())try{socket.close(1000,'Session ended')}catch{}
+    // Keep the agent connected and its displayed code valid for later approved sessions.
+    // Only the controller WebSocket closes when a session ends.
+    for(const socket of this.sockets('controller'))try{socket.close(1000,'Session ended')}catch{}
   }
   async webSocketMessage(ws,message){
     const role=ws.deserializeAttachment()?.role;
