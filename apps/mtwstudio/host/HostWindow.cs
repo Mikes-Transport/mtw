@@ -34,6 +34,7 @@ public sealed class HostWindow : Form
     private bool browserReady;
     private bool browserNavigationCompleted;
     private string? browserLoadProblem;
+    private ulong? capturePageNavigationId;
     private readonly string appData = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MTWStudio");
     private readonly string configPath;
@@ -190,6 +191,7 @@ public sealed class HostWindow : Form
             browserReady = false;
             browserNavigationCompleted = false;
             browserLoadProblem = null;
+            capturePageNavigationId = null;
             codeLabel.Text = "Connecting…";
             SetStatus("Registering host…");
             await Request("/api/agent/mode", HttpMethod.Post,
@@ -211,28 +213,52 @@ public sealed class HostWindow : Form
             browser.CoreWebView2.Settings.AreHostObjectsAllowed = false;
             browser.CoreWebView2.WebMessageReceived -= BrowserMessage;
             browser.CoreWebView2.WebMessageReceived += BrowserMessage;
+            browser.CoreWebView2.NavigationStarting += (_, args) =>
+            {
+                if (baseUri == null || !Uri.TryCreate(args.Uri, UriKind.Absolute, out var target))
+                {
+                    args.Cancel = true;
+                    return;
+                }
+                // WebView2 may cancel its initial about:blank navigation when a
+                // page is supplied. That cancellation is not a capture failure.
+                if (target.AbsoluteUri == "about:blank") return;
+                var expected = new Uri(baseUri, "/host.html");
+                if (target.Scheme != expected.Scheme || target.Authority != expected.Authority ||
+                    target.AbsolutePath != expected.AbsolutePath)
+                {
+                    args.Cancel = true;
+                    return;
+                }
+                capturePageNavigationId = args.NavigationId;
+                browserLoadProblem = null;
+                browserNavigationCompleted = false;
+            };
             browser.CoreWebView2.NavigationCompleted += async (_, args) =>
             {
+                // Only consider the actual capture-page navigation. In particular,
+                // ignore OperationCanceled from initial about:blank or other
+                // disallowed navigations.
+                if (capturePageNavigationId != args.NavigationId) return;
                 if (!args.IsSuccess)
                 {
-                    browserLoadProblem = "Host capture page failed to load (" + args.WebErrorStatus + ").";
+                    browserLoadProblem = "Host capture page could not load (" + args.WebErrorStatus + ").";
                     SetStatus(browserLoadProblem);
                     return;
                 }
                 browserNavigationCompleted = true;
-                // Re-send the bridge handshake if the host script posted before
-                // .NET was ready, and report broken/missing host.js explicitly.
                 try
                 {
+                    // This message is intentionally sent only for the approved
+                    // capture page, not an arbitrary navigated document.
                     await browser.CoreWebView2.ExecuteScriptAsync(
                         "window.chrome?.webview?.postMessage({type:'host-web-ready'});");
                 }
-                catch (Exception error) { browserLoadProblem = error.Message; }
-            };
-            browser.CoreWebView2.NavigationStarting += (_, args) =>
-            {
-                if (baseUri == null || (args.Uri != "about:blank" && args.Uri != new Uri(baseUri, "/host.html").AbsoluteUri))
-                    args.Cancel = true;
+                catch (Exception error)
+                {
+                    browserLoadProblem = "Host capture bridge could not start: " + error.Message;
+                    SetStatus(browserLoadProblem);
+                }
             };
             browser.Source = new Uri(baseUri, "/host.html");
             stop.Enabled = true;
@@ -491,6 +517,7 @@ public sealed class HostWindow : Form
         browserReady = false;
         browserNavigationCompleted = false;
         browserLoadProblem = null;
+        capturePageNavigationId = null;
         try { socket?.Abort(); socket?.Dispose(); } catch { }
         socket = null;
         codeLabel.Text = "Offline";
