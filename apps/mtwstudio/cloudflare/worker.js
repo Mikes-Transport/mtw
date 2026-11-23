@@ -176,14 +176,30 @@ async function agent(req,env){
 }
 const room=(env,id)=>env.SESSIONS.get(env.SESSIONS.idFromName('host:'+id));
 const proxyRoom=(env,id,path,init={})=>room(env,id).fetch(new Request('https://room.internal'+path,init));
-const securityHeaders=env=>({'Content-Security-Policy':"default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'self' "+(env.EMBED_ORIGIN||"'none'")+"; form-action 'self'; connect-src 'self' wss:; img-src 'self' data:; media-src 'self' blob:; script-src 'self'; style-src 'self' 'unsafe-inline';",'X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Strict-Transport-Security':'max-age=31536000; includeSubDomains'});
+const DASHBOARD_ORIGIN='https://mtw-lookup-2026.webflow.io';
+const securityHeaders=env=>({'Content-Security-Policy':"default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors "+DASHBOARD_ORIGIN+"; form-action 'self'; connect-src 'self' wss:; img-src 'self' data:; media-src 'self' blob:; script-src 'self'; style-src 'self' 'unsafe-inline';",'X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Strict-Transport-Security':'max-age=31536000; includeSubDomains'});
+const dashboardEmbed=req=>{
+  const dest=req.headers.get('sec-fetch-dest');
+  const ref=req.headers.get('referer')||'';
+  // Browsers send an origin-only Referer for cross-origin iframe navigations.
+  // The CSP frame-ancestors directive independently restricts the actual parent.
+  return dest==='iframe' && (ref===DASHBOARD_ORIGIN+'/'||ref.startsWith(DASHBOARD_ORIGIN+'/dashboard'));
+};
 function restricted(response,env){
   const headers=new Headers(response.headers);for(const[k,v]of Object.entries(securityHeaders(env)))headers.set(k,v);
   headers.set('cache-control','no-store');return new Response(response.body,{status:response.status,headers});
 }
 async function handler(request,env){
   const url=new URL(request.url),path=url.pathname,method=request.method;
-  if(!path.startsWith('/api/'))return restricted(await env.ASSETS.fetch(request),env);
+  if(!path.startsWith('/api/')){
+    // Native hosts load /host.html in a trusted WebView2; do not block that page.
+    // Manager console is embedded only on the MTW Webflow dashboard.
+    if((path==='/'||path==='/index.html')&&!dashboardEmbed(request))
+      return new Response('Open MTWStudio through the MTW dashboard.',{
+        status:403,headers:{'content-type':'text/plain; charset=utf-8','cache-control':'no-store','X-Content-Type-Options':'nosniff'}
+      });
+    return restricted(await env.ASSETS.fetch(request),env);
+  }
   if(method!=='GET'&&!originOk(request)&&!path.startsWith('/api/agent/'))return fail(403,'Invalid origin');
   if(path==='/api/auth/setup-status'&&method==='GET'){
     const state=await getDoc(env,'mtwstudio_config','bootstrap');

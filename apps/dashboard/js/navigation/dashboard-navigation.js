@@ -178,33 +178,12 @@
       const studio = document.createElement('section');
       studio.className = 'mtwstudio-panel';
       studio.style.display = 'none';
-      const title = document.createElement('h3');
-      title.textContent = 'MTWStudio';
-      const status = document.createElement('p');
-      status.className = 'mtwstudio-status';
-      status.textContent = 'Manager sign-in is required.';
-      const open = document.createElement('a');
-      open.className = 'mtwstudio-open';
-      open.hidden = true;
-      open.target = '_blank';
-      open.rel = 'noopener noreferrer';
-      open.textContent = 'Open in a new tab';
-      const frame = document.createElement('iframe');
-      frame.className = 'mtwstudio-frame';
-      frame.title = 'MTWStudio secure remote access';
-      frame.hidden = true;
-      frame.loading = 'lazy';
-      frame.referrerPolicy = 'no-referrer';
-      frame.allow = 'fullscreen';
-      frame.style.cssText = 'display:block;width:100%;height:78vh;min-height:550px;border:1px solid #27374d;border-radius:12px;background:#0b111d';
-      const download = document.createElement('a');
-      download.className = 'mtwstudio-download';
-      download.href = 'https://github.com/Mikes-Transport/mtw/releases/download/mtwstudio-host-latest/MTWStudio-Portable.zip';
-      download.target = '_blank';
-      download.rel = 'noopener noreferrer';
-      download.textContent = 'Download MTWStudio (Portable ZIP)';
-      download.style.cssText = 'display:inline-block;padding:10px 14px;margin:8px 12px 12px 0;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none';
-      studio.append(title, status, download, open, frame);
+      studio.innerHTML = `
+        <div style="display:flex;justify-content:flex-end;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+          <p class="mtwstudio-status" style="flex:1;margin:0;color:#71829a">Secure manager verification required.</p>
+          <a class="mtwstudio-download" href="https://github.com/Mikes-Transport/mtw/releases/download/mtwstudio-host-latest/MTWStudio-Portable.zip" target="_blank" rel="noopener noreferrer" style="display:inline-flex;padding:9px 13px;background:#1e3552;border:1px solid #4a668b;border-radius:9px;color:#fff;text-decoration:none;font-size:13px;font-weight:600">Download Windows Host (.zip)</a>
+        </div>
+        <iframe class="mtwstudio-frame" hidden title="MTWStudio remote access console" loading="lazy" allow="fullscreen" style="border:1px solid #27374d;border-radius:12px;width:100%;height:78vh;min-height:550px;background:#0b111d"></iframe>`;
       panels.appendChild(studio);
     }
 

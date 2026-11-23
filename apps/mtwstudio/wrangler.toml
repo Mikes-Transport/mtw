@@ -17,7 +17,7 @@ new_sqlite_classes = ["ConnectionRoom"]
 
 [vars]
 FIREBASE_PROJECT_ID = "mtw-lookup"
-EMBED_ORIGIN = "https://REPLACE_WITH_YOUR_WEBFLOW_DOMAIN"
+EMBED_ORIGIN = "https://mtw-lookup-2026.webflow.io"
 # Encrypted Cloudflare secrets required: FIREBASE_SERVICE_ACCOUNT_JSON,
 # MTWSTUDIO_SETUP_KEY (random 32+ characters), and MTWSTUDIO_TOTP_KEY
 # (base64-encoded 32 cryptographically random bytes). Never commit their values.
