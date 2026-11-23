@@ -46,3 +46,15 @@ MTWStudio lives **inside the existing MTW repository and dashboard**, not in a n
 - Check Webflow iframe sandbox and cookie settings; using the Cloudflare-hosted route directly is always an option.
 - TURN fallback requires separately configured Cloudflare Realtime TURN or equivalent ephemeral credentials; **not yet integrated**. Never hardcode long-lived TURN secrets in JavaScript.
 - Run an independent security review and full browser/agent test before allowing production remote access. The code is a deployment-ready development foundation, not a certified remote access product.
+
+## Persistent codes and paired computers (development branch)
+
+- Each host generates a **16-character code when started** with `POST /api/agent/code`. The code remains valid while the host runs and sends `POST /api/agent/heartbeat` with `{"code":"..."}` periodically (recommended every 60 seconds). The backend refreshes its expiration. Relaunching generates a fresh code.
+- **Code mode:** the manager enters the running code each time, then the host approves the request. Codes are not consumed on connection; they are only valid with a connected agent.
+- **Allow connections mode:** the host sets its preference with `POST /api/agent/mode`, `{"mode":"paired"}`. A manager enters the running code once under **Save this PC**. That creates a scoped trusted-controller record. Later the dashboard lists paired computers as online/offline, with **Connect to this PC** on online entries. Each connection still requests host approval.
+- The pairing record is persistent but does **not** grant unattended access. The host must be online and consent to each connection. Never expose lists of all organisation computers to unpaired managers.
+- A registered host must have a separate high-entropy bearer credential provisioned securely before it can call these endpoints.
+
+### Important limitations
+
+These browser/backend routes are implemented in the feature branch, **but there is no Windows host executable yet** and no live Cloudflare deployment. The web UI will not provide real remote-control capability until a signed portable Windows agent implements screen capture, WebRTC media, input handling, visible session controls, and host consent. TURN relay credentials and full integration tests are still pending.

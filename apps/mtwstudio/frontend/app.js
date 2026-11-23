@@ -10,8 +10,30 @@ async function api(path,method='GET',body){
   return payload;
 }
 async function refresh(){
-  try{const {user}=await api('auth/me');state.user=user;$('identity').textContent=user.name+' · Manager';show('login',false);show('workspace',true);await history()}catch{state.user=null;show('login',true);show('workspace',false);$('identity').textContent='Manager sign-in'}
+  try{const {user}=await api('auth/me');state.user=user;$('identity').textContent=user.name+' · Manager';show('login',false);show('workspace',true);await Promise.all([history(),hosts()])}catch{state.user=null;show('login',true);show('workspace',false);$('identity').textContent='Manager sign-in'}
 }
+async function hosts(){
+  const area=$('computers');
+  try{
+    const {hosts}=await api('hosts');area.replaceChildren();
+    if(!hosts.length){area.textContent='No computers paired yet.';return}
+    for(const host of hosts){
+      const row=document.createElement('div');row.className='history-row';
+      const name=document.createElement('span');name.textContent=host.label+' · '+(host.online?'Online':'Offline');
+      const button=document.createElement('button');button.textContent='Connect to this PC';button.disabled=!host.online;
+      button.onclick=()=>connect({hostId:host.id});
+      row.append(name,button);area.append(row);
+    }
+  }catch(e){notice(e.message)}
+}
+$('pair-form').addEventListener('submit',async e=>{
+  e.preventDefault();notice('');
+  try{
+    await api('hosts/pair','POST',{code:$('pair-code').value});
+    $('pair-code').value='';notice('PC saved. It can now be selected while running.',false);
+    await hosts();
+  }catch(err){notice(err.message)}
+});
 async function history(){
   try{const {connections}=await api('history');$('history').replaceChildren();
     if(!connections.length){$('history').textContent='No connections yet.';return}
@@ -60,20 +82,22 @@ async function signalling(payload){
     send({type:'answer',data:state.peer.localDescription.toJSON()});
   }else if(payload.type==='ice'&&state.peer)await state.peer.addIceCandidate(new RTCIceCandidate(payload.data));
 }
-$('connect-form').addEventListener('submit',async e=>{
-  e.preventDefault();notice('');await disconnect();const button=$('connect');button.disabled=true;
+async function connect(details){
+  notice('');await disconnect();const button=$('connect');button.disabled=true;
   try{
-    status('Validating code…');
-    const {id,host}=await api('connections','POST',{code:$('code').value.trim()});
+    status('Requesting access…');
+    const {id,host}=await api('connections','POST',details);
     state.sessionId=id;$('code').value='';status('Waiting for approval from '+host+'…');show('disconnect',true);
     const ws=new WebSocket(location.origin.replace(/^http/,'ws')+'/api/connections/'+id+'/ws');
     state.ws=ws;ws.onmessage=e=>{try{signalling(JSON.parse(e.data)).catch(err=>notice(err.message))}catch{}};
     ws.onerror=()=>notice('Signalling connection error');
     ws.onclose=()=>{if(state.sessionId===id)disconnect()};
-    await history();
+    await Promise.all([history(),hosts()]);
   }catch(err){status('Connection failed');notice(err.message)}
   finally{button.disabled=false}
-});
+}
+$('connect-form').addEventListener('submit',e=>{e.preventDefault();connect({code:$('code').value.trim()})});
+
 function input(data){if(state.approved&&state.channel?.readyState==='open')state.channel.send(JSON.stringify(data))}
 const screen=$('screen');
 function normalized(e){const bounds=screen.getBoundingClientRect();return{x:Math.min(1,Math.max(0,(e.clientX-bounds.left)/bounds.width)),y:Math.min(1,Math.max(0,(e.clientY-bounds.top)/bounds.height))}}

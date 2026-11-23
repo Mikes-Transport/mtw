@@ -4,7 +4,7 @@
 const enc = new TextEncoder();
 const COOKIE = 'mtwstudio_session';
 const SESSION_MS = 8 * 60 * 60 * 1000;
-const CODE_MS = 5 * 60 * 1000;
+const CODE_MS = 24 * 60 * 60 * 1000; // refreshed by authenticated host heartbeat
 const CONNECT_MS = 30 * 60 * 1000;
 const ITERATIONS = 240000;
 function json(value,status=200,headers={}) { return new Response(JSON.stringify(value),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store',...headers}}); }
@@ -32,8 +32,8 @@ async function agent(request,env){
   if(!token)return null;
   return await env.DB.prepare('SELECT id,label FROM hosts WHERE agent_key_hash=? AND enabled=1').bind(await hash(token)).first();
 }
-async function room(env,codeHash){return env.SESSIONS.get(env.SESSIONS.idFromName(codeHash));}
-async function proxyRoom(env,codeHash,path,init={}){return (await room(env,codeHash)).fetch(new Request('https://room.internal'+path,init));}
+async function room(env,hostId){return env.SESSIONS.get(env.SESSIONS.idFromName('host:'+hostId));}
+async function proxyRoom(env,hostId,path,init={}){return (await room(env,hostId)).fetch(new Request('https://room.internal'+path,init));}
 async function handler(request,env){
   const url=new URL(request.url),path=url.pathname;
   const api=path.startsWith('/api/');
@@ -54,19 +54,40 @@ async function handler(request,env){
     await env.DB.prepare('INSERT INTO auth_sessions(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)').bind(await hash(token),user.id,expires,time()).run();
     return json({user:{id:user.id,name:user.name,email:user.email,role:user.role} },200,{'set-cookie':cookie(token,SESSION_MS/1000)});
   }
+  if(path==='/api/agent/mode'&&method==='POST'){
+    const host=await agent(request,env);if(!host)return fail(401,'Invalid agent credentials');
+    const body=await readJson(request);const mode=String(body.mode||'');
+    if(!['code','paired'].includes(mode))return fail(400,'Invalid mode');
+    await env.DB.prepare('UPDATE hosts SET connection_mode=? WHERE id=?').bind(mode,host.id).run();
+    return json({mode});
+  }
+  if(path==='/api/agent/heartbeat'&&method==='POST'){
+    const host=await agent(request,env);if(!host)return fail(401,'Invalid agent credentials');
+    const body=await readJson(request),code=String(body.code||'').trim().toUpperCase();
+    if(!/^[A-F0-9]{16}$/.test(code))return fail(400,'Invalid code');
+    const updated=await env.DB.prepare('UPDATE access_codes SET expires_at=? WHERE code_hash=? AND host_id=?').bind(time()+CODE_MS,await hash(code),host.id).run();
+    if(updated.meta.changes!==1)return fail(404,'Code not registered');
+    return json({ok:true});
+  }
+  if(path==='/api/agent/status'&&method==='GET'){
+    const host=await agent(request,env);if(!host)return fail(401,'Invalid agent credentials');
+    const record=await env.DB.prepare('SELECT connection_mode FROM hosts WHERE id=?').bind(host.id).first();
+    return json({id:host.id,label:host.label,mode:record?.connection_mode||'code'});
+  }
   if(path==='/api/agent/code'&&method==='POST'){
     const host=await agent(request,env);if(!host)return fail(401,'Invalid agent credentials');
     const code=random(8).toUpperCase(),codeHash=await hash(code);
+    await env.DB.prepare('DELETE FROM access_codes WHERE host_id=?').bind(host.id).run();
     await env.DB.prepare('INSERT INTO access_codes(code_hash,host_id,expires_at,used_at) VALUES(?,?,?,NULL)').bind(codeHash,host.id,time()+CODE_MS).run();
     return json({code,expiresAt:time()+CODE_MS});
   }
   if(path==='/api/agent/ws'&&method==='GET'){
     const host=await agent(request,env);if(!host)return fail(401,'Invalid agent credentials');
+    if(request.headers.get('upgrade')?.toLowerCase()!=='websocket')return fail(400,'WebSocket required');
     const code=String(url.searchParams.get('code')||'').trim().toUpperCase();
-    const codeHash=await hash(code);
-    const record=await env.DB.prepare('SELECT host_id,expires_at,used_at FROM access_codes WHERE code_hash=?').bind(codeHash).first();
-    if(!record||record.host_id!==host.id||record.expires_at<time()||record.used_at)return fail(403,'Invalid or expired code');
-    return proxyRoom(env,codeHash,'/ws?role=agent',{headers:{upgrade:'websocket','x-internal-host':host.id}});
+    const match=await env.DB.prepare('SELECT code_hash FROM access_codes WHERE code_hash=? AND host_id=? AND expires_at>?').bind(await hash(code),host.id,time()).first();
+    if(!match)return fail(403,'Host code missing or expired');
+    return proxyRoom(env,host.id,'/ws?role=agent',{headers:{upgrade:'websocket','x-internal-host':host.id}});
   }
   const user=await account(request,env);
   if(!user)return fail(401,'Manager sign-in required');
@@ -76,25 +97,57 @@ async function handler(request,env){
     if(token)await env.DB.prepare('DELETE FROM auth_sessions WHERE token_hash=?').bind(await hash(token)).run();
     return json({ok:true},200,{'set-cookie':cookie('',0)});
   }
+  if(path==='/api/hosts/pair'&&method==='POST'){
+    const rate=await env.SESSIONS.get(env.SESSIONS.idFromName('pair:'+user.id)).fetch('https://room.internal/rate-code',{method:'POST'});
+    if(rate.status===429)return fail(429,'Too many pairing attempts');
+    const body=await readJson(request),code=String(body.code||'').trim().toUpperCase();
+    if(!/^[A-F0-9]{16}$/.test(code))return fail(400,'Invalid code format');
+    const host=await env.DB.prepare("SELECT h.id,h.label FROM hosts h JOIN access_codes c ON c.host_id=h.id WHERE c.code_hash=? AND c.expires_at>? AND h.enabled=1 AND h.connection_mode='paired'").bind(await hash(code),time()).first();
+    if(!host)return fail(404,'Host unavailable');
+    const online=await proxyRoom(env,host.id,'/presence');if(!online.ok)return fail(409,'Host offline');
+    await env.DB.prepare('INSERT OR IGNORE INTO trusted_controllers(host_id,user_id) VALUES(?,?)').bind(host.id,user.id).run();
+    return json({host});
+  }
+  if(path==='/api/hosts'&&method==='GET'){
+    const hosts=await env.DB.prepare("SELECT h.id,h.label FROM hosts h JOIN trusted_controllers t ON t.host_id=h.id WHERE t.user_id=? AND h.enabled=1 AND h.connection_mode='paired' ORDER BY h.label LIMIT 100").bind(user.id).all();
+    const results=await Promise.all(hosts.results.map(async h=>{
+      const presence=await proxyRoom(env,h.id,'/presence');
+      return {id:h.id,label:h.label,online:presence.ok};
+    }));
+    return json({hosts:results});
+  }
   if(path==='/api/history'&&method==='GET'){
     const result=await env.DB.prepare('SELECT c.id,c.status,c.created_at,c.ended_at,h.label AS host FROM connections c JOIN hosts h ON h.id=c.host_id WHERE controller_id=? ORDER BY created_at DESC LIMIT 25').bind(user.id).all();
     return json({connections:result.results});
   }
   if(path==='/api/connections'&&method==='POST'){
-    const body=await readJson(request);const code=String(body.code||'').trim().toUpperCase();
-    if(!/^[A-F0-9]{16}$/.test(code))return fail(400,'Invalid code format');
-    const check=await env.SESSIONS.get(env.SESSIONS.idFromName('code-attempts:'+user.id)).fetch('https://room.internal/rate-code',{method:'POST'});
-    if(check.status===429)return fail(429,'Too many code attempts. Try later.');
-    const codeHash=await hash(code);
-    const record=await env.DB.prepare('SELECT c.host_id,c.expires_at,h.label AS host FROM access_codes c JOIN hosts h ON h.id=c.host_id AND h.enabled=1 WHERE c.code_hash=? AND c.used_at IS NULL').bind(codeHash).first();
-    if(!record||record.expires_at<time())return fail(404,'Code unavailable or expired');
+    const body=await readJson(request);
+    const attempt=await env.SESSIONS.get(env.SESSIONS.idFromName('attempts:'+user.id)).fetch('https://room.internal/rate-code',{method:'POST'});
+    if(attempt.status===429)return fail(429,'Too many attempts. Try again later.');
+    const hostId=String(body.hostId||'');
+    const isPaired=Boolean(hostId);
+    let host,codeHash;
+    if(isPaired){
+      if(!/^[a-zA-Z0-9_-]{1,100}$/.test(hostId))return fail(400,'Invalid host');
+      host=await env.DB.prepare("SELECT h.id,h.label FROM hosts h JOIN trusted_controllers t ON t.host_id=h.id WHERE h.id=? AND t.user_id=? AND h.enabled=1 AND h.connection_mode='paired'").bind(hostId,user.id).first();
+      if(!host)return fail(404,'Host unavailable');
+      codeHash=await hash('paired:'+crypto.randomUUID());
+      await env.DB.prepare('INSERT INTO access_codes(code_hash,host_id,expires_at,used_at) VALUES(?,?,?,?)').bind(codeHash,host.id,time()+CONNECT_MS,time()).run();
+    }else{
+      const code=String(body.code||'').trim().toUpperCase();
+      if(!/^[A-F0-9]{16}$/.test(code))return fail(400,'Invalid code format');
+      codeHash=await hash(code);
+      host=await env.DB.prepare("SELECT h.id,h.label FROM access_codes c JOIN hosts h ON h.id=c.host_id AND h.enabled=1 WHERE c.code_hash=? AND c.expires_at>? ").bind(codeHash,time()).first();
+      if(!host)return fail(404,'Code unavailable or expired');
+      // Code stays usable while the agent is online; host approval is mandatory for every session.
+    }
+    const presence=await proxyRoom(env,host.id,'/presence');
+    if(!presence.ok)return fail(409,'Host is offline');
     const id=crypto.randomUUID(),expires=time()+CONNECT_MS;
-    const consumed=await env.DB.prepare('UPDATE access_codes SET used_at=? WHERE code_hash=? AND used_at IS NULL AND expires_at>?').bind(time(),codeHash,time()).run();
-    if(consumed.meta.changes!==1)return fail(409,'Code already used');
-    await env.DB.prepare('INSERT INTO connections(id,host_id,controller_id,code_hash,status,created_at,expires_at) VALUES(?,?,?,?,?,?,?)').bind(id,record.host_id,user.id,codeHash,'pending',time(),expires).run();
-    const res=await proxyRoom(env,codeHash,'/request',{method:'POST',body:JSON.stringify({id,hostId:record.host_id,controllerId:user.id,expires})});
-    if(!res.ok){await env.DB.prepare("UPDATE connections SET status='ended',ended_at=? WHERE id=?").bind(time(),id).run();return fail(409,'Host is not connected. Generate a new code.');}
-    return json({id,host:record.host,status:'pending',expiresAt:expires},201);
+    await env.DB.prepare('INSERT INTO connections(id,host_id,controller_id,code_hash,status,created_at,expires_at) VALUES(?,?,?,?,?,?,?)').bind(id,host.id,user.id,codeHash,'pending',time(),expires).run();
+    const res=await proxyRoom(env,host.id,'/request',{method:'POST',body:JSON.stringify({id,hostId:host.id,controllerId:user.id,controllerName:user.name,expires})});
+    if(!res.ok){await env.DB.prepare("UPDATE connections SET status='ended',ended_at=? WHERE id=?").bind(time(),id).run();return fail(409,'Host is busy or offline');}
+    return json({id,host:host.label,status:'pending',expiresAt:expires},201);
   }
   const match=path.match(/^\/api\/connections\/([0-9a-f-]{36})(\/ws|\/disconnect)?$/);
   if(match){
@@ -103,10 +156,10 @@ async function handler(request,env){
     if(conn.expires_at<time())return fail(410,'Session expired');
     if(match[2]==='/ws'&&method==='GET'){
       if(request.headers.get('upgrade')?.toLowerCase()!=='websocket')return fail(400,'WebSocket required');
-      return proxyRoom(env,conn.code_hash,'/ws?role=controller&session='+conn.id,{headers:{upgrade:'websocket','x-internal-user':user.id}});
+      return proxyRoom(env,conn.host_id,'/ws?role=controller&session='+conn.id,{headers:{upgrade:'websocket','x-internal-user':user.id}});
     }
     if(match[2]==='/disconnect'&&method==='POST'){
-      await proxyRoom(env,conn.code_hash,'/end',{method:'POST'});
+      await proxyRoom(env,conn.host_id,'/end',{method:'POST'});
       await env.DB.prepare("UPDATE connections SET status='ended',ended_at=? WHERE id=? AND status!='ended'").bind(time(),conn.id).run();
       return json({ok:true});
     }
@@ -132,12 +185,14 @@ export class ConnectionRoom {
   async fetch(request){
     const url=new URL(request.url);
     if(url.pathname==='/rate'||url.pathname==='/rate-code')return this.rate(url.pathname);
+    if(url.pathname==='/presence'&&request.method==='GET')return this.sockets('agent').length?json({online:true}):fail(404,'Offline');
     if(url.pathname==='/request'&&request.method==='POST'){
       if(!this.sockets('agent').length)return fail(409,'Host offline');
       const body=await request.json();
-      if((await this.state.storage.get('connection')))return fail(409,'Already paired');
+      const existing=await this.state.storage.get('connection');
+      if(existing&&existing.status!=='ended'&&existing.status!=='rejected'&&existing.expires>time())return fail(409,'Already paired');
       await this.state.storage.put('connection',{...body,status:'pending'});
-      this.emit('agent',{type:'request',sessionId:body.id,expiresAt:body.expires});
+      this.emit('agent',{type:'request',sessionId:body.id,controllerName:body.controllerName,expiresAt:body.expires});
       return json({ok:true});
     }
     if(url.pathname==='/end'&&request.method==='POST'){await this.end('disconnected');return json({ok:true})}
@@ -153,14 +208,14 @@ export class ConnectionRoom {
       this.state.acceptWebSocket(server);
       server.serializeAttachment({role});
       if(role==='controller')server.send(JSON.stringify({type:'status',status:session.status,expiresAt:session.expires}));
-      if(role==='agent'&&session&&session.status==='pending')server.send(JSON.stringify({type:'request',sessionId:session.id,expiresAt:session.expires}));
+      if(role==='agent'&&session&&session.status==='pending')server.send(JSON.stringify({type:'request',sessionId:session.id,controllerName:session.controllerName,expiresAt:session.expires}));
       return new Response(null,{status:101,webSocket:client});
     }
     return fail(404,'Unknown room route');
   }
   async end(reason){
     const session=await this.state.storage.get('connection');
-    if(!session||session.status==='ended')return;
+    if(!session||session.status==='ended'||session.status==='rejected')return;
     session.status='ended';await this.state.storage.put('connection',session);
     await this.env.DB.prepare("UPDATE connections SET status='ended',ended_at=? WHERE id=?").bind(time(),session.id).run();
     this.emit('agent',{type:'end',reason});this.emit('controller',{type:'end',reason});
@@ -190,6 +245,12 @@ export class ConnectionRoom {
       this.emit(role==='agent'?'controller':'agent',{type:payload.type,data:payload.data});
     }
   }
-  async webSocketClose(ws){const role=ws.deserializeAttachment()?.role;if(role==='controller'||role==='agent')await this.end(role+' disconnected')}
+  async webSocketClose(ws){const role=ws.deserializeAttachment()?.role;
+    if(role==='agent'){
+      const session=await this.state.storage.get('connection');
+      if(session)await this.env.DB.prepare('DELETE FROM access_codes WHERE host_id=?').bind(session.hostId).run();
+      await this.end('host disconnected');
+    }else if(role==='controller')await this.end('controller disconnected');
+  }
   async webSocketError(ws){await this.webSocketClose(ws)}
 }

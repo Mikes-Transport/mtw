@@ -172,6 +172,35 @@
     }
 
     installTemplates(right, panels);
+    // The lightweight navigation loader does not preload tool templates.
+    // Ensure MTWStudio is available in both dashboard loading modes.
+    if (!panels.querySelector('.mtwstudio-panel')) {
+      const studio = document.createElement('section');
+      studio.className = 'mtwstudio-panel';
+      studio.style.display = 'none';
+      const title = document.createElement('h3');
+      title.textContent = 'MTWStudio';
+      const status = document.createElement('p');
+      status.className = 'mtwstudio-status';
+      status.textContent = 'Manager sign-in is required.';
+      const open = document.createElement('a');
+      open.className = 'mtwstudio-open';
+      open.hidden = true;
+      open.target = '_blank';
+      open.rel = 'noopener noreferrer';
+      open.textContent = 'Open in a new tab';
+      const frame = document.createElement('iframe');
+      frame.className = 'mtwstudio-frame';
+      frame.title = 'MTWStudio secure remote access';
+      frame.hidden = true;
+      frame.loading = 'lazy';
+      frame.referrerPolicy = 'no-referrer';
+      frame.allow = 'fullscreen';
+      frame.style.cssText = 'display:block;width:100%;height:78vh;min-height:550px;border:1px solid #27374d;border-radius:12px;background:#0b111d';
+      studio.append(title, status, open, frame);
+      panels.appendChild(studio);
+    }
+
 
     // Generate navigation cards from the code registry; no Designer cards needed.
     Object.entries(TOOLS).forEach(([id, tool]) => {
@@ -736,6 +765,14 @@
         console.error('[dashboard] failed to load manager tools:', manager.src);
       };
       document.head.appendChild(manager);
+    }
+
+    if (!shareMode() &&
+        !document.querySelector('script[data-mtwstudio-script], script[src*="access/mtwstudio.js"]')) {
+      const studioScript = document.createElement('script');
+      studioScript.dataset.mtwstudioScript = 'true';
+      studioScript.src = new URL('js/access/mtwstudio.js', BASE_URL).href;
+      document.head.appendChild(studioScript);
     }
 
     // Navigation globals are in place: let the shell (loaded now or already waiting) build.
