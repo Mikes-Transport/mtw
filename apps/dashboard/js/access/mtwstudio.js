@@ -10,7 +10,7 @@
     const open=panel.querySelector('.mtwstudio-open');
     const download=panel.querySelector('.mtwstudio-download');
     if(download) download.title='Latest published Windows portable host build';
-    const address=String(window.MTW_STUDIO_URL||'').trim();
+    const address=String(window.MTW_STUDIO_URL||'https://mtwstudio.mtwaustin.workers.dev/').trim();
     let url;
     try{url=new URL(address);if(url.protocol!=='https:')throw Error('HTTPS required')}catch{
       if(status)status.textContent='MTWStudio is not deployed yet. Set window.MTW_STUDIO_URL to the HTTPS URL of the Cloudflare application.';
