@@ -168,7 +168,7 @@ async function account(request,env){
   return user?.enabled===true&&user?.totpEncrypted?{id:session.userId,name:user.name,role:'manager'}:null;
 }
 async function agent(req,env){
-  const match=(req.headers.get('authorization')||'').match(/^Bearer ([a-f0-9]{64})$/);
+  const match=(req.headers.get('authorization')||'').match(/^Bearer ((?:[a-f0-9]{64})|(?:[A-Z2-7]{20}))$/);
   if(!match)return null;
   const id=await hash(match[1]);
   const host=await getDoc(env,'mtwstudio_hosts',id);
@@ -277,7 +277,7 @@ async function handler(request,env){
   if(path==='/api/admin/hosts'&&method==='POST'){
     const body=await readJson(request),label=String(body.label||'').trim();
     if(label.length<2||label.length>100)return fail(400,'Computer name must be 2–100 characters');
-    const accessKey=random(),id=await hash(accessKey);
+    const accessKey=base32(crypto.getRandomValues(new Uint8Array(13))).slice(0,20),id=await hash(accessKey);
     await putDoc(env,'mtwstudio_hosts',id,{label,enabled:true,mode:'code',createdAt:now(),createdBy:user.id,codeHash:null,codeExpires:0});
     return json({label,accessKey},201);
   }

@@ -48,15 +48,22 @@ $('register-form').addEventListener('submit',async event=>{
   try{
     const label=$('host-label').value.trim();
     const result=await api('admin/hosts','POST',{label});
-    $('host-access-key').textContent=result.accessKey;
+    const grouped=result.accessKey.match(/.{1,5}/g)?.join('-')||result.accessKey;
+    $('host-access-key').textContent=grouped;
     show('host-credential',true);
     $('host-label').value='';
-    notice('Computer registered. Copy the host access key into the Windows app. It is shown only once.',false);
+    notice('PC registered. Copy the setup key into the Windows app; you only enter it once.',false);
   }catch(error){
     notice('Could not register computer: '+error.message);
   }finally{
     button.disabled=false;
   }
+});
+$('copy-host-key').addEventListener('click',async()=>{
+  const value=$('host-access-key').textContent.trim();
+  if(!value)return;
+  try{await navigator.clipboard.writeText(value);notice('PC setup key copied.',false)}
+  catch{notice('Copy the displayed key manually.')}
 });
 $('pair-form').addEventListener('submit',async e=>{
   e.preventDefault();notice('');

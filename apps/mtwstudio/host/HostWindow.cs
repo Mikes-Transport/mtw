@@ -50,7 +50,7 @@ public sealed class HostWindow : Form
         head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 185));
         head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         AddRow(head, "MTWStudio server", endpoint);
-        AddRow(head, "Host access key", secret);
+        AddRow(head, "PC setup key", secret);
         AddRow(head, "Connection mode", mode);
         AddRow(head, "This computer's code", codeLabel);
         AddRow(head, "Current status", status);
@@ -125,11 +125,20 @@ public sealed class HostWindow : Form
         }));
     }
 
+    private static string NormalizeHostKey(string value)
+    {
+        var compact = value.Trim().Replace("-", "").Replace(" ", "");
+        // Existing 64-character host credentials remain valid.
+        return System.Text.RegularExpressions.Regex.IsMatch(compact, "^[a-f0-9]{64}$")
+            ? compact
+            : compact.ToUpperInvariant();
+    }
+
     private async Task<JsonElement> Request(string path, HttpMethod method, object? payload, CancellationToken ct)
     {
         if (baseUri is null) throw new InvalidOperationException("Server is not configured");
         using var req = new HttpRequestMessage(method, new Uri(baseUri, path));
-        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", secret.Text.Trim());
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", NormalizeHostKey(secret.Text));
         if (payload != null) req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
         using var res = await http.SendAsync(req, ct);
         var data = await res.Content.ReadAsStringAsync(ct);
@@ -146,8 +155,8 @@ public sealed class HostWindow : Form
                 uri.Scheme != Uri.UriSchemeHttps || uri.UserInfo.Length != 0 || uri.Query.Length != 0 ||
                 uri.Fragment.Length != 0 || uri.AbsolutePath != "/")
                 throw new InvalidOperationException("Enter the HTTPS base URL of the MTWStudio server.");
-            if (!System.Text.RegularExpressions.Regex.IsMatch(secret.Text.Trim(), "^[a-f0-9]{64}$"))
-                throw new InvalidOperationException("Enter the 64-character host access key.");
+            if (!System.Text.RegularExpressions.Regex.IsMatch(NormalizeHostKey(secret.Text), "^(?:[A-Z2-7]{20}|[a-f0-9]{64})$"))
+                throw new InvalidOperationException("Enter the 20-character PC setup key (or an existing legacy host key).");
             baseUri = uri;
             SaveSettings();
             running = new CancellationTokenSource();
@@ -188,7 +197,7 @@ public sealed class HostWindow : Form
             mode.Enabled = false;
 
             socket = new ClientWebSocket();
-            socket.Options.SetRequestHeader("Authorization", "Bearer " + secret.Text.Trim());
+            socket.Options.SetRequestHeader("Authorization", "Bearer " + NormalizeHostKey(secret.Text));
             var wsUri = new UriBuilder(new Uri(baseUri, "/api/agent/ws?code=" + connectionCode)) { Scheme = "wss", Port = -1 }.Uri;
             await socket.ConnectAsync(wsUri, running.Token);
             SetStatus("Online · select screen to share before approving access");
