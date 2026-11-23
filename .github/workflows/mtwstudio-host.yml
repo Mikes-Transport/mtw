@@ -22,6 +22,13 @@ jobs:
           dotnet-version: '8.0.x'
       - name: Publish portable Windows executable
         run: dotnet publish apps/mtwstudio/host/MTWStudio.Host.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o artifacts/host
+      - name: Publish folder-based portable build
+        shell: pwsh
+        run: |
+          dotnet publish apps/mtwstudio/host/MTWStudio.Host.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:IncludeNativeLibrariesForSelfExtract=false -o artifacts/portable-folder
+          if ($LASTEXITCODE -ne 0) { throw 'Folder-based publish failed.' }
+          if (!(Test-Path 'artifacts/portable-folder/MTWStudio.exe')) { throw 'Executable missing.' }
+          Compress-Archive -Path 'artifacts/portable-folder/*' -DestinationPath 'artifacts/MTWStudio-Portable.zip' -Force
       - name: Validate output
         shell: pwsh
         run: |
@@ -32,6 +39,12 @@ jobs:
           path: artifacts/host/
           if-no-files-found: error
           retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MTWStudio-Windows-Folder-Portable
+          path: artifacts/MTWStudio-Portable.zip
+          if-no-files-found: error
+          retention-days: 7
       - name: Publish latest portable Windows host
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -40,7 +53,7 @@ jobs:
           $tag = 'mtwstudio-host-latest'
           gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $tag artifacts/host/MTWStudio.exe --repo $env:GITHUB_REPOSITORY --title 'MTWStudio Host (Latest)' --notes 'Portable Windows build.' --prerelease --target $env:GITHUB_SHA
+            gh release create $tag artifacts/host/MTWStudio.exe artifacts/MTWStudio-Portable.zip --repo $env:GITHUB_REPOSITORY --title 'MTWStudio Host (Latest)' --notes 'Portable Windows build.' --prerelease --target $env:GITHUB_SHA
           } else {
-            gh release upload $tag artifacts/host/MTWStudio.exe --clobber --repo $env:GITHUB_REPOSITORY
+            gh release upload $tag artifacts/host/MTWStudio.exe artifacts/MTWStudio-Portable.zip --clobber --repo $env:GITHUB_REPOSITORY
           }
