@@ -1,0 +1,34 @@
+name: MTWStudio Portable Host
+
+on:
+  push:
+    branches:
+      - feature/mtwstudio-manager-tool
+    paths:
+      - 'apps/mtwstudio/host/**'
+      - '.github/workflows/mtwstudio-host.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish portable Windows executable
+        run: dotnet publish apps/mtwstudio/host/MTWStudio.Host.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o artifacts/host
+      - name: Validate output
+        shell: pwsh
+        run: |
+          if (!(Test-Path "artifacts/host/MTWStudio.exe")) { throw "Portable executable not produced." }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MTWStudio-Windows-Portable
+          path: artifacts/host/
+          if-no-files-found: error
+          retention-days: 7
