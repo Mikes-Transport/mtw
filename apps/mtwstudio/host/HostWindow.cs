@@ -18,7 +18,8 @@ public sealed class HostWindow : Form
     private readonly Label status = new() { Text = "Offline", AutoSize = true };
     private readonly Button start = new() { Text = "Start host", Width = 130, Height = 34 };
     private readonly Button stop = new() { Text = "Disconnect / Stop", Width = 170, Height = 34, Enabled = false };
-    private readonly WebView2 browser = new() { Dock = DockStyle.Fill };
+    private readonly Panel browserHolder = new() { Dock = DockStyle.Fill, BackColor = Color.FromArgb(11, 17, 29) };
+    private WebView2? browser;
     private readonly HttpClient http = new() { Timeout = TimeSpan.FromSeconds(20) };
     private readonly SemaphoreSlim socketSend = new(1, 1);
     private ClientWebSocket? socket;
@@ -57,15 +58,25 @@ public sealed class HostWindow : Form
         controls.Controls.Add(start);
         controls.Controls.Add(stop);
         AddRow(head, "", controls);
-        Controls.Add(browser);
+        browserHolder.Controls.Add(new Label {
+            Text = "MTWStudio Host\\n\\nEnter your server details and press Start host.\\nScreen sharing starts only after you choose a display.",
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleCenter,
+            ForeColor = Color.LightSteelBlue
+        });
+        Controls.Add(browserHolder);
         Controls.Add(head);
+        StartPosition = FormStartPosition.CenterScreen;
+        ShowInTaskbar = true;
+        WindowState = FormWindowState.Normal;
+        Shown += (_, _) => { Activate(); BringToFront(); };
 
         start.Click += async (_, _) => await StartHost();
         stop.Click += async (_, _) => await StopHost();
         FormClosing += (_, _) => {
             running?.Cancel();
             try { socket?.Abort(); } catch { }
-            browser.Dispose();
+            browser?.Dispose();
         };
         LoadSettings();
     }
@@ -152,6 +163,12 @@ public sealed class HostWindow : Form
             connectionCode = issued.GetProperty("code").GetString();
             if (string.IsNullOrEmpty(connectionCode)) throw new InvalidOperationException("No code received");
             codeLabel.Text = string.Join(" ", Enumerable.Range(0, 4).Select(i => connectionCode.Substring(i * 4, 4)));
+            browser ??= new WebView2 { Dock = DockStyle.Fill };
+            if (!browserHolder.Controls.Contains(browser))
+            {
+                browserHolder.Controls.Clear();
+                browserHolder.Controls.Add(browser);
+            }
             await browser.EnsureCoreWebView2Async();
             browser.CoreWebView2.Settings.IsWebMessageEnabled = true;
             browser.CoreWebView2.Settings.AreDevToolsEnabled = false;
@@ -286,7 +303,7 @@ public sealed class HostWindow : Form
 
     private void PostBrowser(string payload)
     {
-        if (IsDisposed || !browserReady || browser.CoreWebView2 == null) return;
+        if (IsDisposed || !browserReady || browser?.CoreWebView2 == null) return;
         if (InvokeRequired) BeginInvoke(() => PostBrowser(payload));
         else browser.CoreWebView2.PostWebMessageAsJson(payload);
     }
@@ -340,7 +357,7 @@ public sealed class HostWindow : Form
         secret.Enabled = true;
         mode.Enabled = true;
         // Revoke the old WebRTC capture and data channels by navigating away.
-        if (browser.CoreWebView2 != null) browser.CoreWebView2.Navigate("about:blank");
+        if (browser?.CoreWebView2 != null) browser.CoreWebView2.Navigate("about:blank");
         await Task.CompletedTask;
     }
 }
