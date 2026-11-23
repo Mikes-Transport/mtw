@@ -1,77 +1,91 @@
-// This page runs only inside the consent-driven MTWStudio Windows host WebView2.
-// Network credentials stay in the native application; this page never sees them.
+// MTWStudio captures monitors in the native Windows host after explicit approval.
+// WebView2 handles only authenticated WebRTC transport and native input forwarding.
 (() => {
   const bridge = window.chrome?.webview;
-  const share = document.getElementById('share');
-  const stop = document.getElementById('stop');
   const status = document.getElementById('status');
-  const preview = document.getElementById('preview');
-  let stream = null, peer = null, channel = null, approved = false, pendingIce = [];
-  const send = value => bridge?.postMessage(value);
-  function state(message) { status.textContent = message; }
-  function end() {
+  let peer = null, inputChannel = null, framesChannel = null, approved = false;
+  let pendingIce = [], pendingFrame = null, frameId = 0;
+  const post = value => bridge?.postMessage(value);
+  const setStatus = message => { if (status) status.textContent = message; };
+  function closePeer() {
     approved = false;
-    if (channel) { channel.close(); channel = null; }
-    if (peer) { peer.close(); peer = null; }
-    if (stream) { for (const track of stream.getTracks()) track.stop(); stream = null; }
-    preview.srcObject = null; share.disabled = false; stop.disabled = true;
-    state('Not sharing');
+    pendingFrame = null;
+    if (inputChannel) try { inputChannel.close(); } catch {}
+    if (framesChannel) try { framesChannel.close(); } catch {}
+    if (peer) try { peer.close(); } catch {}
+    peer = null; inputChannel = null; framesChannel = null;
+    setStatus('Waiting for host approval');
   }
-  async function begin() {
-    if (!bridge) { state('Open inside MTWStudio Host.'); return; }
-    try {
-      // This must be initiated by the host clicking the button (browser user gesture).
-      stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 15 }, audio: false });
-      preview.srcObject = stream;
-      stream.getVideoTracks()[0].addEventListener('ended', () => { end(); send({ type: 'capture-ended' }); }, { once: true });
-      share.disabled = true; stop.disabled = false;
-      state('Screen selected. Waiting for an approved connection.');
-      send({ type: 'capture-ready' });
-    } catch (e) { state('Screen not selected: ' + e.message); }
+  function flushFrame() {
+    if (!framesChannel || framesChannel.readyState !== 'open' || !pendingFrame) return;
+    if (framesChannel.bufferedAmount > 300000) return;
+    const frame = pendingFrame;
+    pendingFrame = null;
+    const length = 12000;
+    const chunks = Math.ceil(frame.image.length / length);
+    if (chunks > 100) return;
+    const id = ++frameId;
+    for (let i=0;i<chunks;i++) {
+      framesChannel.send(JSON.stringify({
+        type:'frame', id, index:i, total:chunks, monitor:frame.monitor,
+        width:frame.width, height:frame.height,
+        image:frame.image.slice(i*length,(i+1)*length)
+      }));
+    }
   }
   async function call() {
-    if (!approved || !stream) return;
+    if (!approved) return;
     if (peer) peer.close();
     pendingIce = [];
-    peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }] });
-    stream.getTracks().forEach(track => peer.addTrack(track, stream));
-    channel = peer.createDataChannel('input', { ordered: true });
-    channel.onmessage = event => {
-      if (!approved || !stream || typeof event.data !== 'string' || event.data.length > 2048) return;
+    peer = new RTCPeerConnection({ iceServers:[{urls:'stun:stun.cloudflare.com:3478'}] });
+    peer.addTransceiver('video',{direction:'inactive'});
+    inputChannel = peer.createDataChannel('input',{ordered:true});
+    inputChannel.onmessage = event => {
+      if (!approved || typeof event.data !== 'string' || event.data.length > 2048) return;
       try {
         const input = JSON.parse(event.data);
-        if (input && typeof input.type === 'string') send({ type: 'input', data: input });
+        if (input && typeof input.type === 'string') post({type:'input',data:input});
       } catch {}
     };
-    channel.onclose = () => state('Remote input disconnected');
+    framesChannel = peer.createDataChannel('frames',{ordered:true});
+    framesChannel.bufferedAmountLowThreshold = 120000;
+    framesChannel.onbufferedamountlow = flushFrame;
+    framesChannel.onopen = () => setStatus('Sharing approved monitor');
+    framesChannel.onclose = () => setStatus('Remote video disconnected');
     peer.onicecandidate = event => {
-      if (event.candidate) send({ type: 'ice', data: event.candidate.toJSON() });
+      if (event.candidate) post({type:'ice',data:event.candidate.toJSON()});
     };
     peer.onconnectionstatechange = () => {
-      state('Remote connection: ' + peer.connectionState);
-      if (peer.connectionState === 'failed') send({ type: 'peer-failed' });
+      setStatus('Remote connection: '+peer.connectionState);
+      if (peer.connectionState==='failed') post({type:'peer-failed'});
     };
-    const offer = await peer.createOffer();
+    const offer=await peer.createOffer();
     await peer.setLocalDescription(offer);
-    send({ type: 'offer', data: peer.localDescription.toJSON() });
+    post({type:'offer',data:peer.localDescription.toJSON()});
   }
-  share.onclick = begin;
-  stop.onclick = () => { end(); send({ type: 'capture-ended' }); };
   bridge?.addEventListener('message', async event => {
-    const message = event.data;
-    if (!message || typeof message !== 'object') return;
+    const message=event.data;
+    if (!message || typeof message!=='object') return;
     try {
-      if (message.type === 'approved') { approved = true; await call(); }
-      if (message.type === 'answer' && approved && peer) {
+      if (message.type==='approved') { approved=true; await call(); }
+      else if (message.type==='frame' && approved && typeof message.image==='string') {
+        pendingFrame=message;
+        flushFrame();
+      }
+      else if (message.type==='answer' && approved && peer) {
         await peer.setRemoteDescription(new RTCSessionDescription(message.data));
         for (const candidate of pendingIce.splice(0)) await peer.addIceCandidate(new RTCIceCandidate(candidate));
       }
-      if (message.type === 'ice' && approved && message.data) {
+      else if (message.type==='ice' && approved && message.data) {
         if (peer && peer.remoteDescription) await peer.addIceCandidate(new RTCIceCandidate(message.data));
         else pendingIce.push(message.data);
       }
-      if (message.type === 'stop') { approved = false; if (peer) peer.close(); peer = null; }
-    } catch (err) { state('Connection error: ' + err.message); send({ type: 'peer-failed' }); }
+      else if (message.type==='stop') closePeer();
+    } catch (error) {
+      setStatus('Connection error: '+error.message);
+      post({type:'peer-failed'});
+    }
   });
-  send({ type: 'host-web-ready' });
+  setStatus('Monitors are detected automatically. Capture begins only after approval.');
+  post({type:'host-web-ready'});
 })();

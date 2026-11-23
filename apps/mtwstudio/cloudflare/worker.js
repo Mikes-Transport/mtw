@@ -299,11 +299,20 @@ async function handler(request,env){
     return json({host:{id:host.id,label:host.label}});
   }
   if(path==='/api/hosts'&&method==='GET'){
+    // Show computers registered by this manager, even in connection-code mode.
+    // Pairings from other managers are visible only when explicitly paired.
+    const registered=await queryDocs(env,'mtwstudio_hosts','createdBy',user.id);
     const pairs=await queryDocs(env,'mtwstudio_pairs','userId',user.id);
-    const hosts=await Promise.all(pairs.slice(0,100).map(async pair=>{
-      const host=await getDoc(env,'mtwstudio_hosts',pair.hostId);
-      if(!host?.enabled||host.mode!=='paired')return null;
-      return {id:pair.hostId,label:host.label,online:(await proxyRoom(env,pair.hostId,'/presence')).ok};
+    const ids=new Set(registered.map(x=>x.id));
+    for(const pair of pairs)ids.add(pair.hostId);
+    const hosts=await Promise.all(Array.from(ids).slice(0,100).map(async id=>{
+      const host=await getDoc(env,'mtwstudio_hosts',id);
+      if(!host?.enabled)return null;
+      const owned=host.createdBy===user.id,paired=pairs.some(p=>p.hostId===id);
+      if(!owned&&(!paired||host.mode!=='paired'))return null;
+      let online=false;
+      try{online=(await proxyRoom(env,id,'/presence')).ok}catch{}
+      return {id,label:host.label,mode:host.mode,online,owned};
     }));
     return json({hosts:hosts.filter(Boolean)});
   }
@@ -321,8 +330,11 @@ async function handler(request,env){
       const hostId=String(body.hostId);
       if(!/^[a-f0-9]{64}$/.test(hostId))return fail(400,'Invalid computer');
       const paired=await getDoc(env,'mtwstudio_pairs',await hash(user.id+':'+hostId));
-      const value=paired?await getDoc(env,'mtwstudio_hosts',hostId):null;
-      if(!value?.enabled||value.mode!=='paired')return fail(404,'Computer unavailable');
+      const value=await getDoc(env,'mtwstudio_hosts',hostId);
+      // Registration grants this manager access to request a session in either mode.
+      // Other managers require an explicit pairing and paired mode.
+      if(!value?.enabled||(value.createdBy!==user.id&&(!paired||value.mode!=='paired')))
+        return fail(404,'Computer unavailable');
       host={id:hostId,label:value.label};
     }else{
       const code=String(body.code||'').replace(/\s/g,'').toUpperCase();
@@ -436,6 +448,21 @@ export class ConnectionRoom {
     if(role==='controller'&&payload.type==='disconnect'){await this.end('controller disconnected');return}
     if(session.status!=='approved')return;
     // Signalling only: SDP/ICE; never forward arbitrary user input over signalling.
+    if(role==='agent'&&payload.type==='monitors'){
+      const monitors=Array.isArray(payload.monitors)?payload.monitors.slice(0,16):[];
+      const safe=monitors.filter(m=>Number.isSafeInteger(m.index)&&m.index>=0&&m.index<32&&
+        Number.isSafeInteger(m.width)&&m.width>0&&m.width<20000&&
+        Number.isSafeInteger(m.height)&&m.height>0&&m.height<20000).map(m=>({
+          index:m.index,label:String(m.label||'Monitor').slice(0,80),width:m.width,height:m.height
+        }));
+      this.emit('controller',{type:'monitors',monitors:safe,selected:payload.selected});
+      return;
+    }
+    if(role==='controller'&&payload.type==='select-monitor'){
+      if(Number.isSafeInteger(payload.index)&&payload.index>=0&&payload.index<32)
+        this.emit('agent',{type:'select-monitor',index:payload.index});
+      return;
+    }
     if(['offer','answer','ice'].includes(payload.type)){
       if(payload.type==='offer'&&role!=='agent')return;
       if(payload.type==='answer'&&role!=='controller')return;

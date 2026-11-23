@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Drawing.Imaging;
 using System.Net.WebSockets;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -11,11 +12,12 @@ namespace MTWStudio.Host;
 
 public sealed class HostWindow : Form
 {
-    private readonly TextBox endpoint = new() { Text = "https://", Width = 390 };
+    private readonly TextBox endpoint = new() { Text = "https://mtwstudio.mtwaustin.workers.dev", Width = 390 };
     private readonly TextBox secret = new() { Width = 390, UseSystemPasswordChar = true };
     private readonly ComboBox mode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260 };
     private readonly Label codeLabel = new() { Text = "Not connected", AutoSize = true, Font = new Font("Segoe UI", 17, FontStyle.Bold) };
     private readonly Label status = new() { Text = "Offline", AutoSize = true };
+    private readonly Button save = new() { Text = "Save settings", Width = 130, Height = 34 };
     private readonly Button start = new() { Text = "Start host", Width = 130, Height = 34 };
     private readonly Button stop = new() { Text = "Disconnect / Stop", Width = 170, Height = 34, Enabled = false };
     private readonly Panel browserHolder = new() { Dock = DockStyle.Fill, BackColor = Color.FromArgb(11, 17, 29) };
@@ -26,7 +28,8 @@ public sealed class HostWindow : Form
     private CancellationTokenSource? running;
     private Uri? baseUri;
     private string? connectionCode;
-    private bool captureReady;
+    private CancellationTokenSource? captureCancellation;
+    private int selectedMonitorIndex;
     private bool approved;
     private bool browserReady;
     private readonly string appData = Path.Combine(
@@ -55,11 +58,12 @@ public sealed class HostWindow : Form
         AddRow(head, "This computer's code", codeLabel);
         AddRow(head, "Current status", status);
         var controls = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
+        controls.Controls.Add(save);
         controls.Controls.Add(start);
         controls.Controls.Add(stop);
         AddRow(head, "", controls);
         browserHolder.Controls.Add(new Label {
-            Text = "MTWStudio Host\\n\\nEnter your server details and press Start host.\\nScreen sharing starts only after you choose a display.",
+            Text = "MTWStudio Host\\n\\nSettings are remembered on this PC.\\nScreens are detected automatically.\\nCapture begins only after you approve a request.",
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleCenter,
             ForeColor = Color.LightSteelBlue
@@ -71,10 +75,15 @@ public sealed class HostWindow : Form
         WindowState = FormWindowState.Normal;
         Shown += (_, _) => { Activate(); BringToFront(); };
 
+        save.Click += (_, _) => {
+            try { SaveSettings(); SetStatus("Settings saved on this PC"); }
+            catch (Exception error) { MessageBox.Show(this, error.Message, "Could not save settings"); }
+        };
         start.Click += async (_, _) => await StartHost();
         stop.Click += async (_, _) => await StopHost();
         FormClosing += (_, _) => {
             running?.Cancel();
+            captureCancellation?.Cancel();
             try { socket?.Abort(); } catch { }
             browser?.Dispose();
         };
@@ -102,7 +111,7 @@ public sealed class HostWindow : Form
             if (!File.Exists(configPath)) return;
             using var doc = JsonDocument.Parse(File.ReadAllText(configPath));
             var root = doc.RootElement;
-            if (root.TryGetProperty("endpoint", out var saved)) endpoint.Text = saved.GetString() ?? "https://";
+            if (root.TryGetProperty("endpoint", out var saved)) endpoint.Text = saved.GetString() ?? endpoint.Text;
             if (root.TryGetProperty("mode", out var selected)) mode.SelectedIndex = selected.GetString() == "paired" ? 1 : 0;
             if (root.TryGetProperty("key", out var key))
             {
@@ -172,8 +181,9 @@ public sealed class HostWindow : Form
             baseUri = uri;
             SaveSettings();
             running = new CancellationTokenSource();
-            captureReady = false;
             approved = false;
+            selectedMonitorIndex = Array.FindIndex(Screen.AllScreens, screen => screen.Primary);
+            if (selectedMonitorIndex < 0) selectedMonitorIndex = 0;
             activeSession = null;
             browserReady = false;
             codeLabel.Text = "Connecting…";
@@ -212,7 +222,7 @@ public sealed class HostWindow : Form
             socket.Options.SetRequestHeader("Authorization", "Bearer " + NormalizeHostKey(secret.Text));
             var wsUri = new UriBuilder(new Uri(baseUri, "/api/agent/ws?code=" + connectionCode)) { Scheme = "wss", Port = -1 }.Uri;
             await socket.ConnectAsync(wsUri, running.Token);
-            SetStatus("Online · select screen to share before approving access");
+            SetStatus($"Online · {Screen.AllScreens.Length} monitors detected · ready for approval");
             _ = ReceiveLoop(running.Token);
             _ = HeartbeatLoop(running.Token);
         }
@@ -267,6 +277,13 @@ public sealed class HostWindow : Form
                     if (id == null) continue;
                     BeginInvoke(async () => await Approve(id, name, ct));
                 }
+                else if (type == "select-monitor")
+                {
+                    if (approved && activeSession != null &&
+                        data.RootElement.TryGetProperty("index", out var index) &&
+                        index.TryGetInt32(out var chosen))
+                        BeginInvoke(() => SelectMonitor(chosen));
+                }
                 else if (type is "answer" or "ice")
                 {
                     if (approved && activeSession != null) PostBrowser(payload);
@@ -289,10 +306,10 @@ public sealed class HostWindow : Form
     private async Task Approve(string id, string name, CancellationToken ct)
     {
         if (approved || activeSession != null) { await Send(new { type = "reject" }, ct); return; }
-        if (!captureReady || !browserReady)
+        if (!browserReady || Screen.AllScreens.Length == 0)
         {
-            MessageBox.Show(this, "Select a screen in the MTWStudio Host window before approving a connection.",
-                "Screen sharing required", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, "The screen capture component is not ready.", "Capture unavailable",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
             await Send(new { type = "reject" }, ct);
             return;
         }
@@ -309,7 +326,11 @@ public sealed class HostWindow : Form
         approved = true;
         SetStatus("Remote session active · " + name + " · press Disconnect to stop");
         await Send(new { type = "approve" }, ct);
+        await SendMonitorList(ct);
         PostBrowser(JsonSerializer.Serialize(new { type = "approved" }));
+        captureCancellation?.Cancel();
+        captureCancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _ = CaptureLoop(captureCancellation.Token);
     }
 
     private async Task Send(object payload, CancellationToken ct)
@@ -338,25 +359,92 @@ public sealed class HostWindow : Form
             var root = doc.RootElement;
             var type = root.GetProperty("type").GetString();
             if (type == "host-web-ready") { browserReady = true; return; }
-            if (type == "capture-ready") { captureReady = true; return; }
-            if (type == "capture-ended") { captureReady = false; if (approved) await StopHost(); return; }
-            if (!approved || !captureReady || running == null || activeSession == null) return;
+            if (!approved || running == null || activeSession == null) return;
             if (type is "offer" or "ice" or "peer-failed")
             {
                 if (type == "peer-failed") { await StopHost(); return; }
                 await Send(new { type, data = root.GetProperty("data").Clone() }, running.Token);
             }
-            else if (type == "input") RemoteInput.Apply(root.GetProperty("data"));
+            else if (type == "input")
+            {
+                var input = root.GetProperty("data");
+                if (input.TryGetProperty("type", out var inputType) && inputType.GetString() == "selectMonitor" &&
+                    input.TryGetProperty("index", out var index) && index.TryGetInt32(out var chosen))
+                    SelectMonitor(chosen);
+                else
+                    RemoteInput.Apply(input, selectedMonitorIndex);
+            }
         }
         catch (Exception ex) { SetStatus("Host input error: " + ex.Message); }
     }
 
     private void EndSession()
     {
+        captureCancellation?.Cancel();
+        captureCancellation = null;
         approved = false;
         activeSession = null;
         PostBrowser(JsonSerializer.Serialize(new { type = "stop" }));
         SetStatus("Online · waiting for another approved connection");
+    }
+
+    private async Task SendMonitorList(CancellationToken ct)
+    {
+        var monitors = Screen.AllScreens.Select((screen, index) => new {
+            index,
+            label = "Monitor " + (index + 1) + (screen.Primary ? " (Primary)" : ""),
+            width = screen.Bounds.Width,
+            height = screen.Bounds.Height
+        }).ToArray();
+        await Send(new { type = "monitors", monitors, selected = selectedMonitorIndex }, ct);
+    }
+
+    private void SelectMonitor(int index)
+    {
+        if (!approved || index < 0 || index >= Screen.AllScreens.Length) return;
+        selectedMonitorIndex = index;
+        SetStatus($"Remote session · viewing monitor {index + 1}");
+        if (running is { IsCancellationRequested: false })
+            _ = SendMonitorList(running.Token).ContinueWith(_ => { });
+    }
+
+    private async Task CaptureLoop(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested && approved && !IsDisposed)
+            {
+                var screens = Screen.AllScreens;
+                var index = Math.Clamp(selectedMonitorIndex, 0, screens.Length - 1);
+                var bounds = screens[index].Bounds;
+                if (bounds.Width < 1 || bounds.Height < 1) break;
+                // GDI capture runs on a worker thread. No browser screen-picker is involved.
+                var maxWidth = 1600d;
+                var factor = Math.Min(1d, maxWidth / bounds.Width);
+                var width = Math.Max(1, (int)(bounds.Width * factor));
+                var height = Math.Max(1, (int)(bounds.Height * factor));
+                string frame;
+                using (var original = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format24bppRgb))
+                {
+                    using (var graphics = Graphics.FromImage(original))
+                        graphics.CopyFromScreen(bounds.Left, bounds.Top, 0, 0, bounds.Size, CopyPixelOperation.SourceCopy);
+                    using var scaled = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+                    using (var graphics = Graphics.FromImage(scaled))
+                        graphics.DrawImage(original, 0, 0, width, height);
+                    using var buffer = new MemoryStream();
+                    var encoder = ImageCodecInfo.GetImageEncoders().First(x => x.FormatID == ImageFormat.Jpeg.Guid);
+                    using var quality = new EncoderParameters(1);
+                    quality.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 65L);
+                    scaled.Save(buffer, encoder, quality);
+                    frame = Convert.ToBase64String(buffer.ToArray());
+                }
+                if (!ct.IsCancellationRequested && approved)
+                    PostBrowser(JsonSerializer.Serialize(new { type = "frame", monitor = index, image = frame, width, height }));
+                await Task.Delay(125, ct);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { SetStatus("Screen capture error: " + ex.Message); }
     }
 
     private async Task StopHost()
@@ -365,7 +453,6 @@ public sealed class HostWindow : Form
         running = null;
         token?.Cancel();
         EndSession();
-        captureReady = false;
         connectionCode = null;
         browserReady = false;
         try { socket?.Abort(); socket?.Dispose(); } catch { }

@@ -19,7 +19,7 @@ internal static class RemoteInput
     [DllImport("user32.dll")]
     private static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extraInfo);
 
-    public static void Apply(JsonElement input)
+    public static void Apply(JsonElement input, int monitorIndex)
     {
         if (input.ValueKind != JsonValueKind.Object ||
             !input.TryGetProperty("type", out var typeField) || typeField.ValueKind != JsonValueKind.String)
@@ -28,9 +28,10 @@ internal static class RemoteInput
         if (type is "mouseMove" or "mouseDown" or "mouseUp")
         {
             if (!TryUnit(input, "x", out var x) || !TryUnit(input, "y", out var y)) return;
-            // Control primary display only. Match captured primary monitor for accurate coordinates.
-            var screen = Screen.PrimaryScreen;
-            if (screen == null) return;
+            // Input maps to the monitor currently selected in the remote console.
+            var screens = Screen.AllScreens;
+            if (monitorIndex < 0 || monitorIndex >= screens.Length) return;
+            var screen = screens[monitorIndex];
             var bounds = screen.Bounds;
             SetCursorPos(bounds.Left + (int)Math.Round(x * (bounds.Width - 1)),
                          bounds.Top + (int)Math.Round(y * (bounds.Height - 1)));

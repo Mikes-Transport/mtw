@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);
-const state={user:null,ws:null,peer:null,channel:null,sessionId:null,approved:false,remoteStream:null,pendingIce:[],iceServers:[{urls:'stun:stun.cloudflare.com:3478'}]};
+const state={user:null,ws:null,peer:null,channel:null,sessionId:null,approved:false,remoteStream:null,pendingIce:[],frameChunks:null,frameLastId:0,monitors:[],selectedMonitor:0,iceServers:[{urls:'stun:stun.cloudflare.com:3478'}]};
 const show=(id,yes)=>$(id).hidden=!yes;
 function notice(message,error=true){$('message').textContent=message||'';$('message').style.color=error?'#ffadad':'#88e4b4'}
 function status(text,live=false){$('status').textContent=text;$('dot').classList.toggle('live',live)}
@@ -30,8 +30,9 @@ async function hosts(){
     if(!hosts.length){area.textContent='No computers paired yet.';return}
     for(const host of hosts){
       const row=document.createElement('div');row.className='history-row';
-      const name=document.createElement('span');name.textContent=host.label+' · '+(host.online?'Online':'Offline');
-      const button=document.createElement('button');button.textContent='Connect to this PC';button.disabled=!host.online;
+      const name=document.createElement('span');
+      name.textContent=host.label+' · '+(host.online?'Online':'Offline')+(host.mode==='code'?' · Connection code mode':' · Saved access');
+      const button=document.createElement('button');button.textContent=host.online?'Request connection':'Offline';button.disabled=!host.online;
       button.onclick=()=>connect({hostId:host.id});
       row.append(name,button);area.append(row);
     }
@@ -65,6 +66,7 @@ $('copy-host-key').addEventListener('click',async()=>{
   try{await navigator.clipboard.writeText(value);notice('PC setup key copied.',false)}
   catch{notice('Copy the displayed key manually.')}
 });
+$('refresh-computers').addEventListener('click',()=>hosts());
 $('pair-form').addEventListener('submit',async e=>{
   e.preventDefault();notice('');
   try{
@@ -117,7 +119,10 @@ async function disconnect(){
   const id=state.sessionId;state.sessionId=null;state.approved=false;
   if(state.channel){try{state.channel.close()}catch{}state.channel=null}
   if(state.peer){state.peer.close();state.peer=null}
-  state.pendingIce=[];
+  state.pendingIce=[];state.frameChunks=null;state.frameLastId=0;state.monitors=[];
+  $('monitor-picker').replaceChildren();show('monitor-controls',false);
+  $('canvas').getContext('2d').clearRect(0,0,$('canvas').width,$('canvas').height);
+  show('canvas',false);
   if(state.ws){state.ws.onclose=null;state.ws.close();state.ws=null}
   $('video').srcObject=null;show('viewer-section',false);show('disconnect',false);
   status('Disconnected');if(id)try{await api('connections/'+id+'/disconnect','POST')}catch{}
@@ -133,10 +138,33 @@ async function startPeer(){
   peer.ontrack=e=>{state.remoteStream=e.streams[0]||new MediaStream([e.track]);$('video').srcObject=state.remoteStream;show('placeholder',false);status('Connected · encrypted WebRTC',true)};
   peer.onicecandidate=e=>{if(e.candidate)send({type:'ice',data:e.candidate.toJSON()})};
   peer.onconnectionstatechange=()=>{const connection=peer.connectionState;$('quality').textContent='WebRTC: '+connection;if(['failed','closed','disconnected'].includes(connection)){status('Connection '+connection);if(connection==='failed')disconnect()}};
-  peer.ondatachannel=e=>{if(e.channel.label!=='input'){e.channel.close();return}state.channel=e.channel;state.channel.onopen=()=>status('Connected · input enabled',true);state.channel.onclose=()=>status('Input channel closed')};
+  peer.ondatachannel=e=>{
+    if(e.channel.label==='frames'){
+      e.channel.onmessage=event=>receiveFrame(event.data);
+      return;
+    }
+    if(e.channel.label!=='input'){e.channel.close();return}
+    state.channel=e.channel;
+    state.channel.onopen=()=>status('Connected · input enabled',true);
+    state.channel.onclose=()=>status('Input channel closed');
+  };
   show('viewer-section',true);show('placeholder',true);
 }
 async function signalling(payload){
+  if(payload.type==='monitors'){
+    state.monitors=Array.isArray(payload.monitors)?payload.monitors:[];
+    state.selectedMonitor=Number.isInteger(payload.selected)?payload.selected:0;
+    const picker=$('monitor-picker');picker.replaceChildren();
+    for(const monitor of state.monitors){
+      const option=document.createElement('option');
+      option.value=String(monitor.index);
+      option.textContent=monitor.label+' · '+monitor.width+' × '+monitor.height;
+      picker.append(option);
+    }
+    picker.value=String(state.selectedMonitor);
+    show('monitor-controls',state.monitors.length>0);
+    return;
+  }
   if(payload.type==='status'){
     state.approved=payload.status==='approved';
     if(payload.status==='pending')status('Waiting for host approval…');
@@ -171,11 +199,53 @@ async function connect(details){
   }catch(err){status('Connection failed');notice(err.message)}
   finally{button.disabled=false}
 }
+function receiveFrame(raw){
+  let chunk;
+  try{chunk=JSON.parse(raw)}catch{return}
+  if(chunk.type!=='frame'||!Number.isInteger(chunk.id)||!Number.isInteger(chunk.index)||
+     !Number.isInteger(chunk.total)||chunk.total<1||chunk.total>100||chunk.image?.length>12000)return;
+  if(chunk.monitor!==state.selectedMonitor||chunk.id<=state.frameLastId)return;
+  if(!state.frameChunks||state.frameChunks.id!==chunk.id)
+    state.frameChunks={id:chunk.id,total:chunk.total,parts:new Array(chunk.total),monitor:chunk.monitor,width:chunk.width,height:chunk.height,received:0};
+  const frame=state.frameChunks;
+  if(chunk.index<0||chunk.index>=frame.total||frame.parts[chunk.index]!==undefined)return;
+  frame.parts[chunk.index]=chunk.image;frame.received++;
+  if(frame.received!==frame.total)return;
+  state.frameChunks=null;state.frameLastId=frame.id;
+  const image=new Image();
+  image.onload=()=>{
+    if(!state.approved||frame.monitor!==state.selectedMonitor)return;
+    const canvas=$('canvas');
+    if(canvas.width!==image.width||canvas.height!==image.height){
+      canvas.width=image.width;canvas.height=image.height;
+    }
+    canvas.getContext('2d').drawImage(image,0,0);
+    show('canvas',true);show('placeholder',false);
+    status('Connected · viewing monitor '+(frame.monitor+1),true);
+  };
+  image.src='data:image/jpeg;base64,'+frame.parts.join('');
+}
+$('monitor-picker').addEventListener('change',event=>{
+  const index=Number(event.target.value);
+  if(!Number.isInteger(index)||index<0||!state.monitors.some(m=>m.index===index))return;
+  state.selectedMonitor=index;state.frameChunks=null;state.frameLastId=0;
+  show('placeholder',true);show('canvas',false);
+  send({type:'select-monitor',index});
+});
 $('connect-form').addEventListener('submit',e=>{e.preventDefault();connect({code:$('code').value.trim()})});
 
 function input(data){if(state.approved&&state.channel?.readyState==='open')state.channel.send(JSON.stringify(data))}
 const screen=$('screen');
-function normalized(e){const bounds=screen.getBoundingClientRect();return{x:Math.min(1,Math.max(0,(e.clientX-bounds.left)/bounds.width)),y:Math.min(1,Math.max(0,(e.clientY-bounds.top)/bounds.height))}}
+function normalized(e){
+  const bounds=screen.getBoundingClientRect();
+  const frame=$('canvas');
+  const width=frame.width||16,height=frame.height||9;
+  const scale=Math.min(bounds.width/width,bounds.height/height);
+  const visibleWidth=width*scale,visibleHeight=height*scale;
+  const left=bounds.left+(bounds.width-visibleWidth)/2;
+  const top=bounds.top+(bounds.height-visibleHeight)/2;
+  return{x:Math.min(1,Math.max(0,(e.clientX-left)/visibleWidth)),y:Math.min(1,Math.max(0,(e.clientY-top)/visibleHeight))};
+}
 screen.addEventListener('pointermove',e=>input({type:'mouseMove',...normalized(e)}));
 screen.addEventListener('pointerdown',e=>{screen.focus();input({type:'mouseDown',button:e.button,...normalized(e)})});
 screen.addEventListener('pointerup',e=>input({type:'mouseUp',button:e.button,...normalized(e)}));

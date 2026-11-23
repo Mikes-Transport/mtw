@@ -1,16 +1,12 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MTWStudio Host Screen Capture</title>
-<style>
-:root{font:14px system-ui;color:#dae8f9;background:#0b111d}body{margin:0;padding:14px}h2{margin:0 0 8px}
-p{color:#a5b6ce;line-height:1.5}button{background:#337bef;border:0;border-radius:8px;color:white;padding:13px 16px;font-weight:700;cursor:pointer}
-button:disabled{opacity:.5}video{width:100%;margin-top:12px;max-height:260px;background:#05080f;border-radius:8px}
-#status{margin-top:12px;color:#a5b6ce}
+<title>MTWStudio Host</title><style>
+:root{font:14px system-ui;color:#dae8f9;background:#0b111d}
+body{margin:0;padding:18px}h2{margin:0 0 12px}p{color:#a5b6ce;line-height:1.6}
+#status{padding:15px;border:1px solid #34445f;border-radius:9px;background:#142035}
 </style></head><body>
-<h2>Screen sharing</h2>
-<p>Click the button to choose the screen to share. Windows always requires your permission before another person can view or control your PC.</p>
-<button id="share">Choose screen to share</button>
-<button id="stop" disabled>Stop sharing</button>
-<div id="status">Not sharing</div>
-<video id="preview" autoplay muted playsinline></video>
+<h2>MTWStudio remote support</h2>
+<p>Connected monitors are detected automatically. The remote manager can select a display only after you approve their connection.</p>
+<div id="status">Waiting for the host application…</div>
+<p>You can reject any connection request or press <strong>Disconnect / Stop</strong> in the Windows application at any time.</p>
 <script src="/host.js"></script></body></html>
