@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   portable-windows:
@@ -32,3 +32,15 @@ jobs:
           path: artifacts/host/
           if-no-files-found: error
           retention-days: 7
+      - name: Publish latest portable Windows host
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $tag = 'mtwstudio-host-latest'
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag artifacts/host/MTWStudio.exe --repo $env:GITHUB_REPOSITORY --title 'MTWStudio Host (Latest)' --notes 'Portable Windows build.' --prerelease --target $env:GITHUB_SHA
+          } else {
+            gh release upload $tag artifacts/host/MTWStudio.exe --clobber --repo $env:GITHUB_REPOSITORY
+          }

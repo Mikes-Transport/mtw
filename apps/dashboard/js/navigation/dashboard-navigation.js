@@ -197,7 +197,14 @@
       frame.referrerPolicy = 'no-referrer';
       frame.allow = 'fullscreen';
       frame.style.cssText = 'display:block;width:100%;height:78vh;min-height:550px;border:1px solid #27374d;border-radius:12px;background:#0b111d';
-      studio.append(title, status, open, frame);
+      const download = document.createElement('a');
+      download.className = 'mtwstudio-download';
+      download.href = 'https://github.com/Mikes-Transport/mtw/releases/download/mtwstudio-host-latest/MTWStudio.exe';
+      download.target = '_blank';
+      download.rel = 'noopener noreferrer';
+      download.textContent = 'Download MTWStudio Host';
+      download.style.cssText = 'display:inline-block;padding:10px 14px;margin:8px 12px 12px 0;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none';
+      studio.append(title, status, download, open, frame);
       panels.appendChild(studio);
     }
 

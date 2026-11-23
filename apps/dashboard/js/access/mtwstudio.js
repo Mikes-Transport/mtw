@@ -8,6 +8,8 @@
     const status=panel.querySelector('.mtwstudio-status');
     const iframe=panel.querySelector('.mtwstudio-frame');
     const open=panel.querySelector('.mtwstudio-open');
+    const download=panel.querySelector('.mtwstudio-download');
+    if(download) download.title='Latest published Windows portable host build';
     const address=String(window.MTW_STUDIO_URL||'').trim();
     let url;
     try{url=new URL(address);if(url.protocol!=='https:')throw Error('HTTPS required')}catch{
