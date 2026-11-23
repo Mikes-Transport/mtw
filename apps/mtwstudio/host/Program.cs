@@ -7,21 +7,23 @@ namespace MTWStudio.Host;
 internal static class Program
 {
     private static readonly string LogPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "MTWStudio", "startup-error.log");
+        AppContext.BaseDirectory, "MTWStudio.log");
 
     [STAThread]
     private static void Main()
     {
         try
         {
+            WriteLog("Application starting.");
             ApplicationConfiguration.Initialize();
             Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
             Application.ThreadException += (_, eventArgs) => Report(eventArgs.Exception);
             AppDomain.CurrentDomain.UnhandledException += (_, eventArgs) =>
                 Report(eventArgs.ExceptionObject as Exception ??
                     new InvalidOperationException("Unhandled startup error"));
-            Application.Run(new HostWindow());
+            var window = new HostWindow();
+            window.Shown += (_, _) => WriteLog("Main window displayed.");
+            Application.Run(window);
         }
         catch (Exception ex)
         {
@@ -29,14 +31,18 @@ internal static class Program
         }
     }
 
-    private static void Report(Exception ex)
+    private static void WriteLog(string message)
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
-            File.AppendAllText(LogPath, $"[{DateTimeOffset.Now:O}] {ex}\n");
+            File.AppendAllText(LogPath, $"[{DateTimeOffset.Now:O}] {message}\n");
         }
-        catch { /* A blocked log path must not hide the original exception. */ }
+        catch { /* Running from a read-only folder must not prevent startup. */ }
+    }
+
+    private static void Report(Exception ex)
+    {
+        WriteLog(ex.ToString());
         try
         {
             MessageBox.Show("MTWStudio could not launch.\n\n" + ex.Message +
