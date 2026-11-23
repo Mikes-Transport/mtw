@@ -3,6 +3,7 @@ name: MTWStudio Portable Host
 on:
   push:
     branches:
+      - main
       - feature/mtwstudio-manager-tool
     paths:
       - 'apps/mtwstudio/host/**'

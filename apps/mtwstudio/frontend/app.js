@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);
-const state={user:null,ws:null,peer:null,channel:null,sessionId:null,approved:false,remoteStream:null,iceServers:[{urls:'stun:stun.cloudflare.com:3478'}]};
+const state={user:null,ws:null,peer:null,channel:null,sessionId:null,approved:false,remoteStream:null,pendingIce:[],iceServers:[{urls:'stun:stun.cloudflare.com:3478'}]};
 const show=(id,yes)=>$(id).hidden=!yes;
 function notice(message,error=true){$('message').textContent=message||'';$('message').style.color=error?'#ffadad':'#88e4b4'}
 function status(text,live=false){$('status').textContent=text;$('dot').classList.toggle('live',live)}
@@ -47,6 +47,7 @@ async function disconnect(){
   const id=state.sessionId;state.sessionId=null;state.approved=false;
   if(state.channel){try{state.channel.close()}catch{}state.channel=null}
   if(state.peer){state.peer.close();state.peer=null}
+  state.pendingIce=[];
   if(state.ws){state.ws.onclose=null;state.ws.close();state.ws=null}
   $('video').srcObject=null;show('viewer-section',false);show('disconnect',false);
   status('Disconnected');if(id)try{await api('connections/'+id+'/disconnect','POST')}catch{}
@@ -78,9 +79,13 @@ async function signalling(payload){
   if(payload.type==='offer'){
     await startPeer();
     await state.peer.setRemoteDescription(new RTCSessionDescription(payload.data));
+    for(const candidate of state.pendingIce.splice(0)) await state.peer.addIceCandidate(new RTCIceCandidate(candidate));
     const answer=await state.peer.createAnswer();await state.peer.setLocalDescription(answer);
     send({type:'answer',data:state.peer.localDescription.toJSON()});
-  }else if(payload.type==='ice'&&state.peer)await state.peer.addIceCandidate(new RTCIceCandidate(payload.data));
+  }else if(payload.type==='ice'){
+    if(state.peer?.remoteDescription)await state.peer.addIceCandidate(new RTCIceCandidate(payload.data));
+    else state.pendingIce.push(payload.data);
+  }
 }
 async function connect(details){
   notice('');await disconnect();const button=$('connect');button.disabled=true;

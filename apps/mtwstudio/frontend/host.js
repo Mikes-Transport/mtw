@@ -6,7 +6,7 @@
   const stop = document.getElementById('stop');
   const status = document.getElementById('status');
   const preview = document.getElementById('preview');
-  let stream = null, peer = null, channel = null, approved = false;
+  let stream = null, peer = null, channel = null, approved = false, pendingIce = [];
   const send = value => bridge?.postMessage(value);
   function state(message) { status.textContent = message; }
   function end() {
@@ -32,6 +32,7 @@
   async function call() {
     if (!approved || !stream) return;
     if (peer) peer.close();
+    pendingIce = [];
     peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }] });
     stream.getTracks().forEach(track => peer.addTrack(track, stream));
     channel = peer.createDataChannel('input', { ordered: true });
@@ -61,10 +62,14 @@
     if (!message || typeof message !== 'object') return;
     try {
       if (message.type === 'approved') { approved = true; await call(); }
-      if (message.type === 'answer' && approved && peer)
+      if (message.type === 'answer' && approved && peer) {
         await peer.setRemoteDescription(new RTCSessionDescription(message.data));
-      if (message.type === 'ice' && approved && peer && message.data)
-        await peer.addIceCandidate(new RTCIceCandidate(message.data));
+        for (const candidate of pendingIce.splice(0)) await peer.addIceCandidate(new RTCIceCandidate(candidate));
+      }
+      if (message.type === 'ice' && approved && message.data) {
+        if (peer && peer.remoteDescription) await peer.addIceCandidate(new RTCIceCandidate(message.data));
+        else pendingIce.push(message.data);
+      }
       if (message.type === 'stop') { approved = false; if (peer) peer.close(); peer = null; }
     } catch (err) { state('Connection error: ' + err.message); send({ type: 'peer-failed' }); }
   });
