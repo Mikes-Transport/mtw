@@ -35,6 +35,7 @@ public sealed class HostWindow : Form
     private bool browserNavigationCompleted;
     private string? browserLoadProblem;
     private ulong? capturePageNavigationId;
+    private const string LocalHostPage = "https://mtwstudio-host.local/host.html";
     private readonly string appData = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MTWStudio");
     private readonly string configPath;
@@ -91,6 +92,26 @@ public sealed class HostWindow : Form
             browser?.Dispose();
         };
         LoadSettings();
+    }
+
+    private string PrepareCapturePage()
+    {
+        // Embedded at publish time so the native host does not depend on a
+        // remote web page loading, changing, or being restricted by iframe CSP.
+        var assets = Path.Combine(appData, "capture-page");
+        Directory.CreateDirectory(assets);
+        var assembly = typeof(HostWindow).Assembly;
+        foreach (var file in new[] {
+            (Name: "host.html", Resource: "MTWStudio.Host.CapturePage.html"),
+            (Name: "host.js", Resource: "MTWStudio.Host.CapturePage.js")
+        })
+        {
+            using var source = assembly.GetManifestResourceStream(file.Resource)
+                ?? throw new InvalidOperationException("Capture resource missing: " + file.Resource);
+            using var destination = File.Create(Path.Combine(assets, file.Name));
+            source.CopyTo(destination);
+        }
+        return assets;
     }
 
     private static void AddRow(TableLayoutPanel panel, string label, Control control)
@@ -207,6 +228,8 @@ public sealed class HostWindow : Form
                 browserHolder.Controls.Add(browser);
             }
             await browser.EnsureCoreWebView2Async();
+            browser.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                "mtwstudio-host.local", PrepareCapturePage(), CoreWebView2HostResourceAccessKind.DenyCors);
             browser.CoreWebView2.Settings.IsWebMessageEnabled = true;
             browser.CoreWebView2.Settings.AreDevToolsEnabled = false;
             browser.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
@@ -223,7 +246,7 @@ public sealed class HostWindow : Form
                 // WebView2 may cancel its initial about:blank navigation when a
                 // page is supplied. That cancellation is not a capture failure.
                 if (target.AbsoluteUri == "about:blank") return;
-                var expected = new Uri(baseUri, "/host.html");
+                var expected = new Uri(LocalHostPage);
                 if (target.Scheme != expected.Scheme || target.Authority != expected.Authority ||
                     target.AbsolutePath != expected.AbsolutePath)
                 {
@@ -260,7 +283,7 @@ public sealed class HostWindow : Form
                     SetStatus(browserLoadProblem);
                 }
             };
-            browser.Source = new Uri(baseUri, "/host.html");
+            browser.Source = new Uri(LocalHostPage);
             stop.Enabled = true;
             endpoint.Enabled = false;
             secret.Enabled = false;
@@ -411,8 +434,8 @@ public sealed class HostWindow : Form
 
     private async void BrowserMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs args)
     {
-        if (baseUri == null || !Uri.TryCreate(args.Source, UriKind.Absolute, out var source) ||
-            source.GetLeftPart(UriPartial.Path) != new Uri(baseUri, "/host.html").GetLeftPart(UriPartial.Path)) return;
+        if (!Uri.TryCreate(args.Source, UriKind.Absolute, out var source) ||
+            source.GetLeftPart(UriPartial.Path) != LocalHostPage) return;
         try
         {
             using var doc = JsonDocument.Parse(args.WebMessageAsJson);
