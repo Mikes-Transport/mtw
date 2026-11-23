@@ -19,7 +19,8 @@ const TEMPLATES = [
   'mte-config',
   'promotion-label',
   'barcodes',
-  'model-tool-access'
+  'model-tool-access',
+  'mtwstudio'
 ];
 
 // Tool scripts, in the order the Webflow page used to import them. They are ES
@@ -34,6 +35,7 @@ const TOOL_SCRIPTS = [
   'products/promotion-cards.js',
   'inventory/barcodes.js',
   'config/model-access.js',
+  'access/mtwstudio.js',
   // Timesheet is its own app (apps/timesheet); the dashboard loads it as a tool.
   '../../timesheet/js/timesheet-core.js',
   '../../timesheet/js/timesheet.js'

@@ -1,0 +1,26 @@
+name = "mtwstudio"
+main = "cloudflare/worker.js"
+compatibility_date = "2026-11-01"
+
+[assets]
+directory = "./frontend"
+binding = "ASSETS"
+run_worker_first = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mtwstudio"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "cloudflare/migrations"
+
+[[durable_objects.bindings]]
+name = "SESSIONS"
+class_name = "ConnectionRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ConnectionRoom"]
+
+[vars]
+# Set to the full MTW Webflow origin, for example https://www.example.co.nz
+EMBED_ORIGIN = "https://REPLACE_WITH_YOUR_WEBFLOW_DOMAIN"

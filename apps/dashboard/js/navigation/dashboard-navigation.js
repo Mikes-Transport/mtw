@@ -43,7 +43,8 @@
     'barcodes': { panel: '.barcode-label-panels', name: 'Barcode Labels', roles: ['Counter', 'Stores', 'KeyAccounts', 'HTAB'] },
     'model-tool-access': { panel: '.model-access-panel', name: 'Assign Model Tool Access', roles: ['Managers'] },
     'timesheet': { panel: '.timesheet-panel', name: 'Timesheet', roles: ['Managers'] },
-    'developer-tools': { panel: '.developer-tools-panel', name: 'Manager Tools', roles: ['Managers'] }
+    'developer-tools': { panel: '.developer-tools-panel', name: 'Manager Tools', roles: ['Managers'] },
+    'mtwstudio': { panel: '.mtwstudio-panel', name: 'MTWStudio', roles: ['Managers'] }
   };
 
   // Panel markup lives in apps/dashboard/templates/<tool>.html. js/dashboard.js fetches
