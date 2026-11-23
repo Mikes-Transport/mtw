@@ -17,6 +17,7 @@ new_sqlite_classes = ["ConnectionRoom"]
 
 [vars]
 FIREBASE_PROJECT_ID = "mtw-lookup"
-FIREBASE_API_KEY = "AIzaSyA6i9ZVdE1xmSzjebcx1zUJpA-Zuy_DgSs"
 EMBED_ORIGIN = "https://REPLACE_WITH_YOUR_WEBFLOW_DOMAIN"
-# FIREBASE_SERVICE_ACCOUNT_JSON is configured as an encrypted Wrangler secret, never committed.
+# Encrypted Cloudflare secrets required: FIREBASE_SERVICE_ACCOUNT_JSON,
+# MTWSTUDIO_SETUP_KEY (random 32+ characters), and MTWSTUDIO_TOTP_KEY
+# (base64-encoded 32 cryptographically random bytes). Never commit their values.

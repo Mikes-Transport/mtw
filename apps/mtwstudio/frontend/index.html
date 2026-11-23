@@ -2,7 +2,22 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1220"><title>MTWStudio | Secure Remote Access</title><link rel="stylesheet" href="/style.css"></head>
 <body><main class="app">
 <header><div class="brand"><span class="mark">M</span><div><strong>MTW<span>Studio</span></strong><small>SECURE REMOTE ACCESS</small></div></div><div id="identity"></div></header>
-<section id="login" class="card login"><div class="eyebrow">MANAGER ACCESS</div><h1>Sign in to MTWStudio</h1><p>Additional authentication is required. Dashboard visibility alone does not grant remote access.</p><form id="login-form"><label>Email<input id="email" type="email" autocomplete="username" required></label><label>Password<input id="password" type="password" autocomplete="current-password" required></label><button type="submit">Sign in securely</button></form></section>
+<section id="login" class="card login">
+<div class="eyebrow">MANAGER VERIFICATION</div><h1>Authenticator verification</h1>
+<p>Enter your registered manager username and the six-digit code from Microsoft Authenticator, Google Authenticator, or another compatible app.</p>
+<form id="login-form"><label>Manager username<input id="username" maxlength="50" autocomplete="username" required></label>
+<label>Authenticator code<input id="auth-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required></label>
+<button type="submit">Verify and unlock</button></form></section>
+<section id="setup" class="card login" hidden><div class="eyebrow">ONE-TIME ENROLMENT</div>
+<h1>Set up your authenticator</h1><p>First-time setup requires the private setup key stored as a Cloudflare secret.</p>
+<form id="setup-form"><label>Manager username<input id="setup-username" maxlength="50" required></label>
+<label>Display name<input id="setup-name" maxlength="80" required></label>
+<label>Private setup key<input id="setup-key" type="password" autocomplete="off" required></label>
+<button type="submit">Generate authenticator secret</button></form>
+<div id="setup-confirm" hidden><p>Add an account manually in your authenticator app using this secret (shown only during setup):</p>
+<p><code id="totp-secret" style="word-break:break-all;user-select:all"></code></p>
+<form id="confirm-form"><label>Six-digit code from app<input id="confirm-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required></label>
+<button type="submit">Verify and activate</button></form></div></section>
 <section id="workspace" hidden><div class="head"><div><div class="eyebrow">MANAGER CONSOLE</div><h1>Remote access</h1><p>Access is permitted only after the remote host explicitly approves the request.</p></div><button id="logout" class="secondary">Log out</button></div>
 <div class="layout"><section class="card"><h2>New connection</h2><form id="connect-form"><label>Running computer's connection code<input id="code" placeholder="Enter code from host" maxlength="64" autocomplete="off" spellcheck="false" required></label><button type="submit" id="connect">Request access</button></form><div class="state"><span id="dot"></span><span id="status">Not connected</span></div><button id="disconnect" class="danger" hidden>Disconnect</button></section>
 <section class="card"><h2>Register a computer</h2><form id="register-form"><label>Computer name<input id="host-label" maxlength="100" autocomplete="off" placeholder="e.g. Office Reception PC" required></label><button type="submit" class="secondary">Generate host access key</button></form><div id="host-credential" hidden style="overflow-wrap:anywhere;margin:12px 0;border:1px solid #547193;border-radius:9px;padding:12px"><strong>Host access key (shown once)</strong><p>Enter this key in the portable Windows host. It is not shown again.</p><code id="host-access-key" style="user-select:all"></code></div><h2>Saved computers</h2><form id="pair-form"><label>Pair a computer using its running code<input id="pair-code" maxlength="20" autocomplete="off" placeholder="16-digit host code" required></label><button type="submit" class="secondary">Save this PC</button></form><div id="computers" class="history">No computers paired yet.</div><h2 style="margin-top:20px">Recent connections</h2><div id="history" class="history">No connections yet.</div></section></div>

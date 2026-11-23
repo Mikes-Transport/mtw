@@ -85,37 +85,85 @@ async function queryDocs(env,col,field,value){
   const res=await firebaseFetch(env,url,{method:'POST',body:JSON.stringify(query)});
   return (await res.json()).flatMap(x=>x.document?[{id:x.document.name.split('/').at(-1),...fromFields(x.document.fields||{})}]:[]);
 }
-async function firebaseIdentity(env,email,password){
-  if(!env.FIREBASE_API_KEY)throw Error('Firebase web API key missing');
-  const url='https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key='+encodeURIComponent(env.FIREBASE_API_KEY);
-  const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email,password,returnSecureToken:true})});
-  if(!response.ok)return null;
-  return response.json();
+
+const b32alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+function base32(bytes){
+  let n=0,bits=0,out='';
+  for(const byte of bytes){n=(n<<8)|byte;bits+=8;while(bits>=5){bits-=5;out+=b32alphabet[(n>>bits)&31]}}
+  if(bits)out+=b32alphabet[(n<<(5-bits))&31];
+  return out;
 }
-async function verifyToken(env,token){
-  if(!token||token.length>10000)return null;
-  let h,p,signature;
-  try{
-    const parts=token.split('.');if(parts.length!==3)return null;
-    h=JSON.parse(new TextDecoder().decode(decode64(parts[0])));p=JSON.parse(new TextDecoder().decode(decode64(parts[1])));signature=decode64(parts[2]);
-    if(h.alg!=='RS256'||typeof h.kid!=='string'||!h.kid||p.aud!==env.FIREBASE_PROJECT_ID||
-       p.iss!=='https://securetoken.google.com/'+env.FIREBASE_PROJECT_ID||typeof p.sub!=='string'||
-       !p.sub||p.sub.length>128||p.exp*1000<now()||p.iat*1000>now()||p.auth_time*1000>now())return null;
-    if(!jwkCache||jwkCache.until<now()){
-      const response=await fetch('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com');
-      if(!response.ok)return null;jwkCache={keys:(await response.json()).keys,until:now()+1800000};
-    }
-    const jwk=jwkCache.keys.find(x=>x.kid===h.kid);if(!jwk)return null;
-    const key=await crypto.subtle.importKey('jwk',jwk,{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['verify']);
-    const ok=await crypto.subtle.verify('RSASSA-PKCS1-v1_5',key,signature,enc.encode(token.split('.').slice(0,2).join('.')));
-    return ok?p:null;
-  }catch{return null}
+function fromBase32(text){
+  let n=0,bits=0,out=[];
+  for(const ch of text.toUpperCase().replace(/=+$/,'')){
+    const i=b32alphabet.indexOf(ch);if(i<0)throw Error('Bad authenticator secret');
+    n=(n<<5)|i;bits+=5;
+    if(bits>=8){bits-=8;out.push((n>>bits)&255)}
+  }
+  return new Uint8Array(out);
 }
-async function account(req,env){
-  const claim=await verifyToken(env,tokenCookie(req));
-  if(!claim)return null;
-  const manager=await getDoc(env,'mtwstudio_managers',claim.sub);
-  return manager?.enabled===true?{id:claim.sub,name:manager.name||claim.name||claim.email||'Manager',email:claim.email,role:'manager'}:null;
+function aesKey(env){
+  const value=String(env.MTWSTUDIO_TOTP_KEY||'');
+  if(!/^[A-Za-z0-9+/]{43}=$/.test(value))throw Error('Missing authenticator encryption key');
+  return crypto.subtle.importKey('raw',Uint8Array.from(atob(value),v=>v.charCodeAt(0)),{name:'AES-GCM'},false,['encrypt','decrypt']);
+}
+async function seal(env,secret){
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const bytes=await crypto.subtle.encrypt({name:'AES-GCM',iv},await aesKey(env),enc.encode(secret));
+  return b64url(iv)+'.'+b64url(new Uint8Array(bytes));
+}
+async function unseal(env,value){
+  const [nonce,cipher]=String(value||'').split('.');
+  if(!nonce||!cipher)throw Error('Missing encrypted authenticator');
+  const bytes=await crypto.subtle.decrypt({name:'AES-GCM',iv:decode64(nonce)},await aesKey(env),decode64(cipher));
+  return new TextDecoder().decode(bytes);
+}
+async function totpStep(secret,step){
+  const key=await crypto.subtle.importKey('raw',fromBase32(secret),{name:'HMAC',hash:'SHA-1'},false,['sign']);
+  const counter=new Uint8Array(8);new DataView(counter.buffer).setUint32(4,step);
+  const digest=new Uint8Array(await crypto.subtle.sign('HMAC',key,counter));
+  const offset=digest[19]&15;
+  const n=((digest[offset]&127)<<24)|(digest[offset+1]<<16)|(digest[offset+2]<<8)|digest[offset+3];
+  return String(n%1000000).padStart(6,'0');
+}
+async function verifiedStep(secret,code){
+  if(!/^\d{6}$/.test(code))return null;
+  const current=Math.floor(now()/30000);
+  for(const step of [current-1,current,current+1]){
+    const expected=await totpStep(secret,step);
+    let diff=0;for(let i=0;i<6;i++)diff|=expected.charCodeAt(i)^code.charCodeAt(i);
+    if(diff===0)return step;
+  }
+  return null;
+}
+async function rateLogin(env,username,request){
+  const suffix=await hash(username.toLowerCase());
+  const attempts=await env.SESSIONS.get(env.SESSIONS.idFromName('auth-rate:'+suffix)).fetch('https://room.internal/rate',{method:'POST'});
+  if(attempts.status===429)return false;
+  const addr=request.headers.get('cf-connecting-ip')||'unknown';
+  const ip=await env.SESSIONS.get(env.SESSIONS.idFromName('auth-ip:'+await hash(addr))).fetch('https://room.internal/rate',{method:'POST'});
+  return ip.status!==429;
+}
+async function claimStep(env,userId,step){
+  const response=await env.SESSIONS.get(env.SESSIONS.idFromName('totp:'+userId)).fetch(
+    'https://room.internal/claim-step',{method:'POST',body:JSON.stringify({step})});
+  return response.ok;
+}
+function usernameOk(value){return /^[a-z][a-z0-9._-]{2,49}$/.test(value)}
+async function setupAllowed(env,key){
+  const configured=String(env.MTWSTUDIO_SETUP_KEY||'');
+  if(configured.length<32||key.length!==configured.length)return false;
+  const a=await hash(configured),b=await hash(key);
+  let different=0;for(let i=0;i<a.length;i++)different|=a.charCodeAt(i)^b.charCodeAt(i);
+  return different===0;
+}
+async function account(request,env){
+  const value=tokenCookie(request);
+  if(!value||!/^[a-f0-9]{64}$/.test(value))return null;
+  const session=await getDoc(env,'mtwstudio_sessions',await hash(value));
+  if(!session||session.expiresAt<now())return null;
+  const user=await getDoc(env,'mtwstudio_managers',session.userId);
+  return user?.enabled===true&&user?.totpEncrypted?{id:session.userId,name:user.name,role:'manager'}:null;
 }
 async function agent(req,env){
   const match=(req.headers.get('authorization')||'').match(/^Bearer ([a-f0-9]{64})$/);
@@ -135,16 +183,51 @@ async function handler(request,env){
   const url=new URL(request.url),path=url.pathname,method=request.method;
   if(!path.startsWith('/api/'))return restricted(await env.ASSETS.fetch(request),env);
   if(method!=='GET'&&!originOk(request)&&!path.startsWith('/api/agent/'))return fail(403,'Invalid origin');
+  if(path==='/api/auth/setup-status'&&method==='GET'){
+    const state=await getDoc(env,'mtwstudio_config','bootstrap');
+    return json({needsSetup:state?.completed!==true});
+  }
+  if(path==='/api/auth/setup'&&method==='POST'){
+    const body=await readJson(request),key=String(body.setupKey||''),username=String(body.username||'').toLowerCase().trim();
+    if(!await rateLogin(env,'bootstrap',request))return fail(429,'Too many attempts');
+    if(!await setupAllowed(env,key))return fail(403,'Setup not authorised');
+    if((await getDoc(env,'mtwstudio_config','bootstrap'))?.completed===true)return fail(409,'Setup already completed');
+    if(!usernameOk(username))return fail(400,'Username must be 3–50 letters, numbers, dots, hyphens or underscores');
+    if(await getDoc(env,'mtwstudio_managers',username))return fail(409,'Manager already registered');
+    const name=String(body.name||'').trim();
+    if(name.length<2||name.length>80)return fail(400,'Invalid display name');
+    const secret=base32(crypto.getRandomValues(new Uint8Array(20)));
+    await putDoc(env,'mtwstudio_enrollment','bootstrap',{username,name,secretEncrypted:await seal(env,secret),expiresAt:now()+600000});
+    const issuer='MTWStudio';
+    const label=issuer+':'+username;
+    const uri='otpauth://totp/'+encodeURIComponent(label)+'?'+new URLSearchParams({secret,issuer,algorithm:'SHA1',digits:'6',period:'30'});
+    return json({username,secret,uri,expiresAt:now()+600000});
+  }
+  if(path==='/api/auth/setup/confirm'&&method==='POST'){
+    const body=await readJson(request),key=String(body.setupKey||''),code=String(body.code||'').trim();
+    if(!await rateLogin(env,'bootstrap',request))return fail(429,'Too many attempts');
+    if(!await setupAllowed(env,key))return fail(403,'Setup not authorised');
+    if((await getDoc(env,'mtwstudio_config','bootstrap'))?.completed===true)return fail(409,'Setup already completed');
+    const pending=await getDoc(env,'mtwstudio_enrollment','bootstrap');
+    if(!pending||pending.expiresAt<now())return fail(410,'Setup has expired');
+    const match=await verifiedStep(await unseal(env,pending.secretEncrypted),code);
+    if(match===null||!await claimStep(env,pending.username,match))return fail(401,'Invalid authenticator code');
+    await putDoc(env,'mtwstudio_managers',pending.username,{name:pending.name,enabled:true,totpEncrypted:pending.secretEncrypted,createdAt:now()});
+    await putDoc(env,'mtwstudio_config','bootstrap',{completed:true,completedAt:now()});
+    await patchDoc(env,'mtwstudio_enrollment','bootstrap',{secretEncrypted:null,expiresAt:0});
+    return json({ok:true});
+  }
   if(path==='/api/auth/login'&&method==='POST'){
-    const body=await readJson(request),email=String(body.email||'').toLowerCase().trim(),password=String(body.password||'');
-    if(email.length>254||password.length>1024||!email||!password)return fail(400,'Invalid credentials');
-    const rate=await env.SESSIONS.get(env.SESSIONS.idFromName('login:'+await hash(email+'|'+(request.headers.get('cf-connecting-ip')||'unknown')))).fetch('https://room.internal/rate',{method:'POST'});
-    if(rate.status===429)return fail(429,'Too many attempts');
-    const auth=await firebaseIdentity(env,email,password);
-    const claim=await verifyToken(env,auth?.idToken);
-    const manager=claim?await getDoc(env,'mtwstudio_managers',claim.sub):null;
-    if(!manager?.enabled)return fail(401,'Invalid credentials');
-    return json({user:{id:claim.sub,name:manager.name||email,email,role:'manager'}},200,{'set-cookie':cookie(auth.idToken,Math.min(3600,Number(auth.expiresIn||3600)))});
+    const body=await readJson(request),username=String(body.username||'').trim().toLowerCase(),code=String(body.code||'').trim();
+    if(!usernameOk(username)||!/^\d{6}$/.test(code))return fail(401,'Invalid authenticator code');
+    if(!await rateLogin(env,username,request))return fail(429,'Too many attempts; try again later');
+    const manager=await getDoc(env,'mtwstudio_managers',username);
+    if(!manager?.enabled||!manager.totpEncrypted)return fail(401,'Invalid authenticator code');
+    const match=await verifiedStep(await unseal(env,manager.totpEncrypted),code);
+    if(match===null||!await claimStep(env,username,match))return fail(401,'Invalid authenticator code');
+    const token=random(),expiresAt=now()+SESSION_MS;
+    await putDoc(env,'mtwstudio_sessions',await hash(token),{userId:username,expiresAt,createdAt:now()});
+    return json({user:{id:username,name:manager.name,role:'manager'}},200,{'set-cookie':cookie(token,SESSION_MS/1000)});
   }
   if(path==='/api/agent/mode'&&method==='POST'){
     const host=await agent(request,env);if(!host)return fail(401,'Invalid host credentials');
@@ -181,7 +264,12 @@ async function handler(request,env){
   const user=await account(request,env);
   if(!user)return fail(401,'Manager sign-in required');
   if(path==='/api/auth/me'&&method==='GET')return json({user});
-  if(path==='/api/auth/logout'&&method==='POST')return json({ok:true},200,{'set-cookie':cookie('',0)});
+  if(path==='/api/auth/logout'&&method==='POST'){
+    const token=tokenCookie(request);
+    if(token&&/^[a-f0-9]{64}$/.test(token))
+      await patchDoc(env,'mtwstudio_sessions',await hash(token),{expiresAt:0});
+    return json({ok:true},200,{'set-cookie':cookie('',0)});
+  }
   if(path==='/api/admin/hosts'&&method==='POST'){
     const body=await readJson(request),label=String(body.label||'').trim();
     if(label.length<2||label.length>100)return fail(400,'Computer name must be 2–100 characters');
@@ -250,6 +338,7 @@ async function handler(request,env){
     if(!session||session.controllerId!==user.id)return fail(404,'Session not found');
     if(session.expiresAt<now())return fail(410,'Session expired');
     if(match[2]==='/ws'&&method==='GET'){
+      if(!originOk(request))return fail(403,'Invalid WebSocket origin');
       if(request.headers.get('upgrade')?.toLowerCase()!=='websocket')return fail(400,'WebSocket required');
       return proxyRoom(env,session.hostId,'/ws?role=controller&session='+session.id,{headers:{upgrade:'websocket','x-internal-user':user.id}});
     }
@@ -279,6 +368,14 @@ export class ConnectionRoom {
   async fetch(request){
     const url=new URL(request.url);
     if(url.pathname==='/rate'||url.pathname==='/rate-code')return this.rate(url.pathname);
+    if(url.pathname==='/claim-step'&&request.method==='POST'){
+      const {step}=await request.json();
+      if(!Number.isSafeInteger(step)||step<0||Math.abs(step-Math.floor(now()/30000))>1)return fail(400,'Invalid step');
+      const last=await this.state.storage.get('lastStep')||0;
+      if(step<=last)return fail(409,'Code already used');
+      await this.state.storage.put('lastStep',step);
+      return json({ok:true});
+    }
     if(url.pathname==='/presence'&&request.method==='GET')return this.sockets('agent').length?json({online:true}):fail(404,'Offline');
     if(url.pathname==='/request'&&request.method==='POST'){
       if(!this.sockets('agent').length)return fail(409,'Host offline');

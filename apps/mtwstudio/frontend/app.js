@@ -10,7 +10,18 @@ async function api(path,method='GET',body){
   return payload;
 }
 async function refresh(){
-  try{const {user}=await api('auth/me');state.user=user;$('identity').textContent=user.name+' · Manager';show('login',false);show('workspace',true);await Promise.all([history(),hosts()])}catch{state.user=null;show('login',true);show('workspace',false);$('identity').textContent='Manager sign-in'}
+  try{
+    const {user}=await api('auth/me');
+    state.user=user;$('identity').textContent=user.name+' · Verified manager';
+    show('login',false);show('setup',false);show('workspace',true);
+    await Promise.all([history(),hosts()]);
+  }catch{
+    state.user=null;show('workspace',false);$('identity').textContent='Authenticator required';
+    try{
+      const {needsSetup}=await api('auth/setup-status');
+      show('setup',needsSetup);show('login',!needsSetup);
+    }catch{show('setup',false);show('login',true)}
+  }
 }
 async function hosts(){
   const area=$('computers');
@@ -40,7 +51,38 @@ async function history(){
     for(const item of connections){const row=document.createElement('div');row.className='history-row';const host=document.createElement('span');host.textContent=item.host;const info=document.createElement('small');info.textContent=new Date(item.created_at).toLocaleString()+' · '+item.status;row.append(host,info);$('history').appendChild(row)}
   }catch(e){notice(e.message)}
 }
-$('login-form').addEventListener('submit',async e=>{e.preventDefault();const btn=e.target.querySelector('button');btn.disabled=true;notice('');try{await api('auth/login','POST',{email:$('email').value,password:$('password').value});$('password').value='';await refresh()}catch(e){notice(e.message)}finally{btn.disabled=false}});
+$('login-form').addEventListener('submit',async event=>{
+  event.preventDefault();const button=event.target.querySelector('button');button.disabled=true;notice('');
+  try{
+    const username=$('username').value.trim().toLowerCase();
+    await api('auth/login','POST',{username,code:$('auth-code').value.trim()});
+    sessionStorage.setItem('mtwstudio_username',username);
+    $('auth-code').value='';
+    await refresh();
+  }catch(error){notice(error.message)}finally{button.disabled=false}
+});
+$('setup-form').addEventListener('submit',async event=>{
+  event.preventDefault();const button=event.target.querySelector('button');button.disabled=true;notice('');
+  try{
+    const result=await api('auth/setup','POST',{
+      username:$('setup-username').value.trim().toLowerCase(),
+      name:$('setup-name').value.trim(),setupKey:$('setup-key').value
+    });
+    $('totp-secret').textContent=result.secret;
+    show('setup-confirm',true);
+    notice('Add the secret to your authenticator and confirm a code.',false);
+  }catch(error){notice(error.message)}finally{button.disabled=false}
+});
+$('confirm-form').addEventListener('submit',async event=>{
+  event.preventDefault();const button=event.target.querySelector('button');button.disabled=true;notice('');
+  try{
+    await api('auth/setup/confirm','POST',{setupKey:$('setup-key').value,code:$('confirm-code').value.trim()});
+    $('totp-secret').textContent='';$('setup-key').value='';$('confirm-code').value='';
+    show('setup-confirm',false);
+    $('username').value=$('setup-username').value.trim().toLowerCase();
+    await refresh();notice('Authenticator registered. Enter a fresh code to unlock.',false);
+  }catch(error){notice(error.message)}finally{button.disabled=false}
+});
 $('logout').onclick=async()=>{await disconnect();try{await api('auth/logout','POST')}catch{}await refresh()};
 function send(message){if(state.ws?.readyState===WebSocket.OPEN)state.ws.send(JSON.stringify(message))}
 async function disconnect(){
@@ -114,4 +156,5 @@ screen.addEventListener('wheel',e=>{if(state.channel?.readyState==='open'){e.pre
 screen.addEventListener('keydown',e=>{if(!state.approved||!state.channel||state.channel.readyState!=='open')return;e.preventDefault();input({type:'keyDown',code:e.code,key:e.key,ctrl:e.ctrlKey,shift:e.shiftKey,alt:e.altKey,meta:e.metaKey})});
 screen.addEventListener('keyup',e=>{if(state.approved){e.preventDefault();input({type:'keyUp',code:e.code,key:e.key})}});
 window.addEventListener('pagehide',()=>{if(state.ws)state.ws.close()});
+$('username').value=sessionStorage.getItem('mtwstudio_username')||'';
 refresh();
