@@ -37,6 +37,27 @@ async function hosts(){
     }
   }catch(e){notice(e.message)}
 }
+$('register-form').addEventListener('submit',async event=>{
+  event.preventDefault();
+  const button=event.target.querySelector('button');
+  if(button.disabled)return;
+  button.disabled=true;
+  notice('');
+  show('host-credential',false);
+  $('host-access-key').textContent='';
+  try{
+    const label=$('host-label').value.trim();
+    const result=await api('admin/hosts','POST',{label});
+    $('host-access-key').textContent=result.accessKey;
+    show('host-credential',true);
+    $('host-label').value='';
+    notice('Computer registered. Copy the host access key into the Windows app. It is shown only once.',false);
+  }catch(error){
+    notice('Could not register computer: '+error.message);
+  }finally{
+    button.disabled=false;
+  }
+});
 $('pair-form').addEventListener('submit',async e=>{
   e.preventDefault();notice('');
   try{
