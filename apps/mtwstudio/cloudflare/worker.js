@@ -136,12 +136,14 @@ async function verifiedStep(secret,code){
   }
   return null;
 }
-async function rateLogin(env,username,request){
-  const suffix=await hash(username.toLowerCase());
-  const attempts=await env.SESSIONS.get(env.SESSIONS.idFromName('auth-rate:'+suffix)).fetch('https://room.internal/rate',{method:'POST'});
+async function rateLogin(env,purpose,username,request){
+  // Keep enrolment, confirmation and ordinary login attempts in distinct buckets.
+  // A prior setup-key typo must not lock out the first authenticator confirmation.
+  const suffix=await hash(purpose+':'+username.toLowerCase());
+  const attempts=await env.SESSIONS.get(env.SESSIONS.idFromName('auth-rate-v2:'+suffix)).fetch('https://room.internal/rate',{method:'POST'});
   if(attempts.status===429)return false;
   const addr=request.headers.get('cf-connecting-ip')||'unknown';
-  const ip=await env.SESSIONS.get(env.SESSIONS.idFromName('auth-ip:'+await hash(addr))).fetch('https://room.internal/rate',{method:'POST'});
+  const ip=await env.SESSIONS.get(env.SESSIONS.idFromName('auth-ip-v2:'+await hash(purpose+':'+addr))).fetch('https://room.internal/rate',{method:'POST'});
   return ip.status!==429;
 }
 async function claimStep(env,userId,step){
@@ -189,7 +191,7 @@ async function handler(request,env){
   }
   if(path==='/api/auth/setup'&&method==='POST'){
     const body=await readJson(request),key=String(body.setupKey||''),username=String(body.username||'').toLowerCase().trim();
-    if(!await rateLogin(env,'bootstrap',request))return fail(429,'Too many attempts');
+    if(!await rateLogin(env,'setup-key','bootstrap',request))return fail(429,'Too many attempts');
     if(String(env.MTWSTUDIO_SETUP_KEY||'').length<32)return fail(503,'Cloudflare MTWSTUDIO_SETUP_KEY is missing or shorter than 32 characters. Set a 32+ character Production secret and redeploy.');
     if(!await setupAllowed(env,key))return fail(403,'Setup key does not match the Production Cloudflare secret. Check for spaces, line breaks or an older deployment.');
     if((await getDoc(env,'mtwstudio_config','bootstrap'))?.completed===true)return fail(409,'Setup already completed');
@@ -206,7 +208,7 @@ async function handler(request,env){
   }
   if(path==='/api/auth/setup/confirm'&&method==='POST'){
     const body=await readJson(request),key=String(body.setupKey||''),code=String(body.code||'').trim();
-    if(!await rateLogin(env,'bootstrap',request))return fail(429,'Too many attempts');
+    if(!await rateLogin(env,'setup-confirm','bootstrap',request))return fail(429,'Too many attempts');
     if(String(env.MTWSTUDIO_SETUP_KEY||'').length<32)return fail(503,'Cloudflare MTWSTUDIO_SETUP_KEY is missing or shorter than 32 characters. Set a 32+ character Production secret and redeploy.');
     if(!await setupAllowed(env,key))return fail(403,'Setup key does not match the Production Cloudflare secret. Check for spaces, line breaks or an older deployment.');
     if((await getDoc(env,'mtwstudio_config','bootstrap'))?.completed===true)return fail(409,'Setup already completed');
@@ -222,7 +224,7 @@ async function handler(request,env){
   if(path==='/api/auth/login'&&method==='POST'){
     const body=await readJson(request),username=String(body.username||'').trim().toLowerCase(),code=String(body.code||'').trim();
     if(!usernameOk(username)||!/^\d{6}$/.test(code))return fail(401,'Invalid authenticator code');
-    if(!await rateLogin(env,username,request))return fail(429,'Too many attempts; try again later');
+    if(!await rateLogin(env,'manager-login',username,request))return fail(429,'Too many attempts; try again later');
     const manager=await getDoc(env,'mtwstudio_managers',username);
     if(!manager?.enabled||!manager.totpEncrypted)return fail(401,'Invalid authenticator code');
     const match=await verifiedStep(await unseal(env,manager.totpEncrypted),code);
