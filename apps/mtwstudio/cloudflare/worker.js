@@ -179,11 +179,10 @@ const proxyRoom=(env,id,path,init={})=>room(env,id).fetch(new Request('https://r
 const DASHBOARD_ORIGIN='https://mtw-lookup-2026.webflow.io';
 const securityHeaders=env=>({'Content-Security-Policy':"default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors "+DASHBOARD_ORIGIN+"; form-action 'self'; connect-src 'self' wss:; img-src 'self' data:; media-src 'self' blob:; script-src 'self'; style-src 'self' 'unsafe-inline';",'X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Strict-Transport-Security':'max-age=31536000; includeSubDomains'});
 const dashboardEmbed=req=>{
-  const dest=req.headers.get('sec-fetch-dest');
-  const ref=req.headers.get('referer')||'';
-  // Browsers send an origin-only Referer for cross-origin iframe navigations.
-  // The CSP frame-ancestors directive independently restricts the actual parent.
-  return dest==='iframe' && (ref===DASHBOARD_ORIGIN+'/'||ref.startsWith(DASHBOARD_ORIGIN+'/dashboard'));
+  // A direct top-level navigation is denied; the browser enforces the
+  // authorised parent origin using CSP frame-ancestors on the HTML response.
+  // Do not rely on Referer, which privacy settings can suppress.
+  return req.headers.get('sec-fetch-dest')==='iframe';
 };
 function restricted(response,env){
   const headers=new Headers(response.headers);for(const[k,v]of Object.entries(securityHeaders(env)))headers.set(k,v);
