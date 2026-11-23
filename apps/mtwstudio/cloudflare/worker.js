@@ -190,7 +190,8 @@ async function handler(request,env){
   if(path==='/api/auth/setup'&&method==='POST'){
     const body=await readJson(request),key=String(body.setupKey||''),username=String(body.username||'').toLowerCase().trim();
     if(!await rateLogin(env,'bootstrap',request))return fail(429,'Too many attempts');
-    if(!await setupAllowed(env,key))return fail(403,'Setup not authorised');
+    if(String(env.MTWSTUDIO_SETUP_KEY||'').length<32)return fail(503,'Cloudflare MTWSTUDIO_SETUP_KEY is missing or shorter than 32 characters. Set a 32+ character Production secret and redeploy.');
+    if(!await setupAllowed(env,key))return fail(403,'Setup key does not match the Production Cloudflare secret. Check for spaces, line breaks or an older deployment.');
     if((await getDoc(env,'mtwstudio_config','bootstrap'))?.completed===true)return fail(409,'Setup already completed');
     if(!usernameOk(username))return fail(400,'Username must be 3–50 letters, numbers, dots, hyphens or underscores');
     if(await getDoc(env,'mtwstudio_managers',username))return fail(409,'Manager already registered');
@@ -206,7 +207,8 @@ async function handler(request,env){
   if(path==='/api/auth/setup/confirm'&&method==='POST'){
     const body=await readJson(request),key=String(body.setupKey||''),code=String(body.code||'').trim();
     if(!await rateLogin(env,'bootstrap',request))return fail(429,'Too many attempts');
-    if(!await setupAllowed(env,key))return fail(403,'Setup not authorised');
+    if(String(env.MTWSTUDIO_SETUP_KEY||'').length<32)return fail(503,'Cloudflare MTWSTUDIO_SETUP_KEY is missing or shorter than 32 characters. Set a 32+ character Production secret and redeploy.');
+    if(!await setupAllowed(env,key))return fail(403,'Setup key does not match the Production Cloudflare secret. Check for spaces, line breaks or an older deployment.');
     if((await getDoc(env,'mtwstudio_config','bootstrap'))?.completed===true)return fail(409,'Setup already completed');
     const pending=await getDoc(env,'mtwstudio_enrollment','bootstrap');
     if(!pending||pending.expiresAt<now())return fail(410,'Setup has expired');
