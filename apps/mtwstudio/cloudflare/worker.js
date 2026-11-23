@@ -296,6 +296,15 @@ async function handler(request,env){
     await putDoc(env,'mtwstudio_hosts',id,{label,enabled:true,mode:'code',createdAt:now(),createdBy:user.id,codeHash:null,codeExpires:0});
     return json({label,accessKey},201);
   }
+  const removeHost=path.match(/^\/api\/admin\/hosts\/([a-f0-9]{64})$/);
+  if(removeHost&&method==='DELETE'){
+    const id=removeHost[1],host=await getDoc(env,'mtwstudio_hosts',id);
+    if(!host||host.createdBy!==user.id)return fail(404,'Computer not found');
+    if(!host.enabled)return json({ok:true});
+    await patchDoc(env,'mtwstudio_hosts',id,{enabled:false,disabledAt:now(),disabledBy:user.id});
+    try{await proxyRoom(env,id,'/revoke',{method:'POST'})}catch(error){console.error('Revoke host room failed',error?.message)}
+    return json({ok:true});
+  }
   async function lookupCode(code){
     if(!/^[A-F0-9]{16}$/.test(code))return null;
     const entry=await getDoc(env,'mtwstudio_codes',await hash(code));
@@ -415,6 +424,11 @@ export class ConnectionRoom {
       if(existing&&existing.status!=='ended'&&existing.status!=='rejected'&&existing.expires>now())return fail(409,'Already paired');
       await this.state.storage.put('connection',{...body,status:'pending'});
       this.emit('agent',{type:'request',sessionId:body.id,controllerName:body.controllerName,expiresAt:body.expires});
+      return json({ok:true});
+    }
+    if(url.pathname==='/revoke'&&request.method==='POST'){
+      await this.end('Computer registration removed');
+      for(const socket of this.sockets('agent'))try{socket.close(1000,'Computer registration removed')}catch{}
       return json({ok:true});
     }
     if(url.pathname==='/end'&&request.method==='POST'){await this.end('disconnected');return json({ok:true})}

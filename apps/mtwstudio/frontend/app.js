@@ -32,9 +32,27 @@ async function hosts(){
       const row=document.createElement('div');row.className='history-row';
       const name=document.createElement('span');
       name.textContent=host.label+' · '+(host.online?'Online':'Offline')+(host.mode==='code'?' · Connection code mode':' · Saved access');
+      const actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;align-items:center;flex-wrap:wrap';
       const button=document.createElement('button');button.textContent=host.online?'Request connection':'Offline';button.disabled=!host.online;
       button.onclick=()=>connect({hostId:host.id});
-      row.append(name,button);area.append(row);
+      actions.append(button);
+      if(host.owned){
+        const remove=document.createElement('button');
+        remove.type='button';remove.className='danger';remove.style.marginTop='0';
+        remove.textContent='Remove';
+        remove.title='Revoke this PC setup key and remove the computer';
+        remove.onclick=async()=>{
+          if(!confirm('Remove '+host.label+' from MTWStudio? This will revoke its current PC setup key.'))return;
+          remove.disabled=true;notice('');
+          try{
+            await api('admin/hosts/'+host.id,'DELETE');
+            notice(host.label+' removed. Its old PC setup key no longer works.',false);
+            await hosts();
+          }catch(error){notice('Could not remove computer: '+error.message);remove.disabled=false}
+        };
+        actions.append(remove);
+      }
+      row.append(name,actions);area.append(row);
     }
   }catch(e){notice(e.message)}
 }

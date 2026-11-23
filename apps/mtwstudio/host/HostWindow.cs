@@ -32,6 +32,8 @@ public sealed class HostWindow : Form
     private int selectedMonitorIndex;
     private bool approved;
     private bool browserReady;
+    private bool browserNavigationCompleted;
+    private string? browserLoadProblem;
     private readonly string appData = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MTWStudio");
     private readonly string configPath;
@@ -186,6 +188,8 @@ public sealed class HostWindow : Form
             if (selectedMonitorIndex < 0) selectedMonitorIndex = 0;
             activeSession = null;
             browserReady = false;
+            browserNavigationCompleted = false;
+            browserLoadProblem = null;
             codeLabel.Text = "Connecting…";
             SetStatus("Registering host…");
             await Request("/api/agent/mode", HttpMethod.Post,
@@ -207,6 +211,24 @@ public sealed class HostWindow : Form
             browser.CoreWebView2.Settings.AreHostObjectsAllowed = false;
             browser.CoreWebView2.WebMessageReceived -= BrowserMessage;
             browser.CoreWebView2.WebMessageReceived += BrowserMessage;
+            browser.CoreWebView2.NavigationCompleted += async (_, args) =>
+            {
+                if (!args.IsSuccess)
+                {
+                    browserLoadProblem = "Host capture page failed to load (" + args.WebErrorStatus + ").";
+                    SetStatus(browserLoadProblem);
+                    return;
+                }
+                browserNavigationCompleted = true;
+                // Re-send the bridge handshake if the host script posted before
+                // .NET was ready, and report broken/missing host.js explicitly.
+                try
+                {
+                    await browser.CoreWebView2.ExecuteScriptAsync(
+                        "window.chrome?.webview?.postMessage({type:'host-web-ready'});");
+                }
+                catch (Exception error) { browserLoadProblem = error.Message; }
+            };
             browser.CoreWebView2.NavigationStarting += (_, args) =>
             {
                 if (baseUri == null || (args.Uri != "about:blank" && args.Uri != new Uri(baseUri, "/host.html").AbsoluteUri))
@@ -306,10 +328,21 @@ public sealed class HostWindow : Form
     private async Task Approve(string id, string name, CancellationToken ct)
     {
         if (approved || activeSession != null) { await Send(new { type = "reject" }, ct); return; }
+        // A connection request may arrive before WebView2 finishes loading.
+        // Do not reject immediately while the capture bridge is still starting.
+        for (var attempt = 0; attempt < 50 && !browserReady && browserLoadProblem == null; attempt++)
+        {
+            if (ct.IsCancellationRequested) return;
+            await Task.Delay(100, ct);
+        }
         if (!browserReady || Screen.AllScreens.Length == 0)
         {
-            MessageBox.Show(this, "The screen capture component is not ready.", "Capture unavailable",
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            var reason = browserLoadProblem ??
+                (browserNavigationCompleted
+                    ? "The embedded host page loaded, but the WebView2 bridge did not respond."
+                    : "The embedded host page has not finished loading.");
+            MessageBox.Show(this, reason + "\n\nCheck the Cloudflare deployment and restart the host.",
+                "Screen capture unavailable", MessageBoxButtons.OK, MessageBoxIcon.Information);
             await Send(new { type = "reject" }, ct);
             return;
         }
@@ -352,7 +385,8 @@ public sealed class HostWindow : Form
 
     private async void BrowserMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs args)
     {
-        if (baseUri == null || args.Source != new Uri(baseUri, "/host.html").AbsoluteUri) return;
+        if (baseUri == null || !Uri.TryCreate(args.Source, UriKind.Absolute, out var source) ||
+            source.GetLeftPart(UriPartial.Path) != new Uri(baseUri, "/host.html").GetLeftPart(UriPartial.Path)) return;
         try
         {
             using var doc = JsonDocument.Parse(args.WebMessageAsJson);
@@ -455,6 +489,8 @@ public sealed class HostWindow : Form
         EndSession();
         connectionCode = null;
         browserReady = false;
+        browserNavigationCompleted = false;
+        browserLoadProblem = null;
         try { socket?.Abort(); socket?.Dispose(); } catch { }
         socket = null;
         codeLabel.Text = "Offline";
