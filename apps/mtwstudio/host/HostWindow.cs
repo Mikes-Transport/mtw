@@ -127,11 +127,20 @@ public sealed class HostWindow : Form
 
     private static string NormalizeHostKey(string value)
     {
-        var compact = value.Trim().Replace("-", "").Replace(" ", "");
+        // Copying a key from a browser may include grouping dashes, newlines or
+        // Unicode hyphens. These are formatting only, not part of the credential.
+        var compact = new StringBuilder();
+        foreach (char ch in value.Trim())
+        {
+            if (char.IsWhiteSpace(ch) || ch is '-' or '\u2010' or '\u2011' or '\u2012' or '\u2013' or '\u2014' or '\u2212')
+                continue;
+            compact.Append(ch);
+        }
+        var key = compact.ToString();
         // Existing 64-character host credentials remain valid.
-        return System.Text.RegularExpressions.Regex.IsMatch(compact, "^[a-f0-9]{64}$")
-            ? compact
-            : compact.ToUpperInvariant();
+        return System.Text.RegularExpressions.Regex.IsMatch(key, "^[a-f0-9]{64}$")
+            ? key
+            : key.ToUpperInvariant();
     }
 
     private async Task<JsonElement> Request(string path, HttpMethod method, object? payload, CancellationToken ct)
@@ -155,8 +164,11 @@ public sealed class HostWindow : Form
                 uri.Scheme != Uri.UriSchemeHttps || uri.UserInfo.Length != 0 || uri.Query.Length != 0 ||
                 uri.Fragment.Length != 0 || uri.AbsolutePath != "/")
                 throw new InvalidOperationException("Enter the HTTPS base URL of the MTWStudio server.");
-            if (!System.Text.RegularExpressions.Regex.IsMatch(NormalizeHostKey(secret.Text), "^(?:[A-Z2-7]{20}|[a-f0-9]{64})$"))
-                throw new InvalidOperationException("Enter the 20-character PC setup key (or an existing legacy host key).");
+            var hostKey = NormalizeHostKey(secret.Text);
+            if (!System.Text.RegularExpressions.Regex.IsMatch(hostKey, "^(?:[A-Z0-9]{20}|[a-f0-9]{64})$"))
+                throw new InvalidOperationException(
+                    $"PC setup key has {hostKey.Length} characters after removing dashes and spaces. " +
+                    "Expected 20 characters (or 64 for an older key). Copy the key directly from the MTWStudio dashboard.");
             baseUri = uri;
             SaveSettings();
             running = new CancellationTokenSource();
