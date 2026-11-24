@@ -16,6 +16,15 @@
       if(iframe)iframe.hidden=true;
       return;
     }
+    // Size the embedded viewer to its content, including tall or portrait
+    // monitors. Accept messages only from the exact trusted Cloudflare frame.
+    window.addEventListener('message',event=>{
+      if(event.origin!==url.origin||!iframe||event.source!==iframe.contentWindow)return;
+      if(event.data?.type!=='mtwstudio:height')return;
+      const height=event.data.height;
+      if(!Number.isSafeInteger(height)||height<300||height>10000)return;
+      iframe.style.height=height+'px';
+    });
     // Only load the remotely hosted login page when a manager opens this tool.
     document.addEventListener('db-tool-open',event=>{
       if(event.detail?.id!=='mtwstudio')return;

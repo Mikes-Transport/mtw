@@ -204,6 +204,8 @@ async function signalling(payload){
   if(payload.type==='monitors'){
     state.monitors=Array.isArray(payload.monitors)?payload.monitors:[];
     state.selectedMonitor=Number.isInteger(payload.selected)?payload.selected:0;
+    const current=state.monitors.find(m=>m.index===state.selectedMonitor);
+    if(current)fitRemoteMonitor(current.width,current.height);
     const picker=$('monitor-picker');picker.replaceChildren();
     for(const monitor of state.monitors){
       const option=document.createElement('option');
@@ -282,6 +284,7 @@ function receiveFrame(raw){
     if(canvas.width!==image.width||canvas.height!==image.height){
       canvas.width=image.width;canvas.height=image.height;
     }
+    fitRemoteMonitor(image.width,image.height);
     canvas.getContext('2d').drawImage(image,0,0);
     show('canvas',true);show('placeholder',false);
     $('quality').textContent='Secure relay · image received';
@@ -296,6 +299,8 @@ $('monitor-picker').addEventListener('change',event=>{
   const index=Number(event.target.value);
   if(!Number.isInteger(index)||index<0||!state.monitors.some(m=>m.index===index))return;
   state.selectedMonitor=index;state.frameChunks=null;state.frameLastId=0;
+  const target=state.monitors.find(m=>m.index===index);
+  if(target)fitRemoteMonitor(target.width,target.height);
   show('placeholder',true);show('canvas',false);
   $('placeholder').textContent='Switching to monitor '+(index+1)+'…';
   $('quality').textContent='Changing monitor…';
@@ -308,9 +313,18 @@ function input(data){
   send({type:'input',data});
 }
 const screen=$('screen');
+function fitRemoteMonitor(width,height){
+  if(!Number.isFinite(width)||!Number.isFinite(height)||width<=0||height<=0)return;
+  // The viewer must take on the remote display's real aspect ratio rather
+  // than forcing every monitor into a fixed 16:9 viewport.
+  screen.style.aspectRatio=width+' / '+height;
+}
+
 function normalized(e){
-  const bounds=screen.getBoundingClientRect();
+  // Use the actual canvas rectangle and subtract any letterboxing produced
+  // by object-fit:contain. This matches both normal and fullscreen layouts.
   const frame=$('canvas');
+  const bounds=frame.getBoundingClientRect();
   const width=frame.width||16,height=frame.height||9;
   const scale=Math.min(bounds.width/width,bounds.height/height);
   const visibleWidth=width*scale,visibleHeight=height*scale;
@@ -326,5 +340,21 @@ screen.addEventListener('wheel',e=>{if(state.approved&&state.ws?.readyState===We
 screen.addEventListener('keydown',e=>{if(!state.approved||state.ws?.readyState!==WebSocket.OPEN)return;e.preventDefault();input({type:'keyDown',code:e.code,key:e.key,ctrl:e.ctrlKey,shift:e.shiftKey,alt:e.altKey,meta:e.metaKey})});
 screen.addEventListener('keyup',e=>{if(state.approved){e.preventDefault();input({type:'keyUp',code:e.code,key:e.key})}});
 window.addEventListener('pagehide',()=>{if(state.ws)state.ws.close()});
+// Resize the Webflow dashboard iframe to match the selected monitor's actual
+// rendered height. Only message our known parent; parent validates origin.
+if(window.parent!==window){
+  const parentOrigin='https://mtw-lookup-2026.webflow.io';
+  let lastHeight=0;
+  const updateFrameHeight=()=>{
+    const height=Math.ceil(document.documentElement.scrollHeight);
+    if(height!==lastHeight&&height>=300&&height<=10000){
+      lastHeight=height;
+      window.parent.postMessage({type:'mtwstudio:height',height},parentOrigin);
+    }
+  };
+  new ResizeObserver(updateFrameHeight).observe(document.body);
+  window.addEventListener('load',updateFrameHeight);
+  updateFrameHeight();
+}
 $('username').value=sessionStorage.getItem('mtwstudio_username')||'';
 refresh();
