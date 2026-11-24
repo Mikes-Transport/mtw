@@ -496,6 +496,36 @@ export class ConnectionRoom {
       this.emit('controller',{type:'monitors',monitors:safe,selected:payload.selected});
       return;
     }
+    // Approved-session relay: the host sends bounded JPEG frame chunks,
+    // the authenticated viewer sends narrowly validated control input.
+    if(role==='agent'&&payload.type==='frame'){
+      if(!Number.isSafeInteger(payload.id)||payload.id<0||
+         !Number.isSafeInteger(payload.index)||!Number.isSafeInteger(payload.total)||
+         payload.index<0||payload.total<1||payload.total>96||payload.index>=payload.total||
+         !Number.isSafeInteger(payload.monitor)||payload.monitor<0||payload.monitor>31||
+         !Number.isSafeInteger(payload.width)||payload.width<1||payload.width>4096||
+         !Number.isSafeInteger(payload.height)||payload.height<1||payload.height>4096||
+         typeof payload.image!=='string'||payload.image.length>10000||
+         !/^[A-Za-z0-9+/=]+$/.test(payload.image))return;
+      this.emit('controller',payload);
+      return;
+    }
+    if(role==='controller'&&payload.type==='input'){
+      const input=payload.data;
+      if(!input||typeof input!=='object'||Array.isArray(input))return;
+      const allowed=['mouseMove','mouseDown','mouseUp','scroll','keyDown','keyUp'];
+      if(!allowed.includes(input.type))return;
+      if(JSON.stringify(input).length>1024)return;
+      if(input.type.startsWith('mouse')){
+        if(!Number.isFinite(input.x)||input.x<0||input.x>1||
+           !Number.isFinite(input.y)||input.y<0||input.y>1)return;
+        if(input.type!=='mouseMove'&&![0,1,2].includes(input.button))return;
+      }
+      if(input.type==='scroll'&&(!Number.isFinite(input.dy)||Math.abs(input.dy)>2000))return;
+      if(input.type.startsWith('key')&&(typeof input.code!=='string'||input.code.length>32))return;
+      this.emit('agent',{type:'input',data:input});
+      return;
+    }
     if(role==='controller'&&payload.type==='select-monitor'){
       if(Number.isSafeInteger(payload.index)&&payload.index>=0&&payload.index<32)
         this.emit('agent',{type:'select-monitor',index:payload.index});

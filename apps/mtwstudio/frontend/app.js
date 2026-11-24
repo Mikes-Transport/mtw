@@ -196,18 +196,16 @@ async function signalling(payload){
     state.approved=payload.status==='approved';
     if(payload.status==='pending')status('Waiting for host approval…');
     if(payload.status==='approved'){
-      status('Approved · starting WebRTC…');
-      await startPeer();
+      status('Approved · starting secure screen relay…');
+      $('quality').textContent='Secure WebSocket relay';
+      show('viewer-section',true);
+      show('placeholder',true);
       send({type:'controller-ready'});
-      if(state.pendingOffer){
-        const offer=state.pendingOffer;
-        state.pendingOffer=null;
-        await signalling({type:'offer',data:offer});
-      }
     }
     if(payload.status==='rejected'){status('Host rejected request');notice('The host did not approve the connection')}
     return;
   }
+  if(payload.type==='frame'&&state.approved){receiveFrame(JSON.stringify(payload));return}
   if(payload.type==='end'){notice('Session ended: '+(payload.reason||'disconnected'));await disconnect();return}
   if(!state.approved){
     if(payload.type==='offer'&&payload.data)state.pendingOffer=payload.data;
@@ -233,7 +231,7 @@ async function connect(details){
     state.sessionId=id;$('code').value='';status('Waiting for approval from '+host+'…');show('disconnect',true);
     const ws=new WebSocket(location.origin.replace(/^http/,'ws')+'/api/connections/'+id+'/ws');
     state.ws=ws;ws.onmessage=e=>{try{signalling(JSON.parse(e.data)).catch(err=>notice(err.message))}catch{}};
-    ws.onopen=()=>{send({type:'controller-ready'});};
+    ws.onopen=()=>{status('Viewer connected · waiting for host approval');};
     ws.onerror=()=>notice('Signalling connection error');
     ws.onclose=()=>{if(state.sessionId===id)disconnect()};
     await Promise.all([history(),hosts()]);
@@ -244,7 +242,7 @@ function receiveFrame(raw){
   let chunk;
   try{chunk=JSON.parse(raw)}catch{return}
   if(chunk.type!=='frame'||!Number.isInteger(chunk.id)||!Number.isInteger(chunk.index)||
-     !Number.isInteger(chunk.total)||chunk.total<1||chunk.total>100||chunk.image?.length>12000)return;
+     !Number.isInteger(chunk.total)||chunk.total<1||chunk.total>96||chunk.image?.length>10000)return;
   if(chunk.monitor!==state.selectedMonitor||chunk.id<=state.frameLastId)return;
   if(!state.frameChunks||state.frameChunks.id!==chunk.id)
     state.frameChunks={id:chunk.id,total:chunk.total,parts:new Array(chunk.total),monitor:chunk.monitor,width:chunk.width,height:chunk.height,received:0};
@@ -262,6 +260,7 @@ function receiveFrame(raw){
     }
     canvas.getContext('2d').drawImage(image,0,0);
     show('canvas',true);show('placeholder',false);
+    $('quality').textContent='Secure relay · image received';
     status('Connected · viewing monitor '+(frame.monitor+1),true);
   };
   image.src='data:image/jpeg;base64,'+frame.parts.join('');
@@ -275,7 +274,10 @@ $('monitor-picker').addEventListener('change',event=>{
 });
 $('connect-form').addEventListener('submit',e=>{e.preventDefault();connect({code:$('code').value.trim()})});
 
-function input(data){if(state.approved&&state.channel?.readyState==='open')state.channel.send(JSON.stringify(data))}
+function input(data){
+  if(!state.approved||state.ws?.readyState!==WebSocket.OPEN)return;
+  send({type:'input',data});
+}
 const screen=$('screen');
 function normalized(e){
   const bounds=screen.getBoundingClientRect();
@@ -291,8 +293,8 @@ screen.addEventListener('pointermove',e=>input({type:'mouseMove',...normalized(e
 screen.addEventListener('pointerdown',e=>{screen.focus();input({type:'mouseDown',button:e.button,...normalized(e)})});
 screen.addEventListener('pointerup',e=>input({type:'mouseUp',button:e.button,...normalized(e)}));
 screen.addEventListener('contextmenu',e=>e.preventDefault());
-screen.addEventListener('wheel',e=>{if(state.channel?.readyState==='open'){e.preventDefault();input({type:'scroll',dx:e.deltaX,dy:e.deltaY})}},{passive:false});
-screen.addEventListener('keydown',e=>{if(!state.approved||!state.channel||state.channel.readyState!=='open')return;e.preventDefault();input({type:'keyDown',code:e.code,key:e.key,ctrl:e.ctrlKey,shift:e.shiftKey,alt:e.altKey,meta:e.metaKey})});
+screen.addEventListener('wheel',e=>{if(state.approved&&state.ws?.readyState===WebSocket.OPEN){e.preventDefault();input({type:'scroll',dx:e.deltaX,dy:e.deltaY})}},{passive:false});
+screen.addEventListener('keydown',e=>{if(!state.approved||state.ws?.readyState!==WebSocket.OPEN)return;e.preventDefault();input({type:'keyDown',code:e.code,key:e.key,ctrl:e.ctrlKey,shift:e.shiftKey,alt:e.altKey,meta:e.metaKey})});
 screen.addEventListener('keyup',e=>{if(state.approved){e.preventDefault();input({type:'keyUp',code:e.code,key:e.key})}});
 window.addEventListener('pagehide',()=>{if(state.ws)state.ws.close()});
 $('username').value=sessionStorage.getItem('mtwstudio_username')||'';

@@ -30,6 +30,7 @@ public sealed class HostWindow : Form
     private string? connectionCode;
     private CancellationTokenSource? captureCancellation;
     private int selectedMonitorIndex;
+    private int nextFrameId;
     private bool approved;
     private bool browserReady;
     private bool browserNavigationCompleted;
@@ -350,7 +351,11 @@ public sealed class HostWindow : Form
                 }
                 else if (type == "controller-ready")
                 {
-                    if (approved && activeSession != null) PostBrowser(JsonSerializer.Serialize(new { type = "viewer-ready" }));
+                    if (approved && activeSession != null)
+                    {
+                        SetStatus("Viewer connected · secure relay streaming");
+                        await SendMonitorList(ct);
+                    }
                 }
                 else if (type == "select-monitor")
                 {
@@ -358,6 +363,17 @@ public sealed class HostWindow : Form
                         data.RootElement.TryGetProperty("index", out var index) &&
                         index.TryGetInt32(out var chosen))
                         BeginInvoke(() => SelectMonitor(chosen));
+                }
+                else if (type == "input")
+                {
+                    if (approved && activeSession != null && data.RootElement.TryGetProperty("data", out var input))
+                    {
+                        if (input.TryGetProperty("type", out var inputType) && inputType.GetString() == "selectMonitor" &&
+                            input.TryGetProperty("index", out var selected) && selected.TryGetInt32(out var index))
+                            BeginInvoke(() => SelectMonitor(index));
+                        else
+                            RemoteInput.Apply(input, selectedMonitorIndex);
+                    }
                 }
                 else if (type is "answer" or "ice")
                 {
@@ -419,10 +435,11 @@ public sealed class HostWindow : Form
         SetStatus("Remote session active · " + name + " · press Disconnect to stop");
         await Send(new { type = "approve" }, ct);
         await SendMonitorList(ct);
-        PostBrowser(JsonSerializer.Serialize(new { type = "approved" }));
+        // The secure WebSocket relay is the default transport. It works on
+        // networks where peer-to-peer WebRTC cannot complete ICE negotiation.
         captureCancellation?.Cancel();
         captureCancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        _ = CaptureLoop(captureCancellation.Token);
+        _ = Task.Run(() => CaptureLoop(captureCancellation.Token), captureCancellation.Token);
     }
 
     private async Task Send(object payload, CancellationToken ct)
@@ -512,7 +529,7 @@ public sealed class HostWindow : Form
                 var bounds = screens[index].Bounds;
                 if (bounds.Width < 1 || bounds.Height < 1) break;
                 // GDI capture runs on a worker thread. No browser screen-picker is involved.
-                var maxWidth = 1600d;
+                var maxWidth = 1280d;
                 var factor = Math.Min(1d, maxWidth / bounds.Width);
                 var width = Math.Max(1, (int)(bounds.Width * factor));
                 var height = Math.Max(1, (int)(bounds.Height * factor));
@@ -527,13 +544,29 @@ public sealed class HostWindow : Form
                     using var buffer = new MemoryStream();
                     var encoder = ImageCodecInfo.GetImageEncoders().First(x => x.FormatID == ImageFormat.Jpeg.Guid);
                     using var quality = new EncoderParameters(1);
-                    quality.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 65L);
+                    quality.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 48L);
                     scaled.Save(buffer, encoder, quality);
                     frame = Convert.ToBase64String(buffer.ToArray());
                 }
                 if (!ct.IsCancellationRequested && approved)
-                    PostBrowser(JsonSerializer.Serialize(new { type = "frame", monitor = index, image = frame, width, height }));
-                await Task.Delay(125, ct);
+                {
+                    const int chunkLength = 10000;
+                    var count = (frame.Length + chunkLength - 1) / chunkLength;
+                    if (count <= 96)
+                    {
+                        var frameId = Interlocked.Increment(ref nextFrameId);
+                        for (var chunk = 0; chunk < count && approved && !ct.IsCancellationRequested; chunk++)
+                        {
+                            var offset = chunk * chunkLength;
+                            await Send(new {
+                                type = "frame", id = frameId, index = chunk, total = count,
+                                monitor = index, width, height,
+                                image = frame.Substring(offset, Math.Min(chunkLength, frame.Length - offset))
+                            }, ct);
+                        }
+                    }
+                }
+                await Task.Delay(200, ct);
             }
         }
         catch (OperationCanceledException) { }
