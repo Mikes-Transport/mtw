@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#f2f1ef"><title>MTWStudio · Remote Access</title><link rel="stylesheet" href="/style.css"></head>
 <body><main class="app">
-<header class="topbar"><div class="brand"><span class="mark">M</span><div><strong>MTWStudio</strong><small>Remote Access</small></div></div><div class="account"><span id="identity"></span></div></header>
+<span id="identity" hidden></span>
 <section id="login" class="card login"><div class="eyebrow">SECURE SIGN IN</div><h1>Manager sign in</h1><p>Verify with your authenticator to access your computers.</p>
 <form id="login-form"><label>Manager username<input id="username" maxlength="50" autocomplete="username" required></label><label>Authenticator code<input id="auth-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required></label><button type="submit">Sign in</button></form></section>
 <section id="setup" class="card login" hidden><div class="eyebrow">ONE-TIME SETUP</div><h1>Set up your authenticator</h1><p>Use your private Cloudflare setup key to register a manager account.</p>
