@@ -69,9 +69,12 @@
     if (!message || typeof message!=='object') return;
     try {
       if (message.type==='approved') { approved=true; setStatus('Approved · waiting for viewer…'); if(viewerReady)await call(); }
-      else if(message.type==='viewer-ready' && approved && (!peer || peer.signalingState==='closed')) {
+      else if (message.type==='viewer-ready') {
+        // Cloudflare can report that the viewer is ready before the native
+        // application delivers its local "approved" message. Remember readiness
+        // instead of discarding it, or both ends will wait forever.
         viewerReady=true;
-        await call();
+        if(approved && (!peer || peer.signalingState==='closed'))await call();
       }
       else if (message.type==='frame' && approved && typeof message.image==='string') {
         pendingFrame=message;
