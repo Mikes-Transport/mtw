@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);
-const state={user:null,ws:null,peer:null,channel:null,sessionId:null,approved:false,remoteStream:null,pendingIce:[],frameChunks:null,frameLastId:0,monitors:[],selectedMonitor:0,iceServers:[{urls:'stun:stun.cloudflare.com:3478'}]};
+const state={user:null,ws:null,peer:null,channel:null,sessionId:null,approved:false,remoteStream:null,pendingIce:[],pendingOffer:null,frameChunks:null,frameLastId:0,monitors:[],selectedMonitor:0,iceServers:[{urls:'stun:stun.cloudflare.com:3478'}]};
 const show=(id,yes)=>$(id).hidden=!yes;
 function notice(message,error=true){$('message').textContent=message||'';$('message').style.color=error?'#ffadad':'#88e4b4'}
 function status(text,live=false){$('status').textContent=text;$('dot').classList.toggle('live',live)}
@@ -137,7 +137,7 @@ async function disconnect(){
   const id=state.sessionId;state.sessionId=null;state.approved=false;
   if(state.channel){try{state.channel.close()}catch{}state.channel=null}
   if(state.peer){state.peer.close();state.peer=null}
-  state.pendingIce=[];state.frameChunks=null;state.frameLastId=0;state.monitors=[];
+  state.pendingIce=[];state.pendingOffer=null;state.frameChunks=null;state.frameLastId=0;state.monitors=[];
   $('monitor-picker').replaceChildren();show('monitor-controls',false);
   $('canvas').getContext('2d').clearRect(0,0,$('canvas').width,$('canvas').height);
   show('canvas',false);
@@ -152,10 +152,19 @@ async function startPeer(){
   if(state.peer)return;
   const peer=new RTCPeerConnection({iceServers:state.iceServers});
   state.peer=peer;
-  peer.addTransceiver('video',{direction:'recvonly'});
   peer.ontrack=e=>{state.remoteStream=e.streams[0]||new MediaStream([e.track]);$('video').srcObject=state.remoteStream;show('placeholder',false);status('Connected · encrypted WebRTC',true)};
   peer.onicecandidate=e=>{if(e.candidate)send({type:'ice',data:e.candidate.toJSON()})};
-  peer.onconnectionstatechange=()=>{const connection=peer.connectionState;$('quality').textContent='WebRTC: '+connection;if(['failed','closed','disconnected'].includes(connection)){status('Connection '+connection);if(connection==='failed')disconnect()}};
+  peer.onconnectionstatechange=()=>{
+    const connection=peer.connectionState;
+    $('quality').textContent='WebRTC: '+connection;
+    if(connection==='connecting')status('Establishing secure peer connection…');
+    if(connection==='connected')status('WebRTC connected · waiting for first screen frame',true);
+    if(connection==='failed'){
+      status('WebRTC failed');
+      notice('Could not establish a peer-to-peer connection. These networks may require a TURN relay.');
+    }
+    if(connection==='disconnected')status('WebRTC disconnected · retry connection');
+  };
   peer.ondatachannel=e=>{
     if(e.channel.label==='frames'){
       e.channel.onmessage=event=>receiveFrame(event.data);
@@ -186,12 +195,25 @@ async function signalling(payload){
   if(payload.type==='status'){
     state.approved=payload.status==='approved';
     if(payload.status==='pending')status('Waiting for host approval…');
-    if(payload.status==='approved'){status('Approved · establishing WebRTC…');await startPeer()}
+    if(payload.status==='approved'){
+      status('Approved · starting WebRTC…');
+      await startPeer();
+      send({type:'controller-ready'});
+      if(state.pendingOffer){
+        const offer=state.pendingOffer;
+        state.pendingOffer=null;
+        await signalling({type:'offer',data:offer});
+      }
+    }
     if(payload.status==='rejected'){status('Host rejected request');notice('The host did not approve the connection')}
     return;
   }
   if(payload.type==='end'){notice('Session ended: '+(payload.reason||'disconnected'));await disconnect();return}
-  if(!state.approved)return;
+  if(!state.approved){
+    if(payload.type==='offer'&&payload.data)state.pendingOffer=payload.data;
+    if(payload.type==='ice'&&payload.data)state.pendingIce.push(payload.data);
+    return;
+  }
   if(payload.type==='offer'){
     await startPeer();
     await state.peer.setRemoteDescription(new RTCSessionDescription(payload.data));
@@ -211,6 +233,7 @@ async function connect(details){
     state.sessionId=id;$('code').value='';status('Waiting for approval from '+host+'…');show('disconnect',true);
     const ws=new WebSocket(location.origin.replace(/^http/,'ws')+'/api/connections/'+id+'/ws');
     state.ws=ws;ws.onmessage=e=>{try{signalling(JSON.parse(e.data)).catch(err=>notice(err.message))}catch{}};
+    ws.onopen=()=>{send({type:'controller-ready'});};
     ws.onerror=()=>notice('Signalling connection error');
     ws.onclose=()=>{if(state.sessionId===id)disconnect()};
     await Promise.all([history(),hosts()]);

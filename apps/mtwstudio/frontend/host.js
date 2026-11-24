@@ -4,11 +4,12 @@
   const bridge = window.chrome?.webview;
   const status = document.getElementById('status');
   let peer = null, inputChannel = null, framesChannel = null, approved = false;
-  let pendingIce = [], pendingFrame = null, frameId = 0;
+  let pendingIce = [], pendingFrame = null, frameId = 0, viewerReady = false;
   const post = value => bridge?.postMessage(value);
   const setStatus = message => { if (status) status.textContent = message; };
   function closePeer() {
     approved = false;
+    viewerReady = false;
     pendingFrame = null;
     if (inputChannel) try { inputChannel.close(); } catch {}
     if (framesChannel) try { framesChannel.close(); } catch {}
@@ -34,11 +35,11 @@
     }
   }
   async function call() {
-    if (!approved) return;
+    if (!approved || !viewerReady) return;
+    viewerReady = false;
     if (peer) peer.close();
     pendingIce = [];
     peer = new RTCPeerConnection({ iceServers:[{urls:'stun:stun.cloudflare.com:3478'}] });
-    peer.addTransceiver('video',{direction:'inactive'});
     inputChannel = peer.createDataChannel('input',{ordered:true});
     inputChannel.onmessage = event => {
       if (!approved || typeof event.data !== 'string' || event.data.length > 2048) return;
@@ -67,7 +68,11 @@
     const message=event.data;
     if (!message || typeof message!=='object') return;
     try {
-      if (message.type==='approved') { approved=true; await call(); }
+      if (message.type==='approved') { approved=true; setStatus('Approved · waiting for viewer…'); if(viewerReady)await call(); }
+      else if(message.type==='viewer-ready' && approved && (!peer || peer.signalingState==='closed')) {
+        viewerReady=true;
+        await call();
+      }
       else if (message.type==='frame' && approved && typeof message.image==='string') {
         pendingFrame=message;
         flushFrame();

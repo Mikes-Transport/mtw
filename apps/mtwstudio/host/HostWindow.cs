@@ -348,6 +348,10 @@ public sealed class HostWindow : Form
                     if (id == null) continue;
                     BeginInvoke(async () => await Approve(id, name, ct));
                 }
+                else if (type == "controller-ready")
+                {
+                    if (approved && activeSession != null) PostBrowser(JsonSerializer.Serialize(new { type = "viewer-ready" }));
+                }
                 else if (type == "select-monitor")
                 {
                     if (approved && activeSession != null &&
@@ -395,14 +399,20 @@ public sealed class HostWindow : Form
             await Send(new { type = "reject" }, ct);
             return;
         }
-        var answer = MessageBox.Show(this,
-            name + " has requested control of this computer. Allow viewing, mouse clicks and keyboard input?\n\n" +
-            "You can stop the session at any time.", "Approve MTWStudio connection?",
-            MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
-        if (answer != DialogResult.Yes)
+        // Paired-access mode is intentionally an explicit host setting:
+        // while this app is running, authenticated managers may connect without
+        // another popup. Connection-code mode still requires local approval.
+        if (mode.SelectedIndex != 1)
         {
-            await Send(new { type = "reject" }, ct);
-            return;
+            var answer = MessageBox.Show(this,
+                name + " has requested control of this computer. Allow viewing, mouse clicks and keyboard input?\n\n" +
+                "You can stop the session at any time.", "Approve MTWStudio connection?",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+            if (answer != DialogResult.Yes)
+            {
+                await Send(new { type = "reject" }, ct);
+                return;
+            }
         }
         activeSession = id;
         approved = true;

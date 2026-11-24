@@ -443,7 +443,10 @@ export class ConnectionRoom {
       const pair=new WebSocketPair(),client=pair[0],server=pair[1];
       this.state.acceptWebSocket(server);
       server.serializeAttachment({role});
-      if(role==='controller')server.send(JSON.stringify({type:'status',status:session.status,expiresAt:session.expires}));
+      if(role==='controller'){
+        server.send(JSON.stringify({type:'status',status:session.status,expiresAt:session.expires}));
+        if(session.status==='approved')this.emit('agent',{type:'controller-ready'});
+      }
       if(role==='agent'&&session&&session.status==='pending')server.send(JSON.stringify({type:'request',sessionId:session.id,controllerName:session.controllerName,expiresAt:session.expires}));
       return new Response(null,{status:101,webSocket:client});
     }
@@ -471,11 +474,17 @@ export class ConnectionRoom {
       await this.state.storage.put('connection',session);
       await patchDoc(this.env,'mtwstudio_connections',session.id,{status:session.status});
       this.emit('controller',{type:'status',status:session.status});
+      if(session.status==='approved' && this.sockets('controller').length)
+        this.emit('agent',{type:'controller-ready'});
       if(session.status==='rejected')await this.end('rejected');
       return;
     }
     if(role==='controller'&&payload.type==='disconnect'){await this.end('controller disconnected');return}
     if(session.status!=='approved')return;
+    if(role==='controller'&&payload.type==='controller-ready'){
+      this.emit('agent',{type:'controller-ready'});
+      return;
+    }
     // Signalling only: SDP/ICE; never forward arbitrary user input over signalling.
     if(role==='agent'&&payload.type==='monitors'){
       const monitors=Array.isArray(payload.monitors)?payload.monitors.slice(0,16):[];
