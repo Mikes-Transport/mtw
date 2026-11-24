@@ -179,11 +179,11 @@
       studio.className = 'mtwstudio-panel';
       studio.style.display = 'none';
       studio.innerHTML = `
-        <div style="display:flex;justify-content:flex-end;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">
-          <p class="mtwstudio-status" style="flex:1;margin:0;color:#71829a">Secure manager verification required.</p>
-          <a class="mtwstudio-download" href="https://github.com/Mikes-Transport/mtw/releases/download/mtwstudio-host-latest/MTWStudio-Portable.zip" target="_blank" rel="noopener noreferrer" style="display:inline-flex;padding:9px 13px;background:#1e3552;border:1px solid #4a668b;border-radius:9px;color:#fff;text-decoration:none;font-size:13px;font-weight:600">Download Windows Host (.zip)</a>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+          <p class="mtwstudio-status" style="flex:1;margin:0;color:#777774;font-size:12px">Manager verification required to access remote computers.</p>
+          <a class="mtwstudio-download" href="https://github.com/Mikes-Transport/mtw/releases/download/mtwstudio-host-latest/MTWStudio-Portable.zip" target="_blank" rel="noopener noreferrer" style="display:inline-flex;padding:9px 12px;background:#fff;border:1px solid #c9c8c4;border-radius:4px;color:#242424;text-decoration:none;font-size:12px;font-weight:600">Download Windows host (.zip)</a>
         </div>
-        <iframe class="mtwstudio-frame" hidden title="MTWStudio remote access console" loading="lazy" allow="fullscreen" style="border:1px solid #27374d;border-radius:12px;width:100%;height:78vh;min-height:550px;background:#0b111d"></iframe>`;
+        <iframe class="mtwstudio-frame" hidden title="MTWStudio remote access console" loading="lazy" allow="fullscreen" style="display:block;border:1px solid #deddd9;border-radius:4px;width:100%;height:min(83vh,880px);min-height:580px;background:#f2f1ef"></iframe>`;
       panels.appendChild(studio);
     }
 

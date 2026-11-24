@@ -1,6 +1,25 @@
 const $=id=>document.getElementById(id);
 const state={user:null,ws:null,peer:null,channel:null,sessionId:null,approved:false,remoteStream:null,pendingIce:[],pendingOffer:null,frameChunks:null,frameLastId:0,monitors:[],selectedMonitor:0,iceServers:[{urls:'stun:stun.cloudflare.com:3478'}]};
 const show=(id,yes)=>$(id).hidden=!yes;
+const dialogIds=['connect-dialog','devices-dialog','register-dialog','pair-dialog','connections-dialog'];
+function openDialog(id){
+  for(const other of dialogIds){if(other!==id&&$(other).open)$(other).close()}
+  const dialog=$(id);
+  if(!dialog.open)dialog.showModal();
+  if(id==='devices-dialog')hosts();
+  if(id==='connections-dialog')history();
+}
+function closeDialogs(){for(const id of dialogIds)if($(id).open)$(id).close()}
+for(const button of document.querySelectorAll('.close-dialog'))
+  button.addEventListener('click',()=>button.closest('dialog')?.close());
+$('nav-connections').onclick=()=>openDialog('connections-dialog');
+$('nav-devices').onclick=()=>openDialog('devices-dialog');
+$('nav-connect').onclick=()=>openDialog('connect-dialog');
+$('nav-register').onclick=()=>openDialog('register-dialog');
+$('empty-connect').onclick=()=>openDialog('connect-dialog');
+$('devices-add').onclick=()=>openDialog('register-dialog');
+$('devices-pair').onclick=()=>openDialog('pair-dialog');
+
 function notice(message,error=true){$('message').textContent=message||'';$('message').style.color=error?'#ffadad':'#88e4b4'}
 function status(text,live=false){$('status').textContent=text;$('dot').classList.toggle('live',live)}
 async function api(path,method='GET',body){
@@ -13,10 +32,10 @@ async function refresh(){
   try{
     const {user}=await api('auth/me');
     state.user=user;$('identity').textContent=user.name+' · Verified manager';
-    show('login',false);show('setup',false);show('workspace',true);
+    show('login',false);show('setup',false);show('workspace',true);show('viewer-section',true);
     await Promise.all([history(),hosts()]);
   }catch{
-    state.user=null;show('workspace',false);$('identity').textContent='Authenticator required';
+    state.user=null;closeDialogs();show('workspace',false);$('identity').textContent='Authenticator required';
     try{
       const {needsSetup}=await api('auth/setup-status');
       show('setup',needsSetup);show('login',!needsSetup);
@@ -27,14 +46,14 @@ async function hosts(){
   const area=$('computers');
   try{
     const {hosts}=await api('hosts');area.replaceChildren();
-    if(!hosts.length){area.textContent='No computers paired yet.';return}
+    if(!hosts.length){area.textContent='No registered devices yet. Click Add device to get started.';return}
     for(const host of hosts){
       const row=document.createElement('div');row.className='history-row';
       const name=document.createElement('span');
       name.textContent=host.label+' · '+(host.online?'Online':'Offline')+(host.mode==='code'?' · Connection code mode':' · Saved access');
       const actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;align-items:center;flex-wrap:wrap';
       const button=document.createElement('button');button.textContent=host.online?'Request connection':'Offline';button.disabled=!host.online;
-      button.onclick=()=>connect({hostId:host.id});
+      button.onclick=()=>{closeDialogs();connect({hostId:host.id})};
       actions.append(button);
       if(host.owned){
         const remove=document.createElement('button');
@@ -89,7 +108,7 @@ $('pair-form').addEventListener('submit',async e=>{
   e.preventDefault();notice('');
   try{
     await api('hosts/pair','POST',{code:$('pair-code').value});
-    $('pair-code').value='';notice('PC saved. It can now be selected while running.',false);
+    $('pair-code').value='';closeDialogs();notice('PC saved. It can now be selected while running.',false);
     await hosts();
   }catch(err){notice(err.message)}
 });
@@ -142,7 +161,11 @@ async function disconnect(){
   $('canvas').getContext('2d').clearRect(0,0,$('canvas').width,$('canvas').height);
   show('canvas',false);
   if(state.ws){state.ws.onclose=null;state.ws.close();state.ws=null}
-  $('video').srcObject=null;show('viewer-section',false);show('disconnect',false);
+  $('video').srcObject=null;show('viewer-section',!!state.user);show('disconnect',false);
+  show('placeholder',true);
+  $('placeholder').innerHTML='<span class="empty-symbol">▣</span><strong>No active connection</strong><span>Choose Connect or select a device to start a remote session.</span><button type="button" id="empty-connect" class="empty-action">Connect to a computer</button>';
+  $('empty-connect').onclick=()=>openDialog('connect-dialog');
+  $('quality').textContent='No active connection';
   status('Disconnected');if(id)try{await api('connections/'+id+'/disconnect','POST')}catch{}
   if(state.user)await history();
 }
@@ -200,6 +223,7 @@ async function signalling(payload){
       $('quality').textContent='Secure WebSocket relay';
       show('viewer-section',true);
       show('placeholder',true);
+      $('placeholder').textContent='Connecting to remote desktop…';
       send({type:'controller-ready'});
     }
     if(payload.status==='rejected'){status('Host rejected request');notice('The host did not approve the connection')}
@@ -228,7 +252,7 @@ async function connect(details){
   try{
     status('Requesting access…');
     const {id,host}=await api('connections','POST',details);
-    state.sessionId=id;$('code').value='';status('Waiting for approval from '+host+'…');show('disconnect',true);
+    state.sessionId=id;$('code').value='';closeDialogs();status('Waiting for approval from '+host+'…');show('disconnect',true);show('viewer-section',true);show('placeholder',true);$('placeholder').textContent='Waiting for approval from '+host+'…';
     const ws=new WebSocket(location.origin.replace(/^http/,'ws')+'/api/connections/'+id+'/ws');
     state.ws=ws;ws.onmessage=e=>{try{signalling(JSON.parse(e.data)).catch(err=>notice(err.message))}catch{}};
     ws.onopen=()=>{status('Viewer connected · waiting for host approval');};

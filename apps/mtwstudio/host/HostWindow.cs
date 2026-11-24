@@ -47,33 +47,67 @@ public sealed class HostWindow : Form
     public HostWindow()
     {
         configPath = Path.Combine(appData, "host-settings.json");
-        Text = "MTWStudio Host — Portable Remote Support";
-        Size = new Size(780, 760);
-        MinimumSize = new Size(650, 600);
-        BackColor = Color.FromArgb(16, 24, 39);
-        ForeColor = Color.White;
-        Font = new Font("Segoe UI", 10);
-
+        Text = "MTWStudio · Remote Host";
+        Size = new Size(630, 455);
+        MinimumSize = new Size(580, 400);
+        BackColor = Color.FromArgb(242, 241, 239);
+        ForeColor = Color.FromArgb(36, 36, 36);
+        Font = new Font("Segoe UI", 9);
+        endpoint.Width = 360;
+        secret.Width = 360;
+        mode.Width = 250;
+        codeLabel.Font = new Font("Segoe UI", 15, FontStyle.Bold);
+        codeLabel.ForeColor = Color.FromArgb(36, 36, 36);
+        start.BackColor = Color.FromArgb(36, 36, 36);
+        start.ForeColor = Color.White;
+        start.FlatStyle = FlatStyle.Flat;
+        stop.FlatStyle = FlatStyle.Flat;
+        stop.BackColor = Color.White;
+        stop.ForeColor = Color.FromArgb(150, 40, 40);
+        save.FlatStyle = FlatStyle.Flat;
+        save.BackColor = Color.White;
+        save.ForeColor = Color.FromArgb(36, 36, 36);
+        var settingsButton = new Button {
+            Text = "Settings", Width = 95, Height = 34,
+            BackColor = Color.White, ForeColor = Color.FromArgb(36, 36, 36),
+            FlatStyle = FlatStyle.Flat
+        };
         mode.Items.AddRange(new object[] { "Connection code required", "Allow connections while open" });
         mode.SelectedIndex = 0;
-        var head = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(20), ColumnCount = 2 };
-        head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 185));
+        var head = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, Padding = new Padding(15), ColumnCount = 2, BackColor = Color.White };
+        head.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
         head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        AddRow(head, "MTWStudio server", endpoint);
-        AddRow(head, "PC setup key", secret);
-        AddRow(head, "Connection mode", mode);
-        AddRow(head, "This computer's code", codeLabel);
-        AddRow(head, "Current status", status);
-        var controls = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
-        controls.Controls.Add(save);
+        var heading = new Label {
+            Text = "MTWStudio  /  Windows host", AutoSize = true,
+            Font = new Font("Segoe UI", 11, FontStyle.Bold),
+            ForeColor = Color.FromArgb(36, 36, 36), Padding = new Padding(0, 0, 0, 10)
+        };
+        AddRow(head, "", heading);
+        AddRow(head, "Status", status);
+        AddRow(head, "Connection code", codeLabel);
+        AddRow(head, "Access mode", mode);
+        var settingsPanel = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Visible = !File.Exists(configPath) };
+        settingsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 75));
+        settingsPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        AddRow(settingsPanel, "Server", endpoint);
+        AddRow(settingsPanel, "PC key", secret);
+        AddRow(settingsPanel, "", save);
+        AddRow(head, "", settingsPanel);
+        settingsButton.Click += (_, _) => {
+            settingsPanel.Visible = !settingsPanel.Visible;
+            settingsButton.Text = settingsPanel.Visible ? "Hide settings" : "Settings";
+        };
+        var controls = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = true };
         controls.Controls.Add(start);
         controls.Controls.Add(stop);
+        controls.Controls.Add(settingsButton);
         AddRow(head, "", controls);
+        browserHolder.BackColor = Color.FromArgb(242, 241, 239);
         browserHolder.Controls.Add(new Label {
-            Text = "MTWStudio Host\\n\\nSettings are remembered on this PC.\\nScreens are detected automatically.\\nCapture begins only after you approve a request.",
+            Text = "Ready to connect\\n\\nYour settings are saved on this PC.\\nDisplays are detected automatically when a session starts.",
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleCenter,
-            ForeColor = Color.LightSteelBlue
+            ForeColor = Color.FromArgb(111, 111, 108)
         });
         Controls.Add(browserHolder);
         Controls.Add(head);
@@ -121,7 +155,7 @@ public sealed class HostWindow : Form
     {
         var row = panel.RowCount++;
         panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        var caption = new Label { Text = label, AutoSize = true, Padding = new Padding(0, 8, 0, 0), ForeColor = Color.LightSteelBlue };
+        var caption = new Label { Text = label, AutoSize = true, Padding = new Padding(0, 7, 0, 0), ForeColor = Color.FromArgb(111, 111, 108) };
         panel.Controls.Add(caption, 0, row);
         panel.Controls.Add(control, 1, row);
     }
