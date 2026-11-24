@@ -406,6 +406,48 @@ public sealed class HostWindow : Form
                         acknowledged.TryGetInt32(out var frameId) && frameId == awaitingFrameId)
                         frameAcknowledgement?.TrySetResult(true);
                 }
+                else if (type == "clipboard-set" || type == "clipboard-get")
+                {
+                    if (approved && activeSession != null)
+                    {
+                        // WinForms clipboard access requires the STA UI thread.
+                        // Never access the clipboard outside an approved session.
+                        var textToSet = type == "clipboard-set" &&
+                            data.RootElement.TryGetProperty("text", out var supplied) &&
+                            supplied.ValueKind == JsonValueKind.String ? supplied.GetString() : null;
+                        var requestId = data.RootElement.TryGetProperty("requestId", out var rid) &&
+                            rid.ValueKind == JsonValueKind.String ? rid.GetString() ?? "" : "";
+                        if (requestId.Length is < 1 or > 64) continue;
+                        var operation = type;
+                        BeginInvoke(async () =>
+                        {
+                            if (!approved || activeSession == null || running is not { IsCancellationRequested: false }) return;
+                            try
+                            {
+                                if (operation == "clipboard-set")
+                                {
+                                    if (textToSet == null || textToSet.Length > 8192)
+                                        throw new InvalidOperationException("Text must be 8,192 characters or less.");
+                                    Clipboard.SetText(textToSet, TextDataFormat.UnicodeText);
+                                    await Send(new { type = "clipboard-result", requestId, operation = "set", ok = true }, running.Token);
+                                }
+                                else
+                                {
+                                    var text = Clipboard.ContainsText(TextDataFormat.UnicodeText)
+                                        ? Clipboard.GetText(TextDataFormat.UnicodeText) : "";
+                                    if (text.Length > 8192)
+                                        throw new InvalidOperationException("PC clipboard exceeds 8,192 characters.");
+                                    await Send(new { type = "clipboard-result", requestId, operation = "get", ok = true, text }, running.Token);
+                                }
+                            }
+                            catch (Exception error)
+                            {
+                                if (running is { IsCancellationRequested: false })
+                                    await Send(new { type = "clipboard-result", requestId, operation = operation == "clipboard-set" ? "set" : "get", ok = false, error = error.Message[..Math.Min(180,error.Message.Length)] }, running.Token);
+                            }
+                        });
+                    }
+                }
                 else if (type == "input")
                 {
                     if (approved && activeSession != null && data.RootElement.TryGetProperty("data", out var input))

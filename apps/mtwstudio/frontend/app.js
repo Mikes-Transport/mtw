@@ -1,7 +1,7 @@
 const $=id=>document.getElementById(id);
 const state={user:null,ws:null,peer:null,channel:null,sessionId:null,approved:false,remoteStream:null,pendingIce:[],pendingOffer:null,frameChunks:null,frameLastId:0,monitors:[],selectedMonitor:0,iceServers:[{urls:'stun:stun.cloudflare.com:3478'}]};
 const show=(id,yes)=>$(id).hidden=!yes;
-const dialogIds=['connect-dialog','devices-dialog','register-dialog','pair-dialog','connections-dialog'];
+const dialogIds=['connect-dialog','devices-dialog','register-dialog','pair-dialog','connections-dialog','clipboard-dialog'];
 function openDialog(id){
   for(const other of dialogIds){if(other!==id&&$(other).open)$(other).close()}
   const dialog=$(id);
@@ -20,6 +20,49 @@ $('empty-connect').onclick=()=>openDialog('connect-dialog');
 $('devices-add').onclick=()=>openDialog('register-dialog');
 $('devices-pair').onclick=()=>openDialog('pair-dialog');
 
+const clipboardRequests=new Map();
+const clipboardFeedback=(text)=>{$('clipboard-feedback').textContent=text;};
+const remoteClipboardReady=()=>state.approved&&state.ws?.readyState===WebSocket.OPEN;
+$('clipboard-open').onclick=()=>{
+  if(!remoteClipboardReady())return;
+  clipboardFeedback('');
+  openDialog('clipboard-dialog');
+};
+$('clipboard-read-local').onclick=async()=>{
+  try{
+    if(!navigator.clipboard?.readText)throw Error('Clipboard access is unavailable here');
+    const value=await navigator.clipboard.readText();
+    if(value.length>8192)throw Error('Maximum 8,192 characters');
+    $('clipboard-text').value=value;
+    clipboardFeedback('Text loaded from this device. Choose Send text to PC.');
+  }catch(e){clipboardFeedback('Clipboard read blocked. Paste into the text box manually (Ctrl+V).')}
+};
+$('clipboard-copy-local').onclick=async()=>{
+  const value=$('clipboard-text').value;
+  try{
+    if(!navigator.clipboard?.writeText)throw Error('Clipboard access is unavailable');
+    await navigator.clipboard.writeText(value);
+    clipboardFeedback('Text copied to this device.');
+  }catch(e){
+    $('clipboard-text').focus();
+    $('clipboard-text').select();
+    clipboardFeedback('Browser blocked clipboard writing. Text selected — press Ctrl+C to copy.');
+  }
+};
+function requestClipboard(type,text){
+  if(!remoteClipboardReady()){clipboardFeedback('Connect to a PC first.');return}
+  const requestId='clip_'+Math.random().toString(36).slice(2)+Date.now().toString(36);
+  clipboardRequests.set(requestId,type);
+  send({type,requestId,...(type==='clipboard-set'?{text}:{})});
+  clipboardFeedback('Waiting for remote PC…');
+}
+$('clipboard-send').onclick=()=>{
+  const text=$('clipboard-text').value;
+  if(!text){clipboardFeedback('Enter or paste text first.');return}
+  if(text.length>8192){clipboardFeedback('Maximum 8,192 characters.');return}
+  requestClipboard('clipboard-set',text);
+};
+$('clipboard-fetch').onclick=()=>requestClipboard('clipboard-get');
 function notice(message,error=true){$('message').textContent=message||'';$('message').style.color=error?'#ffadad':'#88e4b4'}
 function status(text,live=false){$('status').textContent=text;$('dot').classList.toggle('live',live)}
 async function api(path,method='GET',body){
@@ -161,6 +204,9 @@ async function disconnect(){
   $('canvas').getContext('2d').clearRect(0,0,$('canvas').width,$('canvas').height);
   show('canvas',false);
   if(state.ws){state.ws.onclose=null;state.ws.close();state.ws=null}
+  show('clipboard-open',false);
+  clipboardRequests.clear();
+  if($('clipboard-dialog').open)$('clipboard-dialog').close();
   $('video').srcObject=null;show('viewer-section',!!state.user);show('disconnect',false);
   show('placeholder',true);
   $('placeholder').innerHTML='<span class="empty-symbol">▣</span><strong>No active connection</strong><span>Choose Connect or select a device to start a remote session.</span><button type="button" id="empty-connect" class="empty-action">Connect to a computer</button>';
@@ -226,9 +272,22 @@ async function signalling(payload){
       show('viewer-section',true);
       show('placeholder',true);
       $('placeholder').textContent='Connecting to remote desktop…';
+      show('clipboard-open',true);
       send({type:'controller-ready'});
     }
     if(payload.status==='rejected'){status('Host rejected request');notice('The host did not approve the connection')}
+    return;
+  }
+  if(payload.type==='clipboard-result'){
+    if(!state.approved||!clipboardRequests.has(payload.requestId))return;
+    const requested=clipboardRequests.get(payload.requestId);
+    clipboardRequests.delete(payload.requestId);
+    if(payload.operation!==(requested==='clipboard-get'?'get':'set'))return;
+    if(!payload.ok){clipboardFeedback('Remote clipboard error: '+(payload.error||'Unknown error'));return}
+    if(payload.operation==='get'){
+      $('clipboard-text').value=typeof payload.text==='string'?payload.text:'';
+      clipboardFeedback('Text received. Click Copy text to this device, or select the text and press Ctrl+C.');
+    }else clipboardFeedback('Text placed on remote PC clipboard. Paste on the PC with Ctrl+V.');
     return;
   }
   if(payload.type==='frame'&&state.approved){receiveFrame(JSON.stringify(payload));return}

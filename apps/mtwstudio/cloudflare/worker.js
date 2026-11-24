@@ -516,6 +516,26 @@ export class ConnectionRoom {
         this.emit('agent',{type:'frame-ack',id:payload.id,monitor:payload.monitor});
       return;
     }
+    // Explicit, text-only clipboard transfers. No background clipboard sync,
+    // files, images or unauthorised requests; only approved active sessions.
+    if(role==='controller'&&['clipboard-set','clipboard-get'].includes(payload.type)){
+      if(typeof payload.requestId!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(payload.requestId))return;
+      if(payload.type==='clipboard-set' &&
+         (typeof payload.text!=='string'||payload.text.length>8192))return;
+      this.emit('agent',{type:payload.type,requestId:payload.requestId,
+        ...(payload.type==='clipboard-set'?{text:payload.text}:{})});
+      return;
+    }
+    if(role==='agent'&&payload.type==='clipboard-result'){
+      if(typeof payload.requestId!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(payload.requestId)||
+         !['get','set'].includes(payload.operation)||typeof payload.ok!=='boolean')return;
+      if(payload.text!==undefined&&(typeof payload.text!=='string'||payload.text.length>8192))return;
+      this.emit('controller',{type:'clipboard-result',requestId:payload.requestId,
+        operation:payload.operation,ok:payload.ok,
+        ...(typeof payload.text==='string'?{text:payload.text}:{}),
+        ...(typeof payload.error==='string'?{error:payload.error.slice(0,180)}:{})});
+      return;
+    }
     if(role==='controller'&&payload.type==='input'){
       const input=payload.data;
       if(!input||typeof input!=='object'||Array.isArray(input))return;
