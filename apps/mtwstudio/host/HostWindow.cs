@@ -31,6 +31,8 @@ public sealed class HostWindow : Form
     private CancellationTokenSource? captureCancellation;
     private int selectedMonitorIndex;
     private int nextFrameId;
+    private readonly System.Windows.Forms.Timer clipboardTimer = new() { Interval = 650 };
+    private string? lastClipboardText;
     private TaskCompletionSource<bool>? frameAcknowledgement;
     private int awaitingFrameId;
     private bool approved;
@@ -126,8 +128,11 @@ public sealed class HostWindow : Form
             running?.Cancel();
             captureCancellation?.Cancel();
             try { socket?.Abort(); } catch { }
+            clipboardTimer.Stop();
+            clipboardTimer.Dispose();
             browser?.Dispose();
         };
+        clipboardTimer.Tick += async (_, _) => await WatchClipboard();
         LoadSettings();
     }
 
@@ -357,6 +362,20 @@ public sealed class HostWindow : Form
         catch (Exception ex) { SetStatus("Heartbeat failed: " + ex.Message); }
     }
 
+    private async Task WatchClipboard()
+    {
+        if (!approved || activeSession == null || running is not { IsCancellationRequested: false }) return;
+        try
+        {
+            if (!Clipboard.ContainsText(TextDataFormat.UnicodeText)) return;
+            var text = Clipboard.GetText(TextDataFormat.UnicodeText);
+            if (text.Length > 8192 || text == lastClipboardText) return;
+            lastClipboardText = text;
+            await Send(new { type = "clipboard-update", text }, running.Token);
+        }
+        catch (Exception) { /* Clipboard can be temporarily locked by another app. */ }
+    }
+
     private async Task ReceiveLoop(CancellationToken ct)
     {
         var buffer = new byte[65536];
@@ -429,6 +448,7 @@ public sealed class HostWindow : Form
                                     if (textToSet == null || textToSet.Length > 8192)
                                         throw new InvalidOperationException("Text must be 8,192 characters or less.");
                                     Clipboard.SetText(textToSet, TextDataFormat.UnicodeText);
+                                    lastClipboardText = textToSet;
                                     await Send(new { type = "clipboard-result", requestId, operation = "set", ok = true }, running.Token);
                                 }
                                 else
@@ -516,6 +536,8 @@ public sealed class HostWindow : Form
         }
         activeSession = id;
         approved = true;
+        lastClipboardText = null;
+        clipboardTimer.Start();
         SetStatus("Remote session active · " + name + " · press Disconnect to stop");
         await Send(new { type = "approve" }, ct);
         await SendMonitorList(ct);
@@ -576,6 +598,8 @@ public sealed class HostWindow : Form
     {
         captureCancellation?.Cancel();
         captureCancellation = null;
+        clipboardTimer.Stop();
+        lastClipboardText = null;
         frameAcknowledgement?.TrySetResult(false);
         frameAcknowledgement = null;
         approved = false;

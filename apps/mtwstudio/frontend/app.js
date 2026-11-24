@@ -21,6 +21,60 @@ $('devices-add').onclick=()=>openDialog('register-dialog');
 $('devices-pair').onclick=()=>openDialog('pair-dialog');
 
 const clipboardRequests=new Map();
+let remoteClipboardText=null;
+let localClipboardText=null;
+let clipboardSyncEnabled=true;
+let clipboardPoll=null;
+let clipboardBusy=false;
+let lastLocalRead=0;
+const clipboardConnected=()=>clipboardSyncEnabled&&state.approved&&state.ws?.readyState===WebSocket.OPEN;
+function stopClipboardPolling(){
+  if(clipboardPoll!==null){clearInterval(clipboardPoll);clipboardPoll=null}
+  remoteClipboardText=null;
+  localClipboardText=null;
+}
+async function readLocalClipboard(){
+  if(!clipboardConnected()||clipboardBusy||!navigator.clipboard?.readText)return null;
+  try{
+    const text=await navigator.clipboard.readText();
+    if(text.length>8192)return null;
+    if(text!==localClipboardText&&text!==remoteClipboardText){
+      localClipboardText=text;
+      if(text)send({type:'clipboard-set',requestId:'sync_'+Date.now().toString(36),text});
+    }
+    return text;
+  }catch{return null}
+}
+async function startClipboardPolling(){
+  if(clipboardPoll!==null)return;
+  clipboardPoll=setInterval(()=>{
+    if(clipboardConnected()&&document.hasFocus()&&Date.now()-lastLocalRead>=1250){
+      lastLocalRead=Date.now();
+      readLocalClipboard();
+    }
+  },1500);
+}
+async function applyRemoteClipboard(text){
+  if(!clipboardConnected()||typeof text!=='string'||text.length>8192)return;
+  remoteClipboardText=text;
+  $('clipboard-text').value=text;
+  try{
+    if(!navigator.clipboard?.writeText)throw Error('Clipboard API unavailable');
+    clipboardBusy=true;
+    await navigator.clipboard.writeText(text);
+    localClipboardText=text;
+  }catch{
+    // Browser embedding/permission policy may block unattended writes.
+    // Keep the text available in the Clipboard dialog as a fallback.
+    clipboardFeedback('Remote text received. Browser may require Copy text to this device.');
+  }finally{clipboardBusy=false}
+}
+$('clipboard-auto').addEventListener('change',event=>{
+  clipboardSyncEnabled=event.target.checked;
+  if(clipboardSyncEnabled){startClipboardPolling();readLocalClipboard()}
+  else stopClipboardPolling();
+});
+
 const clipboardFeedback=(text)=>{$('clipboard-feedback').textContent=text;};
 const remoteClipboardReady=()=>state.approved&&state.ws?.readyState===WebSocket.OPEN;
 $('clipboard-open').onclick=()=>{
@@ -206,6 +260,7 @@ async function disconnect(){
   if(state.ws){state.ws.onclose=null;state.ws.close();state.ws=null}
   show('clipboard-open',false);
   clipboardRequests.clear();
+  stopClipboardPolling();
   if($('clipboard-dialog').open)$('clipboard-dialog').close();
   $('video').srcObject=null;show('viewer-section',!!state.user);show('disconnect',false);
   show('placeholder',true);
@@ -273,9 +328,14 @@ async function signalling(payload){
       show('placeholder',true);
       $('placeholder').textContent='Connecting to remote desktop…';
       show('clipboard-open',true);
+      startClipboardPolling();
       send({type:'controller-ready'});
     }
     if(payload.status==='rejected'){status('Host rejected request');notice('The host did not approve the connection')}
+    return;
+  }
+  if(payload.type==='clipboard-update'){
+    if(clipboardConnected())await applyRemoteClipboard(payload.text);
     return;
   }
   if(payload.type==='clipboard-result'){
@@ -286,6 +346,7 @@ async function signalling(payload){
     if(!payload.ok){clipboardFeedback('Remote clipboard error: '+(payload.error||'Unknown error'));return}
     if(payload.operation==='get'){
       $('clipboard-text').value=typeof payload.text==='string'?payload.text:'';
+      if(clipboardConnected())await applyRemoteClipboard($('clipboard-text').value);
       clipboardFeedback('Text received. Click Copy text to this device, or select the text and press Ctrl+C.');
     }else clipboardFeedback('Text placed on remote PC clipboard. Paste on the PC with Ctrl+V.');
     return;
@@ -396,9 +457,19 @@ screen.addEventListener('pointerdown',e=>{screen.focus();input({type:'mouseDown'
 screen.addEventListener('pointerup',e=>input({type:'mouseUp',button:e.button,...normalized(e)}));
 screen.addEventListener('contextmenu',e=>e.preventDefault());
 screen.addEventListener('wheel',e=>{if(state.approved&&state.ws?.readyState===WebSocket.OPEN){e.preventDefault();input({type:'scroll',dx:e.deltaX,dy:e.deltaY})}},{passive:false});
-screen.addEventListener('keydown',e=>{if(!state.approved||state.ws?.readyState!==WebSocket.OPEN)return;e.preventDefault();input({type:'keyDown',code:e.code,key:e.key,ctrl:e.ctrlKey,shift:e.shiftKey,alt:e.altKey,meta:e.metaKey})});
+screen.addEventListener('keydown',async e=>{
+  if(!state.approved||state.ws?.readyState!==WebSocket.OPEN)return;
+  e.preventDefault();
+  const paste=(e.ctrlKey||e.metaKey)&&e.code==='KeyV';
+  if(paste&&clipboardSyncEnabled){
+    // User's paste keystroke is a user activation, so attempt to refresh
+    // the source clipboard before sending Ctrl+V to the host.
+    await readLocalClipboard();
+  }
+  input({type:'keyDown',code:e.code,key:e.key,ctrl:e.ctrlKey,shift:e.shiftKey,alt:e.altKey,meta:e.metaKey});
+});
 screen.addEventListener('keyup',e=>{if(state.approved){e.preventDefault();input({type:'keyUp',code:e.code,key:e.key})}});
-window.addEventListener('pagehide',()=>{if(state.ws)state.ws.close()});
+window.addEventListener('pagehide',()=>{stopClipboardPolling();if(state.ws)state.ws.close()});
 // Resize the Webflow dashboard iframe to match the selected monitor's actual
 // rendered height. Only message our known parent; parent validates origin.
 if(window.parent!==window){

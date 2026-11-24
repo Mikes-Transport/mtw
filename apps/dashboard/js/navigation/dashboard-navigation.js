@@ -183,7 +183,7 @@
           <p class="mtwstudio-status" style="flex:1;margin:0;color:#777774;font-size:12px">Manager verification required to access remote computers.</p>
           <a class="mtwstudio-download" href="https://github.com/Mikes-Transport/mtw/releases/download/mtwstudio-host-latest/MTWStudio-Portable.zip" target="_blank" rel="noopener noreferrer" style="display:inline-flex;padding:9px 12px;background:#fff;border:1px solid #c9c8c4;border-radius:4px;color:#242424;text-decoration:none;font-size:12px;font-weight:600">Download Windows host (.zip)</a>
         </div>
-        <iframe class="mtwstudio-frame" hidden title="MTWStudio remote access console" loading="lazy" allow="fullscreen" style="display:block;border:1px solid #deddd9;border-radius:4px;width:100%;height:min(83vh,880px);min-height:580px;background:#f2f1ef"></iframe>`;
+        <iframe class="mtwstudio-frame" hidden title="MTWStudio remote access console" loading="lazy" allow="fullscreen; clipboard-read; clipboard-write" style="display:block;border:1px solid #deddd9;border-radius:4px;width:100%;height:min(83vh,880px);min-height:580px;background:#f2f1ef"></iframe>`;
       panels.appendChild(studio);
     }
 

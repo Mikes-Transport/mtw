@@ -526,6 +526,11 @@ export class ConnectionRoom {
         ...(payload.type==='clipboard-set'?{text:payload.text}:{})});
       return;
     }
+    if(role==='agent'&&payload.type==='clipboard-update'){
+      if(typeof payload.text!=='string'||payload.text.length>8192)return;
+      this.emit('controller',{type:'clipboard-update',text:payload.text});
+      return;
+    }
     if(role==='agent'&&payload.type==='clipboard-result'){
       if(typeof payload.requestId!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(payload.requestId)||
          !['get','set'].includes(payload.operation)||typeof payload.ok!=='boolean')return;
