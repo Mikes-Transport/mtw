@@ -1,12 +1,10 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MTWStudio Host</title><style>
-:root{font:14px system-ui;color:#dae8f9;background:#0b111d}
-body{margin:0;padding:18px}h2{margin:0 0 12px}p{color:#a5b6ce;line-height:1.6}
-#status{padding:15px;border:1px solid #34445f;border-radius:9px;background:#142035}
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MTWStudio Capture Bridge</title><style>
+:root{font:12px "Segoe UI",system-ui,sans-serif;color:#676763;background:#f2f1ef}
+body{margin:0;padding:14px 18px}
+#status{display:inline-flex;align-items:center;min-height:35px;padding:9px 12px;background:#fff;border:1px solid #deddd9;border-radius:4px;color:#555}
+.note{margin-top:12px;color:#777774;line-height:1.5}
 </style></head><body>
-<h2>MTWStudio remote support</h2>
-<p>Connected monitors are detected automatically. The remote manager can select a display only after you approve their connection.</p>
-<div id="status">Waiting for the host application…</div>
-<p>You can reject any connection request or press <strong>Disconnect / Stop</strong> in the Windows application at any time.</p>
+<div id="status" role="status">Preparing screen connection…</div>
+<div class="note">Your displays are detected automatically. Stop the host at any time to end remote access.</div>
 <script src="/host.js"></script></body></html>
