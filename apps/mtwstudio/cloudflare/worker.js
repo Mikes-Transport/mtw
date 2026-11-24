@@ -510,6 +510,12 @@ export class ConnectionRoom {
       this.emit('controller',payload);
       return;
     }
+    if(role==='controller'&&payload.type==='frame-ack'){
+      if(Number.isSafeInteger(payload.id)&&payload.id>=0&&
+         Number.isSafeInteger(payload.monitor)&&payload.monitor>=0&&payload.monitor<32)
+        this.emit('agent',{type:'frame-ack',id:payload.id,monitor:payload.monitor});
+      return;
+    }
     if(role==='controller'&&payload.type==='input'){
       const input=payload.data;
       if(!input||typeof input!=='object'||Array.isArray(input))return;

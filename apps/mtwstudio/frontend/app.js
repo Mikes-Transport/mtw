@@ -262,6 +262,9 @@ function receiveFrame(raw){
     show('canvas',true);show('placeholder',false);
     $('quality').textContent='Secure relay · image received';
     status('Connected · viewing monitor '+(frame.monitor+1),true);
+    // Credit-based flow control: request the next frame only after this
+    // one has rendered. Prevents mobile data from queuing old images.
+    send({type:'frame-ack',id:frame.id,monitor:frame.monitor});
   };
   image.src='data:image/jpeg;base64,'+frame.parts.join('');
 }
@@ -270,6 +273,8 @@ $('monitor-picker').addEventListener('change',event=>{
   if(!Number.isInteger(index)||index<0||!state.monitors.some(m=>m.index===index))return;
   state.selectedMonitor=index;state.frameChunks=null;state.frameLastId=0;
   show('placeholder',true);show('canvas',false);
+  $('placeholder').textContent='Switching to monitor '+(index+1)+'…';
+  $('quality').textContent='Changing monitor…';
   send({type:'select-monitor',index});
 });
 $('connect-form').addEventListener('submit',e=>{e.preventDefault();connect({code:$('code').value.trim()})});

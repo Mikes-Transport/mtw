@@ -31,6 +31,8 @@ public sealed class HostWindow : Form
     private CancellationTokenSource? captureCancellation;
     private int selectedMonitorIndex;
     private int nextFrameId;
+    private TaskCompletionSource<bool>? frameAcknowledgement;
+    private int awaitingFrameId;
     private bool approved;
     private bool browserReady;
     private bool browserNavigationCompleted;
@@ -364,6 +366,12 @@ public sealed class HostWindow : Form
                         index.TryGetInt32(out var chosen))
                         BeginInvoke(() => SelectMonitor(chosen));
                 }
+                else if (type == "frame-ack")
+                {
+                    if (data.RootElement.TryGetProperty("id", out var acknowledged) &&
+                        acknowledged.TryGetInt32(out var frameId) && frameId == awaitingFrameId)
+                        frameAcknowledgement?.TrySetResult(true);
+                }
                 else if (type == "input")
                 {
                     if (approved && activeSession != null && data.RootElement.TryGetProperty("data", out var input))
@@ -492,6 +500,8 @@ public sealed class HostWindow : Form
     {
         captureCancellation?.Cancel();
         captureCancellation = null;
+        frameAcknowledgement?.TrySetResult(false);
+        frameAcknowledgement = null;
         approved = false;
         activeSession = null;
         PostBrowser(JsonSerializer.Serialize(new { type = "stop" }));
@@ -512,7 +522,10 @@ public sealed class HostWindow : Form
     private void SelectMonitor(int index)
     {
         if (!approved || index < 0 || index >= Screen.AllScreens.Length) return;
+        if (selectedMonitorIndex == index) return;
         selectedMonitorIndex = index;
+        // Stop waiting for the previous monitor's frame to be acknowledged.
+        frameAcknowledgement?.TrySetResult(false);
         SetStatus($"Remote session · viewing monitor {index + 1}");
         if (running is { IsCancellationRequested: false })
             _ = SendMonitorList(running.Token).ContinueWith(_ => { });
@@ -548,14 +561,18 @@ public sealed class HostWindow : Form
                     scaled.Save(buffer, encoder, quality);
                     frame = Convert.ToBase64String(buffer.ToArray());
                 }
-                if (!ct.IsCancellationRequested && approved)
+                if (!ct.IsCancellationRequested && approved && index == selectedMonitorIndex)
                 {
                     const int chunkLength = 10000;
                     var count = (frame.Length + chunkLength - 1) / chunkLength;
                     if (count <= 96)
                     {
                         var frameId = Interlocked.Increment(ref nextFrameId);
-                        for (var chunk = 0; chunk < count && approved && !ct.IsCancellationRequested; chunk++)
+                        var acknowledgement = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                        awaitingFrameId = frameId;
+                        frameAcknowledgement = acknowledgement;
+                        for (var chunk = 0; chunk < count && approved && !ct.IsCancellationRequested &&
+                             index == selectedMonitorIndex; chunk++)
                         {
                             var offset = chunk * chunkLength;
                             await Send(new {
@@ -564,9 +581,15 @@ public sealed class HostWindow : Form
                                 image = frame.Substring(offset, Math.Min(chunkLength, frame.Length - offset))
                             }, ct);
                         }
+                        // Only one frame may be in flight. Without this, a slow
+                        // phone connection builds a growing queue of old screens.
+                        if (index == selectedMonitorIndex && approved && !ct.IsCancellationRequested)
+                            await Task.WhenAny(acknowledgement.Task, Task.Delay(1500, ct));
+                        if (ReferenceEquals(frameAcknowledgement, acknowledgement))
+                            frameAcknowledgement = null;
                     }
                 }
-                await Task.Delay(200, ct);
+                await Task.Delay(70, ct);
             }
         }
         catch (OperationCanceledException) { }
