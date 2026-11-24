@@ -7,6 +7,8 @@ on:
       - feature/mtwstudio-manager-tool
     paths:
       - 'apps/mtwstudio/host/**'
+      - 'apps/mtwstudio/frontend/host.js'
+      - 'apps/mtwstudio/frontend/host.html'
       - '.github/workflows/mtwstudio-host.yml'
   workflow_dispatch:
 
