@@ -485,6 +485,12 @@ export class ConnectionRoom {
       this.emit('agent',{type:'controller-ready'});
       return;
     }
+    // Approved controllers may request a fresh screen-capture loop without
+    // disrupting authentication, clipboard, keyboard or the active session.
+    if(role==='controller'&&payload.type==='restart-capture'){
+      this.emit('agent',{type:'restart-capture'});
+      return;
+    }
     // Signalling only: SDP/ICE; never forward arbitrary user input over signalling.
     if(role==='agent'&&payload.type==='monitors'){
       const monitors=Array.isArray(payload.monitors)?payload.monitors.slice(0,16):[];

@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);
-const state={user:null,ws:null,peer:null,channel:null,sessionId:null,approved:false,remoteStream:null,pendingIce:[],pendingOffer:null,frameChunks:null,frameLastId:0,monitors:[],selectedMonitor:0,iceServers:[{urls:'stun:stun.cloudflare.com:3478'}]};
+const state={user:null,ws:null,peer:null,channel:null,sessionId:null,approved:false,remoteStream:null,pendingIce:[],pendingOffer:null,frameChunks:null,frameLastId:0,lastFrameAt:0,frameRecoveryAttempts:0,monitors:[],selectedMonitor:0,iceServers:[{urls:'stun:stun.cloudflare.com:3478'}]};
 const show=(id,yes)=>$(id).hidden=!yes;
 const dialogIds=['connect-dialog','register-dialog','pair-dialog','clipboard-dialog'];
 function openDialog(id){
@@ -255,11 +255,37 @@ $('confirm-form').addEventListener('submit',async event=>{
 });
 $('logout').onclick=async()=>{await disconnect();try{await api('auth/logout','POST')}catch{}await refresh()};
 function send(message){if(state.ws?.readyState===WebSocket.OPEN)state.ws.send(JSON.stringify(message))}
+// A healthy signalling WebSocket does not guarantee that screen capture is working.
+// Restart only the capture task on the approved host, not the authenticated session.
+function recoverStream(automatic=false){
+  if(!state.approved||state.ws?.readyState!==WebSocket.OPEN)return;
+  if(automatic){
+    if(document.hidden||state.frameRecoveryAttempts>=2)return;
+    state.frameRecoveryAttempts++;
+  }else state.frameRecoveryAttempts=0;
+  state.lastFrameAt=Date.now();
+  state.frameChunks=null;
+  $('quality').textContent=automatic?'Screen stalled · attempting recovery…':'Refreshing remote screen…';
+  status('Refreshing screen capture…');
+  send({type:'restart-capture'});
+}
+$('refresh-stream').onclick=()=>recoverStream(false);
+// Start checking only after host approval. Paused when the tab is hidden so
+// background browser throttling does not trigger unnecessary recovery attempts.
+setInterval(()=>{
+  if(!state.approved||!state.sessionId||document.hidden||!state.lastFrameAt)return;
+  if(Date.now()-state.lastFrameAt<12000)return;
+  if(state.frameRecoveryAttempts<2)recoverStream(true);
+  else{
+    $('quality').textContent='Screen stalled · use Refresh stream';
+    status('Screen stalled · connection is open');
+  }
+},3000);
 async function disconnect(){
   const id=state.sessionId;state.sessionId=null;state.approved=false;
   if(state.channel){try{state.channel.close()}catch{}state.channel=null}
   if(state.peer){state.peer.close();state.peer=null}
-  state.pendingIce=[];state.pendingOffer=null;state.frameChunks=null;state.frameLastId=0;state.monitors=[];
+  state.pendingIce=[];state.pendingOffer=null;state.frameChunks=null;state.frameLastId=0;state.lastFrameAt=0;state.frameRecoveryAttempts=0;state.monitors=[];
   $('monitor-picker').replaceChildren();show('monitor-controls',false);
   $('canvas').getContext('2d').clearRect(0,0,$('canvas').width,$('canvas').height);
   show('canvas',false);
@@ -268,7 +294,7 @@ async function disconnect(){
   clipboardRequests.clear();
   stopClipboardPolling();
   if($('clipboard-dialog').open)$('clipboard-dialog').close();
-  $('video').srcObject=null;show('viewer-section',!!state.user);show('disconnect',false);
+  $('video').srcObject=null;show('viewer-section',!!state.user);show('disconnect',false);show('refresh-stream',false);
   show('placeholder',true);
   $('placeholder').innerHTML='<span class="empty-symbol">▣</span><strong>No active connection</strong><span>Choose Connect to select a saved PC or add a new one.</span><button type="button" id="empty-connect" class="empty-action">Connect to a computer</button>';
   $('empty-connect').onclick=()=>openDialog('connect-dialog');
@@ -325,8 +351,10 @@ async function signalling(payload){
   }
   if(payload.type==='status'){
     state.approved=payload.status==='approved';
+    show('refresh-stream',state.approved);
     if(payload.status==='pending')status('Waiting for host approval…');
     if(payload.status==='approved'){
+      state.lastFrameAt=Date.now();state.frameRecoveryAttempts=0;
       status('Approved · starting secure screen relay…');
       $('quality').textContent='Secure WebSocket relay';
       show('viewer-section',true);
@@ -421,6 +449,7 @@ function receiveFrame(raw){
     fitRemoteMonitor(image.width,image.height);
     canvas.getContext('2d').drawImage(image,0,0);
     show('canvas',true);show('placeholder',false);
+    state.lastFrameAt=Date.now();state.frameRecoveryAttempts=0;
     $('quality').textContent='Secure relay · image received';
     status('Connected · viewing monitor '+(frame.monitor+1),true);
     // Credit-based flow control: request the next frame only after this
@@ -433,6 +462,7 @@ $('monitor-picker').addEventListener('change',event=>{
   const index=Number(event.target.value);
   if(!Number.isInteger(index)||index<0||!state.monitors.some(m=>m.index===index))return;
   state.selectedMonitor=index;state.frameChunks=null;state.frameLastId=0;
+  state.lastFrameAt=Date.now();state.frameRecoveryAttempts=0;
   const target=state.monitors.find(m=>m.index===index);
   if(target)fitRemoteMonitor(target.width,target.height);
   show('placeholder',true);show('canvas',false);

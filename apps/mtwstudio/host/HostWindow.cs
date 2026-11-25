@@ -419,6 +419,11 @@ public sealed class HostWindow : Form
                         index.TryGetInt32(out var chosen))
                         BeginInvoke(() => SelectMonitor(chosen));
                 }
+                else if (type == "restart-capture")
+                {
+                    if (approved && activeSession != null && running is { IsCancellationRequested: false })
+                        BeginInvoke(() => RestartCapture());
+                }
                 else if (type == "frame-ack")
                 {
                     if (data.RootElement.TryGetProperty("id", out var acknowledged) &&
@@ -543,9 +548,19 @@ public sealed class HostWindow : Form
         await SendMonitorList(ct);
         // The secure WebSocket relay is the default transport. It works on
         // networks where peer-to-peer WebRTC cannot complete ICE negotiation.
+        RestartCapture();
+    }
+
+    private void RestartCapture()
+    {
+        if (!approved || activeSession == null || running is not { IsCancellationRequested: false }) return;
         captureCancellation?.Cancel();
-        captureCancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        _ = Task.Run(() => CaptureLoop(captureCancellation.Token), captureCancellation.Token);
+        frameAcknowledgement?.TrySetResult(false);
+        frameAcknowledgement = null;
+        captureCancellation = CancellationTokenSource.CreateLinkedTokenSource(running.Token);
+        var ct = captureCancellation.Token;
+        SetStatus("Remote session active · screen capture refreshed");
+        _ = Task.Run(() => CaptureLoop(ct), ct);
     }
 
     private async Task Send(object payload, CancellationToken ct)
