@@ -717,6 +717,10 @@
           commit(made.page);
           onChange(made.name);
         });
+      } else if (field.type === 'comments') {
+        const items = c.pageElements(page).filter(item => item.type === 'comments');
+        input = selectOf(id, [['', items.length ? 'Choose a comments box' : 'Add a Comments box first']]
+          .concat(items.map(item => [item.name, item.block.props.title || item.name])), value);
       } else if (field.type === 'timer') {
         const items = c.pageElements(page).filter(item => item.type === 'stat' && item.block.props.source === 'timer'
           && (field.kind ? item.block.props.timerFrom === 'date' && item.block.props.timerKind === field.kind : item.block.props.timerFrom === 'open'));

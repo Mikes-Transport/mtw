@@ -1254,3 +1254,12 @@ button.mtw-pb-record-card:hover { border-color: #9a9893; box-shadow: 0 4px 14px 
 .mtw-pb-show-and { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--mtw-muted, #777774); }
 .mtw-pb-show-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .mtw-pb-conditions { display: grid; gap: 6px; margin: 0 0 12px; }
+
+/* Page builder comments: independent saved entries. */
+.mtw-pb-comments{border:1px solid #deddd9;border-radius:8px;padding:16px;background:#fff;min-width:0}
+.mtw-pb-comments-title{display:block;font-weight:700;margin-bottom:12px;font-size:14px}
+.mtw-pb-comments-entries{display:flex;flex-direction:column;max-height:350px;overflow-y:auto}
+.mtw-pb-comment-entry{padding:10px 0;border-top:1px solid #ecebe8;display:flex;flex-direction:column;gap:4px}
+.mtw-pb-comment-text{font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
+.mtw-pb-comment-meta{font-size:11px;color:#777774}
+.mtw-pb-comments-empty{font-size:13px;color:#777774;margin:3px 0}

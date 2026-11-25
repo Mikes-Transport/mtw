@@ -755,7 +755,32 @@
         break;
       case 'list': {
         node = el(doc, p.ordered === 'yes' ? 'ol' : 'ul', 'mtw-pb-list');
-        core().listItems(p.items).forEach(item => node.appendChild(el(doc, 'li', '', item)));
+        core().listItems(override === null ? p.items : override).forEach(item => node.appendChild(el(doc, 'li', '', item)));
+        break;
+      }
+      case 'comments': {
+        node = el(doc, 'section', 'mtw-pb-comments');
+        if (p.title) node.appendChild(el(doc, 'strong', 'mtw-pb-comments-title', p.title));
+        const entries = el(doc, 'div', 'mtw-pb-comments-entries');
+        entries.setAttribute('aria-live', 'polite');
+        node.appendChild(entries);
+        const draw = feed => {
+          entries.replaceChildren();
+          if (feed?.error) return entries.appendChild(el(doc, 'p', 'mtw-pb-comments-empty', 'Comments unavailable — check Firebase permissions.'));
+          if (feed && !feed.loaded) return entries.appendChild(el(doc, 'p', 'mtw-pb-comments-empty', 'Loading comments…'));
+          if (!feed?.items?.length) return entries.appendChild(el(doc, 'p', 'mtw-pb-comments-empty', p.emptyText || 'No comments yet.'));
+          feed.items.forEach(item => {
+            const line = el(doc, 'div', 'mtw-pb-comment-entry');
+            line.appendChild(el(doc, 'span', 'mtw-pb-comment-text', item.text));
+            if (item.user || item.at) {
+              line.appendChild(el(doc, 'small', 'mtw-pb-comment-meta',
+                [item.user, item.at ? when(item.at) : ''].filter(Boolean).join(' · ')));
+            }
+            entries.appendChild(line);
+          });
+        };
+        if (rt && !options.editing && block.name) rt.watchComments(block.name, node, draw);
+        else draw(null);
         break;
       }
       case 'notice': {

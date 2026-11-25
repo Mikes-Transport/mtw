@@ -67,6 +67,14 @@
         { key: 'actions', label: 'When clicked, do', type: 'actions' }
       ]
     },
+    comments: {
+      label: 'Comments box', group: 'Interactive',
+      defaults: { title: 'Comments', emptyText: 'No comments yet.' },
+      fields: [
+        { key: 'title', label: 'Heading', type: 'text' },
+        { key: 'emptyText', label: 'Text when empty', type: 'text' }
+      ]
+    },
     notice: {
       label: 'Notice', group: 'Text',
       defaults: { tone: 'info', title: 'Heads up', text: 'Something people should know.', actions: [] },
@@ -318,6 +326,15 @@
       fields: [
         { key: 'target', label: 'Element', type: 'element' },
         { key: 'value', label: 'New text', type: 'text', tokens: true }
+      ]
+    },
+    appendComment: {
+      group: 'Data', label: 'Append to a comments box',
+      description: 'Saves an input value as a new comment without replacing earlier entries.',
+      defaults: { target: '', value: '' },
+      fields: [
+        { key: 'target', label: 'Comments box', type: 'comments' },
+        { key: 'value', label: 'Comment (use {input_name})', type: 'text', tokens: true }
       ]
     },
     show: {
@@ -654,6 +671,7 @@
       case 'input':
       case 'popup':
       case 'timer':
+      case 'comments':
         return typeof value === 'string' && KEY_RE.test(value) ? value : '';
       case 'element':
         return typeof value === 'string' && (KEY_RE.test(value) || RECORD_RE.test(value)) ? value : '';

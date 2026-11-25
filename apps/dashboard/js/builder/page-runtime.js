@@ -201,6 +201,7 @@
       data: opts.shared ? opts.shared.data : {},
       // stopwatch tile name -> { elapsed, startedAt (null when paused) }
       timers: {},
+      commentFeeds: {},
       disposed: false
     };
     let ui = opts.ui || {};
@@ -320,6 +321,65 @@
         && more.every(w => matchField(def, row, w.field, w.op, w.want))).length;
     }
 
+
+    // Independent Firestore documents prevent concurrent comments overwriting one another.
+    function commentFeed(block) {
+      if (!block || block.type !== 'comments') return null;
+      if (state.commentFeeds[block.id]) return state.commentFeeds[block.id];
+      const feed = { items: [], loaded: false, error: null, listeners: new Set(), unsubscribe: null };
+      state.commentFeeds[block.id] = feed;
+      const notify = () => feed.listeners.forEach(fn => fn(feed));
+      if (opts.editing || opts.dryRun) { feed.loaded = true; return feed; }
+      if (!opts.toolId || !api.db || !api.collection || !api.onSnapshot) {
+        feed.loaded = true;
+        feed.error = new Error('Comments require Firebase access.');
+        return feed;
+      }
+      try {
+        const collection = api.collection(api.db, `dashboard-comments-${opts.toolId}`);
+        feed.unsubscribe = api.onSnapshot(collection, snapshot => {
+          const entries = [];
+          snapshot.forEach(doc => {
+            const item = doc.data() || {};
+            if (item.blockId !== block.id) return;
+            entries.push({ id: doc.id, text: String(item.text || ''), user: String(item.user || ''), at: Number(item.at) || 0 });
+          });
+          entries.sort((a,b) => a.at - b.at || a.id.localeCompare(b.id));
+          feed.items = entries.slice(-200);
+          feed.loaded = true;
+          feed.error = null;
+          notify();
+        }, error => { feed.error = error; feed.loaded = true; notify(); });
+      } catch (error) { feed.error = error; feed.loaded = true; }
+      return feed;
+    }
+    function watchComments(name, node, fn) {
+      const feed = commentFeed(elements[name]);
+      if (!feed) return;
+      const listener = current => {
+        if (node && !node.isConnected) { feed.listeners.delete(listener); return; }
+        fn(current);
+      };
+      feed.listeners.add(listener);
+      fn(feed);
+    }
+    async function appendComment(name, raw) {
+      const block = elements[name];
+      if (!block || block.type !== 'comments') throw new Error('Select a comments box first.');
+      const message = String(raw || '').trim();
+      if (!message) return;
+      if (message.length > c.LIMITS.text) throw new Error('Comment is too long.');
+      const feed = commentFeed(block);
+      if (opts.dryRun) {
+        feed.items.push({ id: `preview-${Date.now()}-${feed.items.length}`, text: message, user, at: Date.now() });
+        feed.listeners.forEach(fn => fn(feed));
+      } else {
+        if (!opts.toolId || !api.db || !api.addDoc) throw new Error('Comments require Firebase access.');
+        await api.addDoc(api.collection(api.db, `dashboard-comments-${opts.toolId}`),
+          { blockId: block.id, text: message, user, at: Date.now() });
+      }
+    }
+
     // ---------- element values ----------
     function value(name, ctx) {
       if (typeof name === 'string' && name.startsWith('record.')) {
@@ -345,7 +405,8 @@
           return entry ? entry.rows.length : 0;
         }
         case 'table': return p.rows.length;
-        case 'list': return c.listItems(p.items).length;
+        case 'list': return c.listItems(state.texts[name] === undefined ? p.items : state.texts[name]).length;
+        case 'comments': return (state.commentFeeds[block.id]?.items || []).length;
         default: return '';
       }
     }
@@ -794,6 +855,13 @@
         case 'setValue':
           setValue(step.target, tokens(step.value, ctx));
           return null;
+        case 'appendComment':
+          try { await appendComment(step.target, tokens(step.value, ctx)); }
+          catch (error) {
+            if (ui.toast) ui.toast(error.message || 'Could not add comment.', 'danger');
+            return STOP;
+          }
+          return null;
         case 'setText':
           if (elements[step.target]) {
             if (elements[step.target].type === 'input') setValue(step.target, tokens(step.value, ctx));
@@ -960,6 +1028,10 @@
       loops.clear();
       tickers.clear();
       unwatchers.forEach(fn => fn());
+      Object.values(state.commentFeeds).forEach(feed => {
+        if (typeof feed.unsubscribe === 'function') feed.unsubscribe();
+        feed.listeners.clear();
+      });
       state.disposed = true;
       if (!opts.shared) disposeShared({ data: state.data });
     }
@@ -982,6 +1054,8 @@
       text: name => (state.texts[name] !== undefined ? state.texts[name] : null),
       table,
       watch,
+      watchComments,
+      appendComment,
       count,
       save,
       remove,
