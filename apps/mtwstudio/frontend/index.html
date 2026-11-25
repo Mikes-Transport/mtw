@@ -8,7 +8,6 @@
 <form id="setup-form"><label>Manager username<input id="setup-username" maxlength="50" required></label><label>Display name<input id="setup-name" maxlength="80" required></label><label>Private setup key<input id="setup-key" type="password" autocomplete="off" required></label><button type="submit">Generate authenticator secret</button></form><div id="setup-confirm" hidden><p>Add the secret below to your authenticator, then confirm a code:</p><code id="totp-secret" class="setup-secret"></code><form id="confirm-form"><label>Authenticator code<input id="confirm-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required></label><button type="submit">Verify and activate</button></form></div></section>
 <section id="workspace" hidden>
 <nav class="toolbar" aria-label="MTWStudio tools">
-<div class="toolbar-primary"><button type="button" id="nav-connect" class="nav-button primary">Connect to a computer</button></div>
 <div class="toolbar-end"><span class="state"><span id="dot"></span><span id="status" role="status">Not connected</span></span><button id="logout" class="nav-button subtle">Sign out</button></div>
 </nav>
 <section id="viewer-section" class="viewer" hidden>

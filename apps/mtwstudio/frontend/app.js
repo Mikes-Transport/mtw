@@ -11,7 +11,6 @@ function openDialog(id){
 function closeDialogs(){for(const id of dialogIds)if($(id).open)$(id).close()}
 for(const button of document.querySelectorAll('.close-dialog'))
   button.addEventListener('click',()=>button.closest('dialog')?.close());
-$('nav-connect').onclick=()=>openDialog('connect-dialog');
 $('connect-code-toggle').onclick=()=>{
   const panel=$('connect-code-panel');
   panel.hidden=!panel.hidden;
