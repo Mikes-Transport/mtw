@@ -30,6 +30,9 @@
       .um-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0;flex-wrap:wrap}
       .um-button{background:#fff;border:1px solid #c9c8c4;color:#262626;border-radius:7px;padding:9px 13px;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer}
       .um-button.primary{background:#242424;color:#fff;border-color:#242424}
+      .developer-tools-panel .um-button.primary:hover,
+      .developer-tools-panel .um-button.primary:focus-visible{background:#393939;color:#fff;border-color:#393939}
+      .developer-tools-panel .um-button:not(.primary):hover{background:#f2f1ef;color:#242424}
       .um-button.danger{color:#b42318;border-color:#ebc3bc}
       .um-button:disabled{opacity:.45;cursor:not-allowed}
       .um-list{display:grid;gap:9px}
