@@ -275,7 +275,6 @@ async function disconnect(){
   $('empty-connect').onclick=()=>openDialog('connect-dialog');
   $('quality').textContent='No active connection';
   status('Disconnected');if(id)try{await api('connections/'+id+'/disconnect','POST')}catch{}
-  if(state.user)await history();
 }
 $('disconnect').onclick=disconnect;
 $('fullscreen').onclick=()=>{const viewer=$('screen');if(document.fullscreenElement)document.exitFullscreen();else viewer.requestFullscreen().catch(e=>notice(e.message))};
