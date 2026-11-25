@@ -1559,12 +1559,21 @@
         h('span', { text: state.toast.text }),
         h('button', { type: 'button', class: 'ts-btn', text: 'View', onclick: () => { state.toast = null; state.notificationsOpen = true; state.notificationsOpenedSeen = Number(state.person.notificationsSeenAt) || 0; markNotificationsSeen(); render(); } }))
       : null;
-    // Reuse an open review popup across background Firestore snapshots and
-    // Timesheet re-renders. Removing/recreating its iframe resets the Drive viewer.
+    // The Google Drive iframe must NEVER be detached during live Firestore
+    // updates: even re-appending the same DOM node reloads the embedded viewer.
+    // Replace only the regular Timesheet nodes and leave the open review modal
+    // physically attached to its existing parent for the entire review session.
     const reviewOverlay = renderReviewDialog();
-    if (reviewOverlay && reviewOverlay.parentNode === panel) reviewOverlay.remove();
-    panel.replaceChildren(header(title), toast || '', messageBar() || '', body);
-    if (reviewOverlay) panel.appendChild(reviewOverlay);
+    const content = [header(title), toast || '', messageBar() || '', body];
+    if (reviewOverlay && reviewOverlay.parentNode === panel) {
+      for (const child of [...panel.childNodes]) {
+        if (child !== reviewOverlay) child.remove();
+      }
+      panel.prepend(...content);
+    } else {
+      panel.replaceChildren(...content);
+      if (reviewOverlay) panel.appendChild(reviewOverlay);
+    }
     panel.classList.toggle('is-busy', state.busy);
   }
 
