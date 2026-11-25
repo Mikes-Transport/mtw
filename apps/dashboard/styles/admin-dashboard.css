@@ -1617,3 +1617,22 @@ body:has(.db-main-wrapper) {
   .developer-manager-tabs { gap: 15px; }
   .developer-manager-topline { align-items: stretch; }
 }
+
+/* Manage Users: override the generic Manager Tools button rule in all states. */
+.developer-tools-panel button.um-button.primary,
+.developer-tools-panel button.um-button.primary:visited {
+  background: #242424 !important;
+  border-color: #242424 !important;
+  color: #fff !important;
+}
+.developer-tools-panel button.um-button.primary:hover,
+.developer-tools-panel button.um-button.primary:focus-visible,
+.developer-tools-panel button.um-button.primary:active {
+  background: #393939 !important;
+  border-color: #393939 !important;
+  color: #fff !important;
+}
+.developer-tools-panel button.um-button:not(.primary):hover {
+  background: #f2f1ef;
+  color: #242424;
+}
