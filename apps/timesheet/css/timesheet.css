@@ -792,3 +792,40 @@
   .ts-review-file { flex: none; height: 43vh; min-height: 230px; }
   .ts-review-side { flex: none; max-height: 38vh; min-height: 200px; border-left: 0; border-top: 1px solid #deddd9; }
 }
+
+/* Reviews refinements: match dashboard Manager Tools dropdown and compact spacing. */
+.ts-review-card { padding: 16px; }
+.ts-review-card .ts-card-head { margin-bottom: 12px; }
+.ts-review-list > .ts-hint { padding: 11px 12px; margin: 0; }
+.ts-review-dialog-header { padding: 10px 15px; min-height: 52px; }
+.ts-review-form { gap: 10px; padding: 15px 18px 18px; }
+.ts-review-form .ts-field { margin-top: 2px; }
+.ts-review-form .ts-hint { margin: 3px 0; }
+.ts-review-preview { height: min(80vh, 790px); }
+.ts-review-preview-toolbar { min-height: 51px; padding: 8px 12px; background: #f5f5f4; border-bottom: 1px solid #deddd9; }
+.ts-review-preview-note { font-size: 11px; color: #777774; }
+.ts-review-version {
+  box-sizing: border-box; min-width: 145px; max-width: 190px; width: auto;
+  min-height: 35px; padding: 7px 34px 7px 12px; border: 1px solid #c9c8c4;
+  border-radius: 5px; background-color: #fff; color: #242424;
+  font: inherit; font-size: 12px; font-weight: 400; outline: none;
+  appearance: none; -webkit-appearance: none; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23555' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center;
+}
+.ts-review-version:hover { border-color: #a9a7a2; }
+.ts-review-version:focus { border-color: #242424; box-shadow: 0 0 0 3px rgba(36,36,36,.08); }
+.ts-review-side-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 11px 13px; border-bottom: 1px solid #deddd9; flex-wrap: wrap; }
+.ts-review-side-header h3 { margin: 0; padding: 0; border: 0; }
+.ts-review-side-status { color: #777774; font-size: 11px; }
+.ts-review-comments { padding: 12px 13px; }
+.ts-review-comment-compose { padding: 12px 13px; gap: 9px; }
+.ts-review-comment-compose textarea { resize: vertical; min-height: 76px; }
+.ts-review-error { padding: 9px 11px; border-radius: 6px; background: #fceced; color: #a31f26; font-size: 12px; margin: 0; }
+.ts-review-error[hidden] { display: none !important; }
+.ts-review-form .ts-review-actions { margin-top: 5px; }
+.ts-review-row { padding: 8px 11px; }
+@media(max-width:680px) {
+  .ts-review-preview { height: min(85vh, 850px); }
+  .ts-review-preview-toolbar { min-height: 46px; }
+}

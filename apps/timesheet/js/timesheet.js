@@ -1118,7 +1118,7 @@
     const a = requireDb();
     await a.updateDoc(a.doc(a.db, C.reviews, r.id), { comments, updatedAt: now });
     await audit('review-commented', 'review', r.id);
-    say('Comment posted.');
+    // Comment panel updates in place; avoid an outer Timesheet banner.
   }
 
   async function setReviewDecision(r, status) {
@@ -1129,7 +1129,7 @@
       status, reviewedBy: state.person.id, reviewedAt: now, updatedAt: now
     });
     await audit('review-' + status, 'review', r.id, { version: (r.versions || []).length });
-    say(status === 'approved' ? 'Review approved.' : 'Changes requested.');
+    // Decision status updates in the popup without reloading the file.
   }
 
   function reviewDialog(type, id) {
@@ -1140,23 +1140,74 @@
   function reviewForm(type, review) {
     const title = h('input', { class: 'ts-input', type: 'text', maxLength: 120, placeholder: 'e.g. November promotional flyer', value: review ? review.title : '' });
     const link = h('input', { class: 'ts-input', type: 'url', placeholder: 'https://drive.google.com/file/d/…/view', autocomplete: 'off' });
-    const save = () => {
-      const value = link.value, name = title.value;
-      if (!value.trim() || (!review && !name.trim())) { say('Enter a title and Google Drive link.', 'error'); render(); return; }
-      state.reviewDialog = null;
-      act(() => review ? addReviewVersion(review, value) : createReview(name, value));
+    const error = h('p', { class: 'ts-review-error', role: 'alert', hidden: true });
+    const save = h('button', { type: 'button', class: 'ts-btn primary', text: review ? 'Submit revision' : 'Submit review' });
+    const showError = message => { error.textContent = message; error.hidden = false; };
+    const submit = async () => {
+      if (save.disabled) return;
+      const value = link.value.trim(), name = title.value.trim();
+      if (!value || (!review && !name)) { showError('Enter a title and Google Drive link.'); return; }
+      try { driveLink(value); } catch (e) { showError(e.message); return; }
+      error.hidden = true;
+      save.disabled = true;
+      try {
+        if (review) await addReviewVersion(review, value);
+        else await createReview(name, value);
+        state.reviewDialog = null;
+        await load();
+        render();
+      } catch (e) {
+        if (!e.userFacing) console.error('[timesheet] review save failed:', e);
+        showError(e.message || 'Could not save the review. Please try again.');
+      } finally { save.disabled = false; }
     };
+    save.addEventListener('click', submit);
+    link.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
     return h('div', { class: 'ts-review-form' },
       h('label', { class: 'ts-field' }, 'Review name', title),
       h('label', { class: 'ts-field' }, 'Google Drive file link', link),
-      h('p', { class: 'ts-hint', text: 'Set the Google Drive file to Anyone with the link → Viewer. The reviewer will not need a Drive login. Anyone with the link can access the file.' }),
+      error,
+      h('p', { class: 'ts-hint', text: 'In Google Drive, set sharing to Anyone with the link → Viewer to allow no-login previews. Anyone with the link can view it.' }),
       h('div', { class: 'ts-review-actions' },
         h('button', { type: 'button', class: 'ts-btn', text: 'Cancel', onclick: () => { state.reviewDialog = null; render(); } }),
-        h('button', { type: 'button', class: 'ts-btn primary', text: review ? 'Submit revision' : 'Submit review', onclick: save })));
+        save));
   }
 
   function nameOf(id) {
     return (state.people.find(p => p.id === id) || { name: 'Someone' }).name;
+  }
+
+  function reviewCommentElements(r) {
+    return (r.comments || []).length
+      ? r.comments.map(c => h('div', { class: 'ts-review-comment' },
+        h('div', { class: 'ts-review-comment-meta', text: `${nameOf(c.by)} · V${c.version || 1} · ${new Date(c.at).toLocaleString()}` }),
+        h('div', { text: c.text })))
+      : [h('p', { class: 'ts-hint', text: 'No comments yet.' })];
+  }
+
+  // Refresh live comment/status metadata without destroying the Drive iframe,
+  // losing textarea focus or restarting the embedded PDF viewer.
+  function refreshReviewDialog(overlay, r) {
+    if (!overlay || !r) return;
+    const heading = overlay.querySelector('[data-review-comments-heading]');
+    const list = overlay.querySelector('[data-review-comments-list]');
+    const status = overlay.querySelector('[data-review-decision]');
+    if (heading) heading.textContent = `Comments (${(r.comments || []).length})`;
+    if (list) {
+      const prior = list.dataset.commentIds || '';
+      const current = JSON.stringify((r.comments || []).map(c => c.id || c.at));
+      if (prior !== current) {
+        const nearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 45;
+        list.replaceChildren(...reviewCommentElements(r));
+        list.dataset.commentIds = current;
+        if (nearBottom) list.scrollTop = list.scrollHeight;
+      }
+    }
+    if (status) status.textContent = reviewStatus(r.status);
+    const approve = overlay.querySelector('[data-review-approve]');
+    const changes = overlay.querySelector('[data-review-changes]');
+    if (approve) approve.disabled = r.status === 'approved';
+    if (changes) changes.disabled = r.status === 'changes';
   }
 
   function reviewPreview(r) {
@@ -1164,7 +1215,7 @@
     const current = state.reviewDialog && state.reviewDialog.version != null ? state.reviewDialog.version : count - 1;
     let file;
     try { file = reviewVersionLink(r, current); }
-    catch (error) { return h('p', { class: 'ts-message ts-error', text: error.message }); }
+    catch (error) { return h('p', { class: 'ts-review-error', role: 'alert', text: error.message }); }
     const picker = h('select', { class: 'ts-input ts-review-version', 'aria-label': 'File version' },
       (r.versions || []).map((v, i) => h('option', { value: String(i), text: `Version ${i + 1}`, selected: i === current })));
     picker.addEventListener('change', () => { state.reviewDialog.version = Number(picker.value); render(); });
@@ -1173,33 +1224,66 @@
       title: `${r.title} version ${current + 1}`, referrerpolicy: 'no-referrer',
       allow: 'fullscreen'
     });
-    const comments = h('div', { class: 'ts-review-comments' },
-      (r.comments || []).length
-        ? r.comments.map(c => h('div', { class: 'ts-review-comment' },
-          h('div', { class: 'ts-review-comment-meta', text: `${nameOf(c.by)} · V${c.version || 1} · ${new Date(c.at).toLocaleString()}` }),
-          h('div', { text: c.text })))
-        : h('p', { class: 'ts-hint', text: 'No comments yet.' }));
+    const comments = h('div', { class: 'ts-review-comments', 'data-review-comments-list': '' }, reviewCommentElements(r));
+    comments.dataset.commentIds = JSON.stringify((r.comments || []).map(c => c.id || c.at));
     const input = h('textarea', { class: 'ts-input', rows: 3, maxLength: 2000, placeholder: 'Write a comment…' });
-    const send = () => {
-      const content = input.value;
-      if (!content.trim()) return;
-      state.reviewDialog = { type: 'preview', id: r.id, version: current };
-      act(() => addReviewComment(r, content));
+    const error = h('p', { class: 'ts-review-error', role: 'alert', hidden: true });
+    const post = h('button', { type: 'button', class: 'ts-btn primary', text: 'Post comment' });
+    const showError = message => { error.textContent = message; error.hidden = false; };
+    post.addEventListener('click', async () => {
+      if (post.disabled || !input.value.trim()) return;
+      const text = input.value.trim();
+      post.disabled = true;
+      error.hidden = true;
+      try {
+        const latest = state.reviews.find(x => x.id === r.id) || r;
+        await addReviewComment(latest, text);
+        input.value = '';
+        state.reviews = await readAll(C.reviews);
+        refreshReviewDialog(document.querySelector('.ts-review-overlay'), state.reviews.find(x => x.id === r.id));
+      } catch (e) {
+        if (!e.userFacing) console.error('[timesheet] review comment failed:', e);
+        showError(e.message || 'Could not post the comment.');
+      } finally { post.disabled = false; }
+    });
+    const decisionButton = (label, status, attr) => {
+      const button = h('button', {
+        type: 'button', class: `ts-btn${status === 'approved' ? ' primary' : ''}`, text: label,
+        disabled: r.status === status, [attr]: ''
+      });
+      button.addEventListener('click', async () => {
+        if (button.disabled) return;
+        button.disabled = true; error.hidden = true;
+        try {
+          const latest = state.reviews.find(x => x.id === r.id) || r;
+          await setReviewDecision(latest, status);
+          state.reviews = await readAll(C.reviews);
+          refreshReviewDialog(document.querySelector('.ts-review-overlay'), state.reviews.find(x => x.id === r.id));
+        } catch (e) {
+          if (!e.userFacing) console.error('[timesheet] review decision failed:', e);
+          showError(e.message || 'Could not update the review.');
+        } finally {
+          const latest = state.reviews.find(x => x.id === r.id) || r;
+          button.disabled = latest.status === status;
+        }
+      });
+      return button;
     };
     return h('div', { class: 'ts-review-preview' },
       h('div', { class: 'ts-review-file' },
         h('div', { class: 'ts-review-preview-toolbar' }, picker,
-          h('a', { class: 'ts-btn', href: file.url, target: '_blank', rel: 'noopener noreferrer', text: 'Open in Drive' })),
+          h('span', { class: 'ts-review-preview-note', text: 'Google Drive preview' })),
         iframe),
       h('div', { class: 'ts-review-side' },
-        h('h3', { text: `Comments (${(r.comments || []).length})` }),
+        h('div', { class: 'ts-review-side-header' },
+          h('h3', { 'data-review-comments-heading': '', text: `Comments (${(r.comments || []).length})` }),
+          h('span', { class: 'ts-review-side-status', 'data-review-decision': '', text: reviewStatus(r.status) })),
         comments,
-        h('div', { class: 'ts-review-comment-compose' }, input,
-          h('button', { type: 'button', class: 'ts-btn primary', text: 'Post comment', onclick: send }),
+        h('div', { class: 'ts-review-comment-compose' }, input, error, post,
           state.person.role === 'gm'
             ? h('div', { class: 'ts-review-actions' },
-              h('button', { type: 'button', class: 'ts-btn', disabled: r.status === 'changes', text: 'Request changes', onclick: () => { state.reviewDialog = { type: 'preview', id: r.id, version: current }; act(() => setReviewDecision(r, 'changes')); } }),
-              h('button', { type: 'button', class: 'ts-btn primary', disabled: r.status === 'approved', text: 'Approve', onclick: () => { state.reviewDialog = { type: 'preview', id: r.id, version: current }; act(() => setReviewDecision(r, 'approved')); } }))
+              decisionButton('Request changes', 'changes', 'data-review-changes'),
+              decisionButton('Approve', 'approved', 'data-review-approve'))
             : null)));
   }
 
@@ -1209,6 +1293,12 @@
     const r = dialog.id && state.reviews.find(x => x.id === dialog.id);
     if (dialog.id && (!r || !canReview(r))) { state.reviewDialog = null; return null; }
     const title = dialog.type === 'new' ? 'New review' : dialog.type === 'revise' ? `Upload revision · ${r.title}` : r.title;
+    const key = `${dialog.type}:${dialog.id || ''}:${dialog.type === 'preview' ? (dialog.version == null ? (r.versions || []).length - 1 : dialog.version) : ''}`;
+    const existing = panel && panel.querySelector('.ts-review-overlay');
+    if (existing && existing.dataset.reviewKey === key) {
+      if (dialog.type === 'preview') refreshReviewDialog(existing, r);
+      return existing;
+    }
     const inner = dialog.type === 'preview' ? reviewPreview(r) : reviewForm(dialog.type, r);
     const box = h('div', { class: 'ts-review-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
       h('div', { class: 'ts-review-dialog-header' },
@@ -1218,6 +1308,7 @@
     const overlay = h('div', { class: 'ts-review-overlay', onclick: e => {
       if (e.target === overlay) { state.reviewDialog = null; render(); }
     } }, box);
+    overlay.dataset.reviewKey = key;
     return overlay;
   }
 
@@ -1463,7 +1554,12 @@
         h('span', { text: state.toast.text }),
         h('button', { type: 'button', class: 'ts-btn', text: 'View', onclick: () => { state.toast = null; state.notificationsOpen = true; state.notificationsOpenedSeen = Number(state.person.notificationsSeenAt) || 0; markNotificationsSeen(); render(); } }))
       : null;
-    panel.replaceChildren(header(title), toast || '', messageBar() || '', body, renderReviewDialog() || '');
+    // Reuse an open review popup across background Firestore snapshots and
+    // Timesheet re-renders. Removing/recreating its iframe resets the Drive viewer.
+    const reviewOverlay = renderReviewDialog();
+    if (reviewOverlay && reviewOverlay.parentNode === panel) reviewOverlay.remove();
+    panel.replaceChildren(header(title), toast || '', messageBar() || '', body);
+    if (reviewOverlay) panel.appendChild(reviewOverlay);
     panel.classList.toggle('is-busy', state.busy);
   }
 
