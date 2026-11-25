@@ -1116,9 +1116,15 @@
     const now = Date.now(), comments = [...(r.comments || []),
       { id: `${now}-${Math.random().toString(36).slice(2, 8)}`, by: state.person.id, text: clean, at: now, version: (r.versions || []).length }];
     const a = requireDb();
-    await a.updateDoc(a.doc(a.db, C.reviews, r.id), { comments, updatedAt: now });
-    await audit('review-commented', 'review', r.id);
-    // Comment panel updates in place; avoid an outer Timesheet banner.
+    const gmRequest = state.person.role === 'gm';
+    // For GM feedback, the comment IS the change request: one write, one status
+    // transition, and one employee notification (instead of two separate alerts).
+    await a.updateDoc(a.doc(a.db, C.reviews, r.id), {
+      comments, updatedAt: now,
+      ...(gmRequest ? { status: 'changes', reviewedBy: state.person.id, reviewedAt: now } : {})
+    });
+    await audit(gmRequest ? 'review-changes' : 'review-commented', 'review', r.id, { version: (r.versions || []).length });
+    // Keep the dialog/Drive iframe in place while the comments refresh.
   }
 
   async function setReviewDecision(r, status) {
@@ -1205,9 +1211,7 @@
     }
     if (status) status.textContent = reviewStatus(r.status);
     const approve = overlay.querySelector('[data-review-approve]');
-    const changes = overlay.querySelector('[data-review-changes]');
     if (approve) approve.disabled = r.status === 'approved';
-    if (changes) changes.disabled = r.status === 'changes';
   }
 
   function reviewPreview(r) {
@@ -1228,7 +1232,8 @@
     comments.dataset.commentIds = JSON.stringify((r.comments || []).map(c => c.id || c.at));
     const input = h('textarea', { class: 'ts-input', rows: 3, maxLength: 2000, placeholder: 'Write a comment…' });
     const error = h('p', { class: 'ts-review-error', role: 'alert', hidden: true });
-    const post = h('button', { type: 'button', class: 'ts-btn primary', text: 'Post comment' });
+    const gm = state.person.role === 'gm';
+    const post = h('button', { type: 'button', class: 'ts-btn', text: gm ? 'Post feedback' : 'Post comment' });
     const showError = message => { error.textContent = message; error.hidden = false; };
     post.addEventListener('click', async () => {
       if (post.disabled || !input.value.trim()) return;
@@ -1279,12 +1284,12 @@
           h('h3', { 'data-review-comments-heading': '', text: `Comments (${(r.comments || []).length})` }),
           h('span', { class: 'ts-review-side-status', 'data-review-decision': '', text: reviewStatus(r.status) })),
         comments,
-        h('div', { class: 'ts-review-comment-compose' }, input, error, post,
-          state.person.role === 'gm'
-            ? h('div', { class: 'ts-review-actions' },
-              decisionButton('Request changes', 'changes', 'data-review-changes'),
-              decisionButton('Approve', 'approved', 'data-review-approve'))
-            : null)));
+        h('div', { class: 'ts-review-comment-compose' },
+          gm ? h('p', { class: 'ts-review-feedback-hint', text: 'Posting feedback automatically requests changes.' }) : null,
+          input, error,
+          h('div', { class: 'ts-review-decision-row' },
+            post,
+            gm ? decisionButton('Approve', 'approved', 'data-review-approve') : null))));
   }
 
   function renderReviewDialog() {

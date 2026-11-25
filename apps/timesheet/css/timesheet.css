@@ -861,3 +861,31 @@
   .ts-review-side-header, .ts-review-comments, .ts-review-comment-compose { padding: 14px 15px; }
   .ts-review-form { padding: 17px; gap: 14px; }
 }
+
+/* GM review actions: a feedback comment is the change request.
+   Space the two actions equally within the sidebar, without wrapping. */
+.ts-review-decision-row {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  width: 100%;
+}
+.ts-review-decision-row > .ts-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 11px 9px;
+  white-space: normal;
+  line-height: 1.35;
+}
+.ts-review-feedback-hint {
+  margin: 0;
+  color: var(--mtw-muted, #777774);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.ts-review-comment-compose {
+  gap: 12px;
+}
+@media (max-width: 680px) {
+  .ts-review-decision-row { gap: 10px; }
+}
