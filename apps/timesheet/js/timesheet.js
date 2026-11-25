@@ -367,6 +367,49 @@
           text: `Your day off ${requestRange(r)} was ${r.status}${r.reviewNote ? `: "${r.reviewNote}"` : ''}` });
       }
     }
+    // Reviews reuse the bell, unread count, toast and notification navigation.
+    // A short delay for GM comments groups a comment immediately followed by
+    // an approval/change decision into one notification for the employee.
+    const COMMENT_DELAY_MS = 90 * 1000;
+    const DECISION_MERGE_MS = 2 * 60 * 1000;
+    const now = Date.now();
+    for (const r of state.reviews) {
+      const versions = Array.isArray(r.versions) ? r.versions : [];
+      const comments = Array.isArray(r.comments) ? r.comments : [];
+      const title = String(r.title || 'Untitled review');
+      if (person.role === 'gm') {
+        if (r.ownerId !== person.id && r.createdAt) {
+          items.push({ id: `review:new:${r.id}`, at: r.createdAt, kind: 'review', tab: 'reviews', reviewId: r.id,
+            text: `${nameOf(r.ownerId)} submitted a review: ${title}` });
+        }
+        versions.slice(1).forEach((v, i) => {
+          if (v && v.by !== person.id && v.at) {
+            items.push({ id: `review:revision:${r.id}:${i + 2}`, at: v.at, kind: 'review', tab: 'reviews', reviewId: r.id,
+              text: `${nameOf(r.ownerId)} uploaded version ${i + 2}: ${title}` });
+          }
+        });
+        comments.forEach(c => {
+          if (c && c.by && c.by !== person.id && c.at) {
+            items.push({ id: `review:comment:${r.id}:${c.id || c.at}`, at: c.at, kind: 'review', tab: 'reviews', reviewId: r.id,
+              text: `${nameOf(c.by)} commented on: ${title}` });
+          }
+        });
+      } else if (r.ownerId === person.id) {
+        const decisionAt = Number(r.reviewedAt) || 0;
+        if ((r.status === 'approved' || r.status === 'changes') && decisionAt) {
+          items.push({ id: `review:decision:${r.id}:${decisionAt}`, at: decisionAt, kind: 'review', tab: 'reviews', reviewId: r.id,
+            text: r.status === 'approved' ? `Your review was approved: ${title}` : `Changes requested: ${title}` });
+        }
+        comments.forEach(c => {
+          if (!c || !c.by || c.by === person.id || !c.at) return;
+          if (decisionAt >= c.at && decisionAt - c.at <= DECISION_MERGE_MS) return;
+          // Let the GM finish their decision before announcing a separate comment.
+          if (now - c.at < COMMENT_DELAY_MS) return;
+          items.push({ id: `review:comment:${r.id}:${c.id || c.at}`, at: c.at, kind: 'review', tab: 'reviews', reviewId: r.id,
+            text: `${nameOf(c.by)} commented on: ${title}` });
+        });
+      }
+    }
     return items.filter(n => n.at >= since).sort((a, b) => b.at - a.at).slice(0, 40);
   }
 
@@ -453,6 +496,7 @@
               state.notificationsOpen = false;
               state.tab = n.tab;
               if (n.personId) state.viewPersonId = n.personId;
+              if (n.reviewId) state.reviewDialog = { type: 'preview', id: n.reviewId, version: null };
               say(null);
               render();
             }
@@ -1109,6 +1153,10 @@
       h('div', { class: 'ts-review-actions' },
         h('button', { type: 'button', class: 'ts-btn', text: 'Cancel', onclick: () => { state.reviewDialog = null; render(); } }),
         h('button', { type: 'button', class: 'ts-btn primary', text: review ? 'Submit revision' : 'Submit review', onclick: save })));
+  }
+
+  function nameOf(id) {
+    return (state.people.find(p => p.id === id) || { name: 'Someone' }).name;
   }
 
   function reviewPreview(r) {
