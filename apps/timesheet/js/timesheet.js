@@ -32,7 +32,8 @@
     summaries: 'timesheet-summaries',
     audit: 'timesheet-audit',
     settings: 'timesheet-settings',
-    requests: 'timesheet-requests'
+    requests: 'timesheet-requests',
+    reviews: 'timesheet-reviews'
   };
 
   // Requests are simply "please let me not work these days": approved or declined.
@@ -53,6 +54,8 @@
     settings: null,
     summaries: [],
     requests: [],
+    reviews: [],
+    reviewDialog: null,
     tab: null,
     // A newly created PIN, shown until unlock, tab change or another PIN: kept in state so
     // live re-renders don't wipe it.
@@ -185,11 +188,12 @@
     },
     [C.summaries](rows) { state.summaries = rows; },
     [C.requests](rows) { state.requests = rows; },
+    [C.reviews](rows) { state.reviews = rows; },
     [C.settings](rows) { state.settings = rows.find(row => row.id === 'main') || null; }
   };
 
   async function load() {
-    const names = [C.people, C.sessions, C.summaries, C.settings, C.requests];
+    const names = [C.people, C.sessions, C.summaries, C.settings, C.requests, C.reviews];
     const results = await Promise.all(names.map(readAll));
     names.forEach((name, i) => apply[name](results[i]));
     state.loaded = true;
@@ -202,7 +206,7 @@
     const a = api();
     if (typeof a.onSnapshot !== 'function' || !a.db) return false;
     try {
-      unsubscribers = [C.people, C.sessions, C.summaries, C.settings, C.requests].map(name =>
+      unsubscribers = [C.people, C.sessions, C.summaries, C.settings, C.requests, C.reviews].map(name =>
         a.onSnapshot(a.collection(a.db, name), snapshot => {
           const rows = [];
           snapshot.forEach(item => rows.push({ id: item.id, ...(item.data() || {}) }));
@@ -535,6 +539,7 @@
   function lock() {
     sessionStorage.removeItem(UNLOCK_KEY);
     state.person = null;
+    state.reviewDialog = null;
     state.notificationsOpen = false;
     state.announced = null;
     state.toast = null;
@@ -964,6 +969,7 @@
     summaryInput.value = summaryText(person.id, today());
 
     const week = core().weekSummary(mine, state.weekStart || core().weekStart(today(person)), calcOptions(person));
+    if (state.tab === 'reviews') return renderReviews();
     if (state.tab === 'requests') return renderMyRequests(person);
     if (state.tab === 'hours') {
       return [
@@ -977,6 +983,218 @@
         todayRow.flags.length ? h('div', { class: 'ts-day-notes' }, todayRow.flags.map(f => h('span', { class: `ts-flag ${f.startsWith('open') ? 'warn' : 'alert'}`, text: flagText(f) }))) : null)),
       h('div', { class: 'ts-grid' }, breakCard, summaryCard)
     ];
+  }
+
+
+  // ---------- Drive-linked reviews ----------
+  // Only Drive links are stored, never file bytes. Drive sharing permissions still apply.
+  // Firestore: timesheet-reviews { title, ownerId, status, versions:[{url,fileId,kind,at,by}],
+  //   comments:[{id,by,text,at,version}], createdAt,updatedAt,reviewedBy,reviewedAt }.
+  // PIN identity and role checks here control the UI, not Firestore access rules.
+  function driveLink(raw) {
+    let url;
+    try { url = new URL(String(raw || '').trim()); } catch (_) { throw userError('Paste a valid Google Drive file link.'); }
+    if (url.protocol !== 'https:') throw userError('Only HTTPS Google Drive links are accepted.');
+    const host = url.hostname.toLowerCase();
+    const path = url.pathname;
+    let fileId, kind = 'file';
+    if (host === 'drive.google.com') {
+      const match = path.match(/^\/file\/d\/([a-zA-Z0-9_-]+)(?:\/|$)/);
+      fileId = match ? match[1] : (path === '/open' || path === '/uc' ? url.searchParams.get('id') : null);
+    } else if (host === 'docs.google.com') {
+      const match = path.match(/^\/(document|spreadsheets|presentation)\/d\/([a-zA-Z0-9_-]+)(?:\/|$)/);
+      if (match) { kind = match[1]; fileId = match[2]; }
+    }
+    if (!fileId || !/^[a-zA-Z0-9_-]{10,}$/.test(fileId))
+      throw userError('Use a Google Drive file link (not a folder link).');
+    const preview = kind === 'file'
+      ? `https://drive.google.com/file/d/${fileId}/preview`
+      : `https://docs.google.com/${kind}/d/${fileId}/preview`;
+    return { url: url.href, fileId, kind, preview };
+  }
+
+  function canReview(r) {
+    return state.person && (state.person.role === 'gm' || r.ownerId === state.person.id);
+  }
+
+  function reviewsForView() {
+    return [...state.reviews].filter(canReview)
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  }
+
+  function latestVersion(r) {
+    return Array.isArray(r.versions) ? r.versions[r.versions.length - 1] : null;
+  }
+
+  function reviewStatus(s) {
+    return ({ pending: 'Pending review', changes: 'Changes requested', approved: 'Approved' })[s] || 'Pending review';
+  }
+
+  function reviewVersionLink(r, n) {
+    const version = (r.versions || [])[n];
+    if (!version) throw userError('This version is not available.');
+    return driveLink(version.url);
+  }
+
+  async function createReview(title, link) {
+    const clean = String(title || '').trim().slice(0, 120);
+    if (!clean) throw userError('Give this review a title.');
+    const file = driveLink(link);
+    const a = requireDb(), now = Date.now();
+    const ref = await a.addDoc(a.collection(a.db, C.reviews), {
+      title: clean, ownerId: state.person.id, status: 'pending',
+      versions: [{ url: file.url, fileId: file.fileId, kind: file.kind, at: now, by: state.person.id }],
+      comments: [], createdAt: now, updatedAt: now, reviewedBy: null, reviewedAt: null
+    });
+    await audit('review-created', 'review', ref.id, { title: clean });
+    say('Review submitted.');
+  }
+
+  async function addReviewVersion(r, link) {
+    if (!canReview(r) || (state.person.role !== 'gm' && r.ownerId !== state.person.id))
+      throw userError('You cannot update this review.');
+    const file = driveLink(link), now = Date.now();
+    if ((r.versions || []).length >= 50) throw userError('This review has reached the 50-version limit.');
+    const versions = [...(r.versions || []), { url: file.url, fileId: file.fileId, kind: file.kind, at: now, by: state.person.id }];
+    const a = requireDb();
+    await a.updateDoc(a.doc(a.db, C.reviews, r.id), {
+      versions, status: 'pending', updatedAt: now, reviewedBy: null, reviewedAt: null
+    });
+    await audit('review-revised', 'review', r.id, { version: versions.length });
+    say('Revision submitted for review.');
+  }
+
+  async function addReviewComment(r, text) {
+    if (!canReview(r)) throw userError('You cannot comment on this review.');
+    const clean = String(text || '').trim().slice(0, 2000);
+    if (!clean) throw userError('Enter a comment.');
+    if ((r.comments || []).length >= 100) throw userError('Comment limit reached. Start a new review.');
+    const now = Date.now(), comments = [...(r.comments || []),
+      { id: `${now}-${Math.random().toString(36).slice(2, 8)}`, by: state.person.id, text: clean, at: now, version: (r.versions || []).length }];
+    const a = requireDb();
+    await a.updateDoc(a.doc(a.db, C.reviews, r.id), { comments, updatedAt: now });
+    await audit('review-commented', 'review', r.id);
+    say('Comment posted.');
+  }
+
+  async function setReviewDecision(r, status) {
+    if (state.person.role !== 'gm') throw userError('Only a GM can approve or request changes.');
+    if (!['approved', 'changes'].includes(status)) throw userError('Invalid review status.');
+    const a = requireDb(), now = Date.now();
+    await a.updateDoc(a.doc(a.db, C.reviews, r.id), {
+      status, reviewedBy: state.person.id, reviewedAt: now, updatedAt: now
+    });
+    await audit('review-' + status, 'review', r.id, { version: (r.versions || []).length });
+    say(status === 'approved' ? 'Review approved.' : 'Changes requested.');
+  }
+
+  function reviewDialog(type, id) {
+    state.reviewDialog = { type, id: id || null, version: null };
+    render();
+  }
+
+  function reviewForm(type, review) {
+    const title = h('input', { class: 'ts-input', type: 'text', maxLength: 120, placeholder: 'e.g. November promotional flyer', value: review ? review.title : '' });
+    const link = h('input', { class: 'ts-input', type: 'url', placeholder: 'https://drive.google.com/file/d/…/view', autocomplete: 'off' });
+    const save = () => {
+      const value = link.value, name = title.value;
+      if (!value.trim() || (!review && !name.trim())) { say('Enter a title and Google Drive link.', 'error'); render(); return; }
+      state.reviewDialog = null;
+      act(() => review ? addReviewVersion(review, value) : createReview(name, value));
+    };
+    return h('div', { class: 'ts-review-form' },
+      h('label', { class: 'ts-field' }, 'Review name', title),
+      h('label', { class: 'ts-field' }, 'Google Drive file link', link),
+      h('p', { class: 'ts-hint', text: 'Set the Google Drive file to Anyone with the link → Viewer. The reviewer will not need a Drive login. Anyone with the link can access the file.' }),
+      h('div', { class: 'ts-review-actions' },
+        h('button', { type: 'button', class: 'ts-btn', text: 'Cancel', onclick: () => { state.reviewDialog = null; render(); } }),
+        h('button', { type: 'button', class: 'ts-btn primary', text: review ? 'Submit revision' : 'Submit review', onclick: save })));
+  }
+
+  function reviewPreview(r) {
+    const count = (r.versions || []).length;
+    const current = state.reviewDialog && state.reviewDialog.version != null ? state.reviewDialog.version : count - 1;
+    let file;
+    try { file = reviewVersionLink(r, current); }
+    catch (error) { return h('p', { class: 'ts-message ts-error', text: error.message }); }
+    const picker = h('select', { class: 'ts-input ts-review-version', 'aria-label': 'File version' },
+      (r.versions || []).map((v, i) => h('option', { value: String(i), text: `Version ${i + 1}`, selected: i === current })));
+    picker.addEventListener('change', () => { state.reviewDialog.version = Number(picker.value); render(); });
+    const iframe = h('iframe', {
+      class: 'ts-review-iframe', src: file.preview,
+      title: `${r.title} version ${current + 1}`, referrerpolicy: 'no-referrer',
+      allow: 'fullscreen'
+    });
+    const comments = h('div', { class: 'ts-review-comments' },
+      (r.comments || []).length
+        ? r.comments.map(c => h('div', { class: 'ts-review-comment' },
+          h('div', { class: 'ts-review-comment-meta', text: `${nameOf(c.by)} · V${c.version || 1} · ${new Date(c.at).toLocaleString()}` }),
+          h('div', { text: c.text })))
+        : h('p', { class: 'ts-hint', text: 'No comments yet.' }));
+    const input = h('textarea', { class: 'ts-input', rows: 3, maxLength: 2000, placeholder: 'Write a comment…' });
+    const send = () => {
+      const content = input.value;
+      if (!content.trim()) return;
+      state.reviewDialog = { type: 'preview', id: r.id, version: current };
+      act(() => addReviewComment(r, content));
+    };
+    return h('div', { class: 'ts-review-preview' },
+      h('div', { class: 'ts-review-file' },
+        h('div', { class: 'ts-review-preview-toolbar' }, picker,
+          h('a', { class: 'ts-btn', href: file.url, target: '_blank', rel: 'noopener noreferrer', text: 'Open in Drive' })),
+        iframe),
+      h('div', { class: 'ts-review-side' },
+        h('h3', { text: `Comments (${(r.comments || []).length})` }),
+        comments,
+        h('div', { class: 'ts-review-comment-compose' }, input,
+          h('button', { type: 'button', class: 'ts-btn primary', text: 'Post comment', onclick: send }),
+          state.person.role === 'gm'
+            ? h('div', { class: 'ts-review-actions' },
+              h('button', { type: 'button', class: 'ts-btn', disabled: r.status === 'changes', text: 'Request changes', onclick: () => { state.reviewDialog = { type: 'preview', id: r.id, version: current }; act(() => setReviewDecision(r, 'changes')); } }),
+              h('button', { type: 'button', class: 'ts-btn primary', disabled: r.status === 'approved', text: 'Approve', onclick: () => { state.reviewDialog = { type: 'preview', id: r.id, version: current }; act(() => setReviewDecision(r, 'approved')); } }))
+            : null)));
+  }
+
+  function renderReviewDialog() {
+    const dialog = state.reviewDialog;
+    if (!dialog) return null;
+    const r = dialog.id && state.reviews.find(x => x.id === dialog.id);
+    if (dialog.id && (!r || !canReview(r))) { state.reviewDialog = null; return null; }
+    const title = dialog.type === 'new' ? 'New review' : dialog.type === 'revise' ? `Upload revision · ${r.title}` : r.title;
+    const inner = dialog.type === 'preview' ? reviewPreview(r) : reviewForm(dialog.type, r);
+    const box = h('div', { class: 'ts-review-dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+      h('div', { class: 'ts-review-dialog-header' },
+        h('strong', { text: title }),
+        h('button', { type: 'button', class: 'ts-btn', text: 'Close', onclick: () => { state.reviewDialog = null; render(); } })),
+      inner);
+    const overlay = h('div', { class: 'ts-review-overlay', onclick: e => {
+      if (e.target === overlay) { state.reviewDialog = null; render(); }
+    } }, box);
+    return overlay;
+  }
+
+  function renderReviews() {
+    const rows = reviewsForView(), mine = state.person.role !== 'gm';
+    const group = h('div', { class: 'ts-review-list' },
+      rows.length ? rows.map(r => h('div', { class: 'ts-review-row' },
+        h('div', { class: 'ts-review-row-main' },
+          h('strong', { class: 'ts-review-row-name', text: r.title }),
+          h('div', { class: 'ts-review-row-meta' },
+            h('span', { class: `ts-review-state ts-review-${r.status}`, text: reviewStatus(r.status) }),
+            h('span', { text: `${(r.comments || []).length} comments` }),
+            h('span', { text: `V${(r.versions || []).length}` }),
+            !mine ? h('span', { text: `By ${nameOf(r.ownerId)}` }) : null)),
+        h('div', { class: 'ts-review-row-buttons' },
+          h('button', { type: 'button', class: 'ts-btn', text: 'Preview', onclick: () => reviewDialog('preview', r.id) }),
+          (mine && r.status !== 'approved')
+            ? h('button', { type: 'button', class: 'ts-btn', text: 'Upload revision', onclick: () => reviewDialog('revise', r.id) })
+            : null)))
+        : h('p', { class: 'ts-hint', text: 'No reviews yet.' }));
+    return [h('div', { class: 'ts-card ts-review-card' },
+      h('div', { class: 'ts-card-head' },
+        h('h3', { text: mine ? 'My reviews' : 'Reviews' }),
+        h('button', { type: 'button', class: 'ts-btn primary', text: '+ New review', onclick: () => reviewDialog('new') })),
+      group)];
   }
 
   function csvFor(person, week) {
@@ -1014,6 +1232,7 @@
     const employees = state.people.filter(p => p.role === 'employee');
     if (!employees.find(p => p.id === state.viewPersonId)) state.viewPersonId = employees.length ? employees[0].id : null;
 
+    if (state.tab === 'reviews') return renderReviews();
     if (state.tab === 'people') return [renderPeople()];
     if (state.tab === 'requests') return renderGmRequests();
     if (state.tab === 'settings') return [renderSettings()];
@@ -1183,8 +1402,8 @@
       const list = state.person.role === 'gm'
         ? [['status', 'Team status'], ['hours', 'Hours'],
           ['requests', pendingRequests().length ? `Requests (${pendingRequests().length})` : 'Requests'],
-          ['people', 'People & PINs'], ['settings', 'Settings']]
-        : [['clock', 'Clock'], ['hours', 'My hours'], ['requests', 'Requests']];
+          ['reviews', 'Reviews'], ['people', 'People & PINs'], ['settings', 'Settings']]
+        : [['clock', 'Clock'], ['hours', 'My hours'], ['requests', 'Requests'], ['reviews', 'Reviews']];
       if (!list.some(([id]) => id === state.tab)) state.tab = list[0][0];
       body.append(tabs(list));
       body.append(...[].concat(state.person.role === 'gm' ? renderGm() : renderEmployee()).filter(Boolean));
@@ -1196,7 +1415,7 @@
         h('span', { text: state.toast.text }),
         h('button', { type: 'button', class: 'ts-btn', text: 'View', onclick: () => { state.toast = null; state.notificationsOpen = true; state.notificationsOpenedSeen = Number(state.person.notificationsSeenAt) || 0; markNotificationsSeen(); render(); } }))
       : null;
-    panel.replaceChildren(header(title), toast || '', messageBar() || '', body);
+    panel.replaceChildren(header(title), toast || '', messageBar() || '', body, renderReviewDialog() || '');
     panel.classList.toggle('is-busy', state.busy);
   }
 

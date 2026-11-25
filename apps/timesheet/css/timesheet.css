@@ -751,3 +751,44 @@
 .ts-btn.is-current {
   border-color: #111;
 }
+
+
+/* Reviews: compact Timesheet-aligned rows and Drive preview popup */
+.ts-review-card { width: 100%; }
+.ts-review-list { border: 1px solid var(--mtw-line, #deddd9); border-radius: 8px; overflow: hidden; }
+.ts-review-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--mtw-line, #deddd9); }
+.ts-review-row:last-child { border-bottom: 0; }
+.ts-review-row-main { min-width: 0; flex: 1; }
+.ts-review-row-name { display: block; font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
+.ts-review-row-meta { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 5px; font-size: 11px; color: #777774; }
+.ts-review-state { font-weight: 650; }
+.ts-review-changes { color: #995a13; }
+.ts-review-approved { color: #23744b; }
+.ts-review-pending { color: #686865; }
+.ts-review-row-buttons { display: flex; gap: 6px; flex: none; }
+.ts-review-row-buttons .ts-btn { padding: 6px 10px; font-size: 12px; }
+.ts-review-overlay { position: fixed; inset: 0; z-index: 100000; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0,0,0,.62); }
+.ts-review-dialog { display: flex; flex-direction: column; width: min(1080px, 100%); max-height: 92vh; background: #fff; color: #242424; border-radius: 10px; overflow: hidden; box-shadow: 0 12px 50px #0003; }
+.ts-review-dialog-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; border-bottom: 1px solid #deddd9; padding: 12px 16px; }
+.ts-review-dialog-header strong { font-size: 15px; overflow-wrap: anywhere; }
+.ts-review-form { display: grid; gap: 15px; padding: 18px; }
+.ts-review-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.ts-review-preview { display: grid; grid-template-columns: minmax(0, 1fr) 300px; min-height: 0; height: min(75vh, 720px); }
+.ts-review-file { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #ededeb; }
+.ts-review-preview-toolbar { padding: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ts-review-version { width: auto; max-width: 160px; }
+.ts-review-iframe { width: 100%; min-height: 0; flex: 1; border: 0; background: #fff; }
+.ts-review-side { min-height: 0; display: flex; flex-direction: column; border-left: 1px solid #deddd9; }
+.ts-review-side h3 { margin: 0; padding: 14px; font-size: 14px; border-bottom: 1px solid #deddd9; }
+.ts-review-comments { padding: 14px; flex: 1; min-height: 0; overflow-y: auto; }
+.ts-review-comment { margin-bottom: 14px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.55; }
+.ts-review-comment-meta { color: #777774; font-size: 11px; margin-bottom: 5px; }
+.ts-review-comment-compose { border-top: 1px solid #deddd9; padding: 12px; display: grid; gap: 8px; }
+.ts-review-comment-compose > .ts-btn { justify-self: end; }
+@media (max-width: 680px) {
+  .ts-review-row { flex-wrap: wrap; }
+  .ts-review-row-buttons { width: 100%; justify-content: flex-end; }
+  .ts-review-preview { display: flex; flex-direction: column; height: min(82vh, 850px); overflow-y: auto; }
+  .ts-review-file { flex: none; height: 43vh; min-height: 230px; }
+  .ts-review-side { flex: none; max-height: 38vh; min-height: 200px; border-left: 0; border-top: 1px solid #deddd9; }
+}
