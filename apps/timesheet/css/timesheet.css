@@ -829,3 +829,35 @@
   .ts-review-preview { height: min(85vh, 850px); }
   .ts-review-preview-toolbar { min-height: 46px; }
 }
+
+/* Review layout breathing room — retain compact rows, but avoid cramped controls. */
+.ts-review-card { padding: 22px 24px; }
+.ts-review-card .ts-card-head { margin-bottom: 20px; }
+.ts-review-list > .ts-hint { padding: 16px 18px; }
+.ts-review-row { padding: 15px 18px; gap: 22px; }
+.ts-review-row-meta { gap: 16px; margin-top: 8px; line-height: 1.5; }
+.ts-review-row-buttons { gap: 10px; }
+.ts-review-row-buttons .ts-btn { padding: 9px 14px; }
+.ts-review-dialog-header { padding: 16px 22px; min-height: 64px; }
+.ts-review-form { gap: 18px; padding: 22px 24px 25px; }
+.ts-review-form .ts-field { margin-top: 8px; gap: 9px; }
+.ts-review-form .ts-hint { margin: 8px 0; }
+.ts-review-form .ts-review-actions { margin-top: 12px; gap: 12px; }
+.ts-review-preview-toolbar { padding: 12px 18px; min-height: 62px; gap: 14px; }
+.ts-review-side-header { padding: 17px 20px; gap: 12px; }
+.ts-review-comments { padding: 20px; }
+.ts-review-comment { margin-bottom: 22px; line-height: 1.65; }
+.ts-review-comment-meta { margin-bottom: 8px; }
+.ts-review-comment-compose { padding: 19px 20px; gap: 14px; }
+.ts-review-comment-compose textarea { min-height: 96px; }
+.ts-review-actions { gap: 10px; }
+@media (max-width: 680px) {
+  .ts-review-card { padding: 16px; }
+  .ts-review-card .ts-card-head { margin-bottom: 16px; }
+  .ts-review-row { padding: 13px 14px; gap: 12px; }
+  .ts-review-row-buttons { gap: 9px; }
+  .ts-review-dialog-header { padding: 13px 16px; }
+  .ts-review-preview-toolbar { padding: 9px 13px; min-height: 52px; }
+  .ts-review-side-header, .ts-review-comments, .ts-review-comment-compose { padding: 14px 15px; }
+  .ts-review-form { padding: 17px; gap: 14px; }
+}
