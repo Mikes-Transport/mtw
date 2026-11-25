@@ -514,6 +514,7 @@
     const panel = document.querySelector('.developer-tools-panel');
     if (!panel) return;
     const start = () => render(panel);
+    window.MTW_RENDER_MANAGER_TOOLS = start;
     if (window.MTW_TOOL_REGISTRY) start();
     document.addEventListener('db-tools-ready', () => {
       if (panel.dataset.view === 'list') start();

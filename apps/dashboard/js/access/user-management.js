@@ -28,7 +28,7 @@
     style.id = 'mtw-user-management-css';
     style.textContent = `
       .um-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0;flex-wrap:wrap}
-      .um-button{background:#fff;border:1px solid #c9c8c4;color:#262626;border-radius:7px;padding:9px 13px;font:600 13px inherit;cursor:pointer}
+      .um-button{background:#fff;border:1px solid #c9c8c4;color:#262626;border-radius:7px;padding:9px 13px;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer}
       .um-button.primary{background:#242424;color:#fff;border-color:#242424}
       .um-button.danger{color:#b42318;border-color:#ebc3bc}
       .um-button:disabled{opacity:.45;cursor:not-allowed}
@@ -67,8 +67,7 @@
     const bar = el('div', 'um-toolbar');
     const h = el('h2', '', title);
     bar.append(h, button('Back to Manager Tools', '', () => {
-      // Manager Tools owns its overview rendering; reopening the same dashboard tool resets it.
-      if (typeof window.openDBTool === 'function') window.openDBTool('developer-tools');
+      if (typeof window.MTW_RENDER_MANAGER_TOOLS === 'function') window.MTW_RENDER_MANAGER_TOOLS();
     }));
     panel.appendChild(bar);
   }
