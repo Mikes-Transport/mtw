@@ -272,20 +272,49 @@
   function render(panel) {
     panel.dataset.view = 'list';
     panel.replaceChildren();
-    panel.appendChild(node('h2', '', 'Manager tools'));
-    panel.appendChild(node('p', '', 'Manage staff accounts, tool access and dashboard navigation.'));
-    const usersButton = node('button', 'developer-tool-add', 'Manage Users');
-    usersButton.type = 'button';
-    usersButton.addEventListener('click', () => {
-      if (window.MTW_USER_MANAGEMENT && typeof window.MTW_USER_MANAGEMENT.render === 'function') {
-        window.MTW_USER_MANAGEMENT.render(panel);
-      } else showStatus(panel, 'User Management has not loaded. Refresh and try again.', true);
-    });
-    panel.appendChild(usersButton);
+    panel.appendChild(node('p', 'developer-tools-intro', 'Manage staff accounts, dashboard tools and shared links.'));
 
-    const addButton = node('button', 'developer-tool-add', 'Add navigation item');
+    const tabs = node('div', 'developer-manager-tabs');
+    tabs.setAttribute('role', 'tablist');
+    tabs.setAttribute('aria-label', 'Manager Tools sections');
+    const section = node('div', 'developer-manager-section');
+    const toolsSection = node('div', 'developer-manager-tools');
+    const sharesSection = node('div', 'developer-manager-shares');
+    section.append(toolsSection, sharesSection);
+    panel.append(tabs, section);
+
+    const activate = id => {
+      panel.dataset.activeTab = id;
+      tabs.querySelectorAll('[role="tab"]').forEach(tab => {
+        const selected = tab.dataset.tab === id;
+        tab.classList.toggle('is-active', selected);
+        tab.setAttribute('aria-selected', String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+      });
+      toolsSection.hidden = id !== 'tools';
+      sharesSection.hidden = id !== 'links';
+      if (id === 'users') {
+        if (window.MTW_USER_MANAGEMENT && typeof window.MTW_USER_MANAGEMENT.render === 'function') {
+          window.MTW_USER_MANAGEMENT.render(panel);
+        } else showStatus(panel, 'User Management has not loaded. Refresh and try again.', true);
+      }
+    };
+    [['tools', 'Dashboard Tools'], ['users', 'Manage Users'], ['links', 'Share Links']].forEach(([id, label]) => {
+      const tab = node('button', 'developer-manager-tab', label);
+      tab.type = 'button';
+      tab.dataset.tab = id;
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-selected', 'false');
+      tab.addEventListener('click', () => activate(id));
+      tabs.appendChild(tab);
+    });
+
+    const top = node('div', 'developer-manager-topline');
+    top.appendChild(node('p', 'developer-manager-section-description', 'Edit built-in tools or manage your custom dashboard pages.'));
+    const addButton = node('button', 'developer-tool-add', '+ Add navigation item');
     addButton.type = 'button';
-    panel.appendChild(addButton);
+    top.appendChild(addButton);
+    toolsSection.appendChild(top);
 
     const list = node('div', 'developer-tool-list');
     const registry = window.MTW_TOOL_REGISTRY || {};
@@ -297,16 +326,22 @@
         const config = settings[id] || {};
         const row = node('button', 'developer-tool-row');
         row.type = 'button';
+        if (config.custom === true || tool.custom === true) row.classList.add('is-custom');
+        if (config.enabled === false || tool.enabled === false) row.classList.add('is-disabled');
         const name = node('strong', '', config.name || tool.name);
         const detail = node('span', '', config.enabled === false
           ? 'Disabled'
           : config.custom === true ? 'Custom page · edit name, access and page' : 'Edit name and access');
+        if (config.custom === true || tool.custom === true) {
+          name.appendChild(node('span', 'developer-tool-custom-badge', 'CUSTOM'));
+        }
         row.append(name, detail);
         row.addEventListener('click', () => buildToolForm(panel, id, tool, config, false));
         list.appendChild(row);
       });
-    panel.appendChild(list);
-    renderShareLinks(panel);
+    toolsSection.appendChild(list);
+    renderShareLinks(sharesSection);
+    activate('tools');
 
     addButton.addEventListener('click', () => {
       panel.dataset.view = 'form';
@@ -517,7 +552,12 @@
     window.MTW_RENDER_MANAGER_TOOLS = start;
     if (window.MTW_TOOL_REGISTRY) start();
     document.addEventListener('db-tools-ready', () => {
-      if (panel.dataset.view === 'list') start();
+      if (panel.dataset.view === 'list') {
+        const tab = panel.dataset.activeTab || 'tools';
+        start();
+        const target = panel.querySelector('.developer-manager-tab[data-tab="' + tab + '"]');
+        if (target && tab !== 'users') target.click();
+      }
     });
 
     // X while editing an item (or adding one) returns to the Developer Tools list.

@@ -1553,3 +1553,82 @@ body:has(.db-main-wrapper) {
 .developer-tool-delete-confirm p { margin: 4px 0 10px; }
 .developer-tool-delete-records { display: flex; gap: 6px; align-items: flex-start; font-size: 13px; }
 .developer-tool-delete-yes { background: #b92b27 !important; border-color: #b92b27 !important; color: #fff !important; }
+
+/* Manager Tools: simple tabbed layout and distinguish custom pages. */
+.developer-tools-panel .developer-tools-intro {
+  margin: 4px 0 24px;
+  font-size: 13px;
+  color: #777774;
+  line-height: 1.6;
+}
+.developer-manager-tabs {
+  display: flex;
+  gap: 26px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0 0 25px;
+  border-bottom: 1px solid #deddd9;
+}
+.developer-tools-panel .developer-manager-tab {
+  min-height: 44px;
+  padding: 10px 2px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: #777774;
+  font-weight: 600;
+  font-size: 13px;
+}
+.developer-tools-panel .developer-manager-tab:hover {
+  background: transparent;
+  color: #242424;
+}
+.developer-tools-panel .developer-manager-tab.is-active {
+  color: #242424;
+  border-bottom-color: #242424;
+}
+.developer-manager-section > div[hidden] { display: none !important; }
+.developer-manager-topline {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 17px;
+}
+.developer-manager-section-description { margin: 0; color: #777774; font-size: 13px; }
+.developer-manager-topline .developer-tool-add {
+  background: #242424;
+  border-color: #242424;
+  color: #fff;
+}
+.developer-manager-topline .developer-tool-add:hover { background: #393939; color: #fff; }
+.developer-manager-tools .developer-tool-list { margin-top: 0; gap: 12px; }
+.developer-manager-tools .developer-tool-row { min-height: 76px; padding: 15px 17px; }
+.developer-manager-tools .developer-tool-row.is-custom {
+  background: #eef3f5;
+  border-color: #cbdde4;
+}
+.developer-manager-tools .developer-tool-row.is-custom:hover { background: #e4eff3; border-color: #afcbd5; }
+.developer-manager-tools .developer-tool-row.is-disabled { opacity: .67; }
+.developer-manager-tools .developer-tool-row strong { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.developer-tool-custom-badge {
+  font-size: 9px;
+  letter-spacing: .08em;
+  padding: 3px 6px;
+  border: 1px solid #c3d7df;
+  border-radius: 3px;
+  background: #dcebf0;
+  color: #3d6675;
+  font-weight: 700;
+}
+.developer-manager-shares .developer-share-links {
+  border: none;
+  margin-top: 0;
+  padding-top: 0;
+}
+@media (max-width: 600px) {
+  .developer-manager-tabs { gap: 15px; }
+  .developer-manager-topline { align-items: stretch; }
+}
