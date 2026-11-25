@@ -330,15 +330,12 @@
         const config = settings[id] || {};
         const row = node('button', 'developer-tool-row');
         row.type = 'button';
-        if (config.custom === true || tool.custom === true) row.classList.add('is-custom');
+        const custom = config.custom === true || tool.custom === true;
         if (config.enabled === false || tool.enabled === false) row.classList.add('is-disabled');
         const name = node('strong', '', config.name || tool.name);
         const detail = node('span', '', config.enabled === false
-          ? 'Disabled'
-          : config.custom === true ? 'Custom page · edit name, access and page' : 'Edit name and access');
-        if (config.custom === true || tool.custom === true) {
-          name.appendChild(node('span', 'developer-tool-custom-badge', 'CUSTOM'));
-        }
+          ? (custom ? 'Custom page · Disabled' : 'Disabled')
+          : custom ? 'Custom page · Edit settings' : 'Edit name and access');
         row.append(name, detail);
         row.addEventListener('click', () => buildToolForm(panel, id, tool, config, false));
         list.appendChild(row);

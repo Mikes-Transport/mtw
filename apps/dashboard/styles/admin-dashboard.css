@@ -1554,7 +1554,7 @@ body:has(.db-main-wrapper) {
 .developer-tool-delete-records { display: flex; gap: 6px; align-items: flex-start; font-size: 13px; }
 .developer-tool-delete-yes { background: #b92b27 !important; border-color: #b92b27 !important; color: #fff !important; }
 
-/* Manager Tools: simple tabbed layout and distinguish custom pages. */
+/* Manager Tools: simple tabbed layout and consistent tool cards. */
 .developer-tools-panel .developer-tools-intro {
   margin: 4px 0 24px;
   font-size: 13px;
@@ -1606,23 +1606,8 @@ body:has(.db-main-wrapper) {
 .developer-manager-topline .developer-tool-add:hover { background: #393939; color: #fff; }
 .developer-manager-tools .developer-tool-list { margin-top: 0; gap: 12px; }
 .developer-manager-tools .developer-tool-row { min-height: 76px; padding: 15px 17px; }
-.developer-manager-tools .developer-tool-row.is-custom {
-  background: #eef3f5;
-  border-color: #cbdde4;
-}
-.developer-manager-tools .developer-tool-row.is-custom:hover { background: #e4eff3; border-color: #afcbd5; }
 .developer-manager-tools .developer-tool-row.is-disabled { opacity: .67; }
 .developer-manager-tools .developer-tool-row strong { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.developer-tool-custom-badge {
-  font-size: 9px;
-  letter-spacing: .08em;
-  padding: 3px 6px;
-  border: 1px solid #c3d7df;
-  border-radius: 3px;
-  background: #dcebf0;
-  color: #3d6675;
-  font-weight: 700;
-}
 .developer-manager-shares .developer-share-links {
   border: none;
   margin-top: 0;
