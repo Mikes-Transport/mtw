@@ -21,17 +21,25 @@
   const DASHBOARD_THEME_URL = new URL('styles/admin-dashboard.css', BASE_URL).href;
   const DEVELOPER_TOOLS_URL = new URL('js/access/developer-tools.js', BASE_URL).href;
   const DASHBOARD_SHELL_URL = new URL('js/navigation/dashboard-shell.js', BASE_URL).href;
-  const PAGE_BUILDER_CSS_URL = new URL('styles/page-builder.css', BASE_URL).href;
+  // Version the lazy-loaded builder assets so browser/CDN caches cannot serve an
+  // outdated input handler after an update.
+  const PAGE_BUILDER_RELEASE = '2026-11-25.3';
+  const pageAsset = path => {
+    const url = new URL(path, BASE_URL);
+    url.searchParams.set('v', PAGE_BUILDER_RELEASE);
+    return url.href;
+  };
+  const PAGE_BUILDER_CSS_URL = pageAsset('styles/page-builder.css');
   const PAGE_SCRIPTS = {
-    core: new URL('js/builder/page-core.js', BASE_URL).href,
-    runtime: new URL('js/builder/page-runtime.js', BASE_URL).href,
-    render: new URL('js/builder/page-render.js', BASE_URL).href,
-    builder: new URL('js/builder/page-builder.js', BASE_URL).href,
-    data: new URL('js/builder/page-data.js', BASE_URL).href
+    core: pageAsset('js/builder/page-core.js'),
+    runtime: pageAsset('js/builder/page-runtime.js'),
+    render: pageAsset('js/builder/page-render.js'),
+    builder: pageAsset('js/builder/page-builder.js'),
+    data: pageAsset('js/builder/page-data.js')
   };
 
   // Bump on each release so the live page can be checked for the version it runs.
-  const NAVIGATION_BUILD = '2026-11-16.1';
+  const NAVIGATION_BUILD = '2026-11-25.3';
 
   const TOOLS = {
     'activity-logs': { panel: '.activity-logs-panel', name: 'Activity Logs', roles: ['Managers'] },

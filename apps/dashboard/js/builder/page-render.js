@@ -133,7 +133,9 @@
           view.clearTimeout(typingTimer);
           skipNextChange = true;
           rt.setValue(block.name, control.value, true);
-          rt.run(block.props.actions);
+          // The Enter key runs this input's own steps immediately, without a
+          // button or a native form submission.
+          void rt.run(block.props.actions);
         });
       }
     }
