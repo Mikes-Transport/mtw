@@ -35,6 +35,7 @@ const TOOL_SCRIPTS = [
   'products/promotion-cards.js',
   'inventory/barcodes.js',
   'config/model-access.js',
+  'access/user-management.js',
   'access/mtwstudio.js',
   // Timesheet is its own app (apps/timesheet); the dashboard loads it as a tool.
   '../../timesheet/js/timesheet-core.js',

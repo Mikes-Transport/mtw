@@ -245,6 +245,27 @@
   const isManager = role => normalizeRole(role) === MANAGER;
   let toolSettings = {};
   let activeToolId = null;
+  let assignedTools = undefined; // undefined = loading, null = legacy role defaults
+  const RESTRICTED_TO_MANAGERS = new Set(['developer-tools', 'model-tool-access', 'mtwstudio', 'activity-logs', 'csv-config', 'mte-config']);
+
+  async function loadAssignedTools() {
+    const userName = sessionStorage.getItem('mtw_admin_name');
+    const api = window.MTW || {};
+    if (!userName || isManager(userName) || !api.db) return;
+    try {
+      const snapshot = await api.getDocs(api.collection(api.db, 'admin-users'));
+      const matches = [];
+      snapshot.forEach(item => { if ((item.data() || {}).name === userName) matches.push(item.data()); });
+      if (matches.length !== 1) assignedTools = new Set();
+      else assignedTools = Array.isArray(matches[0].tools)
+        ? new Set(matches[0].tools.filter(id => typeof id === 'string')) : null;
+    } catch (error) {
+      console.error('[dashboard] could not read assigned tools:', error);
+      assignedTools = new Set();
+    }
+    applyToolSettings(toolSettings);
+    document.dispatchEvent(new Event('mtw-user-tools-updated'));
+  }
 
   function hideAll() {
 
@@ -437,7 +458,11 @@
     const share = shareMode();
     if (share) return id === share.tool;
     const user = sessionStorage.getItem('mtw_admin_name');
-    return isManager(user) || (Array.isArray(tool.roles) && tool.roles.includes(normalizeRole(user)));
+    if (isManager(user)) return true;
+    if (RESTRICTED_TO_MANAGERS.has(id)) return false;
+    if (assignedTools instanceof Set) return assignedTools.has(id);
+    if (assignedTools === undefined) return false;
+    return Array.isArray(tool.roles) && tool.roles.includes(normalizeRole(user));
   }
 
   function createCustomCard(id, name) {
@@ -729,11 +754,13 @@
       });
 
     window.MTW_TOOL_REGISTRY = TOOLS;
+    window.MTW_CAN_ACCESS_TOOL = id => Boolean(TOOLS[id] && canShowTool(id, TOOLS[id]));
     window.MTW_OPEN_PAGE_BUILDER = openPageBuilder;
     window.MTW_OPEN_DATA_MANAGER = openDataManager;
     window.MTW_APPLY_TOOL_SETTINGS = applyToolSettings;
     applyToolSettings({});
     createCustomCard('developer-tools', 'Manager Tools');
+    if (!shareMode()) loadAssignedTools();
     if (!shareMode()) loadToolSettings().catch(error => {
       console.error('[dashboard] could not load tool settings:', error);
       applyToolSettings({});
@@ -759,6 +786,15 @@
       studioScript.dataset.mtwstudioScript = 'true';
       studioScript.src = new URL('js/access/mtwstudio.js', BASE_URL).href;
       document.head.appendChild(studioScript);
+    }
+
+    if (!shareMode() && !window.MTW_USER_MANAGEMENT_SCRIPT_REQUESTED &&
+        !document.querySelector('script[src*="access/user-management.js"]')) {
+      window.MTW_USER_MANAGEMENT_SCRIPT_REQUESTED = true;
+      const userScript = document.createElement('script');
+      userScript.src = new URL('js/access/user-management.js', BASE_URL).href;
+      userScript.onerror = () => console.error('[dashboard] user management failed to load');
+      document.head.appendChild(userScript);
     }
 
     // Navigation globals are in place: let the shell (loaded now or already waiting) build.

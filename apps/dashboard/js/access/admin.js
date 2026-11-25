@@ -42,16 +42,19 @@
         const tool = card.dataset.select;
         const configured = settings && settings[tool];
         const roleOverrides = configured && Array.isArray(configured.roles);
-        const canAccess = user === 'Managers' ||
-          (roleOverrides
-            ? configured.roles.includes(user)
-            : allowed === '*' || allowed?.includes(tool));
+        const canAccess = typeof window.MTW_CAN_ACCESS_TOOL === 'function'
+          ? window.MTW_CAN_ACCESS_TOOL(tool)
+          : user === 'Managers' ||
+            (roleOverrides
+              ? configured.roles.includes(user)
+              : allowed === '*' || allowed?.includes(tool));
         const enabled = !configured || configured.enabled !== false;
         card.style.display = canAccess && enabled ? '' : 'none';
       });
     }
 
     applyAccess(window.MTW_TOOL_SETTINGS || {});
+    document.addEventListener('mtw-user-tools-updated', () => applyAccess(window.MTW_TOOL_SETTINGS || {}));
     document.addEventListener('db-tools-ready', event => {
       applyAccess(event.detail && event.detail.settings);
     });

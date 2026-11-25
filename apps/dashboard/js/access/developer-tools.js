@@ -273,7 +273,15 @@
     panel.dataset.view = 'list';
     panel.replaceChildren();
     panel.appendChild(node('h2', '', 'Manager tools'));
-    panel.appendChild(node('p', '', 'Manage navigation labels and access. New items get a page you build with drag and drop: open the item, then Open page builder.'));
+    panel.appendChild(node('p', '', 'Manage staff accounts, tool access and dashboard navigation.'));
+    const usersButton = node('button', 'developer-tool-add', 'Manage Users');
+    usersButton.type = 'button';
+    usersButton.addEventListener('click', () => {
+      if (window.MTW_USER_MANAGEMENT && typeof window.MTW_USER_MANAGEMENT.render === 'function') {
+        window.MTW_USER_MANAGEMENT.render(panel);
+      } else showStatus(panel, 'User Management has not loaded. Refresh and try again.', true);
+    });
+    panel.appendChild(usersButton);
 
     const addButton = node('button', 'developer-tool-add', 'Add navigation item');
     addButton.type = 'button';
@@ -508,19 +516,19 @@
     const start = () => render(panel);
     if (window.MTW_TOOL_REGISTRY) start();
     document.addEventListener('db-tools-ready', () => {
-      if (panel.dataset.view !== 'form') start();
+      if (panel.dataset.view === 'list') start();
     });
 
     // X while editing an item (or adding one) returns to the Developer Tools list.
     document.addEventListener('db-tool-exit-request', event => {
-      if (event.detail?.id !== 'developer-tools' || panel.dataset.view !== 'form') return;
+      if (event.detail?.id !== 'developer-tools' || (panel.dataset.view !== 'form' && panel.dataset.view !== 'users')) return;
       event.preventDefault();
       render(panel);
     });
 
     // Leaving the tool (Overview, another tool) discards an unsaved edit view.
     document.addEventListener('db-tool-close', () => {
-      if (panel.dataset.view === 'form') render(panel);
+      if (panel.dataset.view === 'form' || panel.dataset.view === 'users') render(panel);
     });
 
     document.addEventListener('db-tools-load-error', event => {
