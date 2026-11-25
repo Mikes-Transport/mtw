@@ -1,21 +1,23 @@
 const $=id=>document.getElementById(id);
 const state={user:null,ws:null,peer:null,channel:null,sessionId:null,approved:false,remoteStream:null,pendingIce:[],pendingOffer:null,frameChunks:null,frameLastId:0,monitors:[],selectedMonitor:0,iceServers:[{urls:'stun:stun.cloudflare.com:3478'}]};
 const show=(id,yes)=>$(id).hidden=!yes;
-const dialogIds=['connect-dialog','devices-dialog','register-dialog','pair-dialog','connections-dialog','clipboard-dialog'];
+const dialogIds=['connect-dialog','register-dialog','pair-dialog','clipboard-dialog'];
 function openDialog(id){
   for(const other of dialogIds){if(other!==id&&$(other).open)$(other).close()}
   const dialog=$(id);
   if(!dialog.open)dialog.showModal();
-  if(id==='devices-dialog')hosts();
-  if(id==='connections-dialog')history();
+  if(id==='connect-dialog')hosts();
 }
 function closeDialogs(){for(const id of dialogIds)if($(id).open)$(id).close()}
 for(const button of document.querySelectorAll('.close-dialog'))
   button.addEventListener('click',()=>button.closest('dialog')?.close());
-$('nav-connections').onclick=()=>openDialog('connections-dialog');
-$('nav-devices').onclick=()=>openDialog('devices-dialog');
 $('nav-connect').onclick=()=>openDialog('connect-dialog');
-$('nav-register').onclick=()=>openDialog('register-dialog');
+$('connect-code-toggle').onclick=()=>{
+  const panel=$('connect-code-panel');
+  panel.hidden=!panel.hidden;
+  $('connect-code-toggle').setAttribute('aria-expanded',String(!panel.hidden));
+  if(!panel.hidden)$('code').focus();
+};
 $('empty-connect').onclick=()=>openDialog('connect-dialog');
 $('devices-add').onclick=()=>openDialog('register-dialog');
 $('devices-pair').onclick=()=>openDialog('pair-dialog');
@@ -139,7 +141,7 @@ async function refresh(){
     const {user}=await api('auth/me');
     state.user=user;$('identity').textContent=user.name+' · Verified manager';
     show('login',false);show('setup',false);show('workspace',true);show('viewer-section',true);
-    await Promise.all([history(),hosts()]);
+    // Saved devices load when the Connect dialog opens.
   }catch{
     state.user=null;closeDialogs();show('workspace',false);$('identity').textContent='Authenticator required';
     try{
@@ -152,13 +154,16 @@ async function hosts(){
   const area=$('computers');
   try{
     const {hosts}=await api('hosts');area.replaceChildren();
-    if(!hosts.length){area.textContent='No registered devices yet. Click Add device to get started.';return}
+    if(!hosts.length){area.textContent='No saved computers yet. Add a new computer or use a connection code below.';return}
     for(const host of hosts){
-      const row=document.createElement('div');row.className='history-row';
-      const name=document.createElement('span');
-      name.textContent=host.label+' · '+(host.online?'Online':'Offline')+(host.mode==='code'?' · Connection code mode':' · Saved access');
+      const row=document.createElement('div');row.className='saved-computer';
+      const info=document.createElement('div');info.className='saved-computer-info';
+      const name=document.createElement('strong');name.textContent=host.label;
+      const availability=document.createElement('small');availability.className=host.online?'computer-online':'computer-offline';
+      availability.textContent=host.online?'● Online — ready to connect':'● Offline';
+      info.append(name,availability);
       const actions=document.createElement('div');actions.style.cssText='display:flex;gap:8px;align-items:center;flex-wrap:wrap';
-      const button=document.createElement('button');button.textContent=host.online?'Request connection':'Offline';button.disabled=!host.online;
+      const button=document.createElement('button');button.textContent=host.online?'Connect':'Offline';button.disabled=!host.online;
       button.onclick=()=>{closeDialogs();connect({hostId:host.id})};
       actions.append(button);
       if(host.owned){
@@ -177,7 +182,7 @@ async function hosts(){
         };
         actions.append(remove);
       }
-      row.append(name,actions);area.append(row);
+      row.append(info,actions);area.append(row);
     }
   }catch(e){notice(e.message)}
 }
@@ -214,16 +219,9 @@ $('pair-form').addEventListener('submit',async e=>{
   e.preventDefault();notice('');
   try{
     await api('hosts/pair','POST',{code:$('pair-code').value});
-    $('pair-code').value='';closeDialogs();notice('PC saved. It can now be selected while running.',false);
-    await hosts();
+    $('pair-code').value='';openDialog('connect-dialog');notice('PC saved. It can now be selected while running.',false);
   }catch(err){notice(err.message)}
 });
-async function history(){
-  try{const {connections}=await api('history');$('history').replaceChildren();
-    if(!connections.length){$('history').textContent='No connections yet.';return}
-    for(const item of connections){const row=document.createElement('div');row.className='history-row';const host=document.createElement('span');host.textContent=item.host;const info=document.createElement('small');info.textContent=new Date(item.created_at).toLocaleString()+' · '+item.status;row.append(host,info);$('history').appendChild(row)}
-  }catch(e){notice(e.message)}
-}
 $('login-form').addEventListener('submit',async event=>{
   event.preventDefault();const button=event.target.querySelector('button');button.disabled=true;notice('');
   try{
@@ -273,7 +271,7 @@ async function disconnect(){
   if($('clipboard-dialog').open)$('clipboard-dialog').close();
   $('video').srcObject=null;show('viewer-section',!!state.user);show('disconnect',false);
   show('placeholder',true);
-  $('placeholder').innerHTML='<span class="empty-symbol">▣</span><strong>No active connection</strong><span>Choose Connect or select a device to start a remote session.</span><button type="button" id="empty-connect" class="empty-action">Connect to a computer</button>';
+  $('placeholder').innerHTML='<span class="empty-symbol">▣</span><strong>No active connection</strong><span>Choose Connect to select a saved PC or add a new one.</span><button type="button" id="empty-connect" class="empty-action">Connect to a computer</button>';
   $('empty-connect').onclick=()=>openDialog('connect-dialog');
   $('quality').textContent='No active connection';
   status('Disconnected');if(id)try{await api('connections/'+id+'/disconnect','POST')}catch{}
@@ -398,7 +396,7 @@ async function connect(details){
     ws.onopen=()=>{status('Viewer connected · waiting for host approval');};
     ws.onerror=()=>notice('Signalling connection error');
     ws.onclose=()=>{if(state.sessionId===id)disconnect()};
-    await Promise.all([history(),hosts()]);
+    // No visible connection history; the session is ready.
   }catch(err){status('Connection failed');notice(err.message)}
   finally{button.disabled=false}
 }
