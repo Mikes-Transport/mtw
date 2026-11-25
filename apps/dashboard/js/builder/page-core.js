@@ -97,7 +97,7 @@
     },
     input: {
       label: 'Input', group: 'Interactive',
-      defaults: { label: 'Your answer', bind: '', kind: 'text', placeholder: '', required: 'no', options: '', defaultValue: '', trigger: 'change', actions: [] },
+      defaults: { label: 'Your answer', bind: '', kind: 'text', placeholder: '', required: 'no', options: '', defaultValue: '', trigger: 'change', enterSubmit: 'no', actions: [] },
       fields: [
         { key: 'label', label: 'Label', type: 'text' },
         { key: 'bind', label: 'Save into (data table field)', type: 'bind' },
@@ -107,7 +107,8 @@
         { key: 'placeholder', label: 'Hint inside the box', type: 'text' },
         { key: 'defaultValue', label: 'Starting value', type: 'text', tokens: true },
         { key: 'trigger', label: 'Its steps run', type: 'select', options: [['change', 'When it changes (after leaving the box / picking)'], ['typing', 'While typing (after a short pause)']] },
-        { key: 'actions', label: 'When changed, do', type: 'actions' }
+        { key: 'enterSubmit', label: 'Submit when Enter is pressed', type: 'select', options: [['no', 'No'], ['yes', 'Yes (Shift + Enter adds a new line)']] },
+        { key: 'actions', label: 'When changed or submitted, do', type: 'actions' }
       ]
     },
     records: {

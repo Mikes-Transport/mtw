@@ -106,7 +106,9 @@
       control.readOnly = true;
     } else if (rt) {
       let typingTimer = null;
+      let skipNextChange = false;
       control.addEventListener('input', () => {
+        skipNextChange = false;
         rt.setValue(block.name, control.value, true);
         if (block.props.trigger === 'typing' && control.tagName !== 'SELECT') {
           const view = doc.defaultView || root;
@@ -116,8 +118,24 @@
       });
       control.addEventListener('change', () => {
         rt.setValue(block.name, control.value, true);
+        if (skipNextChange) {
+          skipNextChange = false;
+          return;
+        }
         if (block.props.trigger !== 'typing' || control.tagName === 'SELECT') rt.run(block.props.actions);
       });
+      if (block.props.enterSubmit === 'yes' && control.tagName !== 'SELECT') {
+        control.addEventListener('keydown', event => {
+          if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return;
+          event.preventDefault();
+          if (spec.required && !control.value.trim()) return;
+          const view = doc.defaultView || root;
+          view.clearTimeout(typingTimer);
+          skipNextChange = true;
+          rt.setValue(block.name, control.value, true);
+          rt.run(block.props.actions);
+        });
+      }
     }
     wrap.append(label, control);
     return wrap;
