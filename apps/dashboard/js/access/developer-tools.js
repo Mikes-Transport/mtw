@@ -280,7 +280,8 @@
     const section = node('div', 'developer-manager-section');
     const toolsSection = node('div', 'developer-manager-tools');
     const sharesSection = node('div', 'developer-manager-shares');
-    section.append(toolsSection, sharesSection);
+    const usersSection = node('div', 'developer-manager-users');
+    section.append(toolsSection, usersSection, sharesSection);
     panel.append(tabs, section);
 
     const activate = id => {
@@ -292,11 +293,13 @@
         tab.tabIndex = selected ? 0 : -1;
       });
       toolsSection.hidden = id !== 'tools';
+      usersSection.hidden = id !== 'users';
       sharesSection.hidden = id !== 'links';
-      if (id === 'users') {
+      if (id === 'users' && usersSection.dataset.loaded !== 'true') {
         if (window.MTW_USER_MANAGEMENT && typeof window.MTW_USER_MANAGEMENT.render === 'function') {
-          window.MTW_USER_MANAGEMENT.render(panel);
-        } else showStatus(panel, 'User Management has not loaded. Refresh and try again.', true);
+          usersSection.dataset.loaded = 'true';
+          window.MTW_USER_MANAGEMENT.render(usersSection);
+        } else showStatus(usersSection, 'User Management has not loaded. Refresh and try again.', true);
       }
     };
     [['tools', 'Dashboard Tools'], ['users', 'Manage Users'], ['links', 'Share Links']].forEach(([id, label]) => {
@@ -309,6 +312,7 @@
       tabs.appendChild(tab);
     });
 
+    window.MTW_SELECT_MANAGER_TAB = activate;
     const top = node('div', 'developer-manager-topline');
     top.appendChild(node('p', 'developer-manager-section-description', 'Edit built-in tools or manage your custom dashboard pages.'));
     const addButton = node('button', 'developer-tool-add', '+ Add navigation item');
@@ -556,7 +560,7 @@
         const tab = panel.dataset.activeTab || 'tools';
         start();
         const target = panel.querySelector('.developer-manager-tab[data-tab="' + tab + '"]');
-        if (target && tab !== 'users') target.click();
+        if (target) target.click();
       }
     });
 

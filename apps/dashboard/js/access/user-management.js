@@ -67,7 +67,7 @@
     const bar = el('div', 'um-toolbar');
     const h = el('h2', '', title);
     bar.append(h, button('Back to Manager Tools', '', () => {
-      if (typeof window.MTW_RENDER_MANAGER_TOOLS === 'function') window.MTW_RENDER_MANAGER_TOOLS();
+      if (typeof window.MTW_SELECT_MANAGER_TAB === 'function') window.MTW_SELECT_MANAGER_TAB('tools');
     }));
     panel.appendChild(bar);
   }
